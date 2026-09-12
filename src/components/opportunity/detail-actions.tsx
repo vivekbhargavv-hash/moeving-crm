@@ -25,7 +25,7 @@ import {
 } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
 import { CHARGING_SCOPES, DRIVER_TYPES } from "@/lib/constants";
-import { monthLabelLong, upcomingMonths } from "@/lib/utils";
+import { monthLabelShort, upcomingMonths } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { updateOpportunity } from "@/server/actions";
 
@@ -242,7 +242,7 @@ export function DetailActions({
                       : "border-line bg-white text-muted",
                   )}
                 >
-                  {monthLabelLong(m)}
+                  {monthLabelShort(m)}
                 </button>
               ))}
             </div>

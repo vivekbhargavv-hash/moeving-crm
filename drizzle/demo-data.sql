@@ -53,7 +53,7 @@ customer_list AS (
 -- pipeline, which is exactly the confusion this avoids.
 deal_grid AS (
   SELECT c.idx AS a_idx, n,
-         (c.idx + n * 5) % 8  AS city_idx,
+         (c.idx + n * 5) % 6  AS city_idx,
          (c.idx + n) % 4      AS vehicle_idx,
          (c.idx * 3 + n) % 3  AS rep_idx,
          (c.idx * 2 + n) % 7  AS stage_idx,

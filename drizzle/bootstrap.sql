@@ -157,8 +157,8 @@ SELECT id, 'vivekbhargav.v@gmail.com', 'Vivek', 'admin' FROM organizations WHERE
 
 INSERT INTO cities (organization_id, name, sort_order)
 SELECT o.id, c.name, c.ord FROM organizations o,
-  (VALUES ('Bangalore',0),('Chennai',1),('Hyderabad',2),('Delhi NCR',3),
-          ('Mumbai',4),('Pune',5),('Kolkata',6),('Ahmedabad',7)) AS c(name, ord)
+  (VALUES ('Delhi NCR',0),('Bangalore',1),('Hyderabad',2),
+          ('Mumbai',3),('Pune',4),('Kolkata',5)) AS c(name, ord)
 WHERE o.slug = 'moeving' ON CONFLICT DO NOTHING;
 
 INSERT INTO vehicle_types (organization_id, name, sort_order)

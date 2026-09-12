@@ -22,7 +22,13 @@ import {
   Textarea,
 } from "@/components/ui";
 import { CHARGING_SCOPES, DRIVER_TYPES } from "@/lib/constants";
-import { cn, inrCompact, monthLabelLong, upcomingMonths } from "@/lib/utils";
+import {
+  cn,
+  inrCompact,
+  monthLabelLong,
+  monthLabelShort,
+  upcomingMonths,
+} from "@/lib/utils";
 import { createOpportunity } from "@/server/actions";
 import type { Session } from "@/server/auth";
 
@@ -282,31 +288,6 @@ export function QuickAdd({
 
         <div>
           <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
-            Expected closing month
-          </p>
-          <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-            {months.map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={month === m}
-                onClick={() => setMonth(m)}
-                className={cn(
-                  "h-11 shrink-0 rounded-xl border px-4 text-sm font-medium transition",
-                  month === m
-                    ? "border-brand bg-brand-soft text-brand-ink"
-                    : "border-line bg-white text-muted",
-                )}
-              >
-                {monthLabelLong(m)}
-              </button>
-            ))}
-          </div>
-          <input type="hidden" name="expectedCloseMonth" value={month} />
-        </div>
-
-        <div>
-          <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
             Driver type
           </p>
           <ChoiceGroup
@@ -336,6 +317,31 @@ export function QuickAdd({
               icon: CHARGING_ICONS[c.value],
             }))}
           />
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
+            Expected closing month
+          </p>
+          <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+            {months.map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={month === m}
+                onClick={() => setMonth(m)}
+                className={cn(
+                  "h-11 shrink-0 rounded-xl border px-4 text-sm font-medium transition",
+                  month === m
+                    ? "border-brand bg-brand-soft text-brand-ink"
+                    : "border-line bg-white text-muted",
+                )}
+              >
+                {monthLabelShort(m)}
+              </button>
+            ))}
+          </div>
+          <input type="hidden" name="expectedCloseMonth" value={month} />
         </div>
 
         {showMore ? (

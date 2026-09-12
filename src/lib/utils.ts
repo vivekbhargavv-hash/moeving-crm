@@ -43,6 +43,14 @@ export function monthLabel(key: string) {
   return date.toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
 }
 
+/** "2026-09" -> "Sep-26" — how the team writes a closing month. */
+export function monthLabelShort(key: string) {
+  const [y, m] = key.split("-").map(Number);
+  const date = new Date(Date.UTC(y!, m! - 1, 1));
+  const month = date.toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
+  return `${month}-${String(y!).slice(2)}`;
+}
+
 export function monthLabelLong(key: string) {
   const [y, m] = key.split("-").map(Number);
   const date = new Date(Date.UTC(y!, m! - 1, 1));

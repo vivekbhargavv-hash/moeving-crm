@@ -103,14 +103,12 @@ export const CHARGING_SCOPE_LABEL = Object.fromEntries(
 ) as Record<string, string>;
 
 export const SEED_CITIES = [
-  "Bangalore",
-  "Chennai",
-  "Hyderabad",
   "Delhi NCR",
+  "Bangalore",
+  "Hyderabad",
   "Mumbai",
   "Pune",
   "Kolkata",
-  "Ahmedabad",
 ];
 
 export const SEED_VEHICLE_TYPES = ["1 Tonne", "1.7 Tonne", "Ultra E7", "Ultra E9"];

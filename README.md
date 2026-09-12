@@ -25,7 +25,8 @@ Add `-- --demo` to the seed for ~36 sample deals to click around in:
 Neon's SQL Editor instead. It creates the schema, the MoEVing organization, all
 master data and the first admin in one go, and is safe to run twice.
 `scripts/apply-migration.mjs` does the same over Neon's HTTPS endpoint when only
-443 is open.
+443 is open. `drizzle/demo-data.sql` then fills the pipeline with 36 sample
+deals; its last comment block removes them again when the real data arrives.
 
 ### Adding the team
 

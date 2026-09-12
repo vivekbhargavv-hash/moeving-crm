@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronDown, Search, Truck, Users } from "lucide-react";
+import { ChevronDown, LayoutGrid, Rows3, Search, Truck, Users } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
+import { PipelineTable } from "@/components/pipeline/table";
 import { StageChanger, type StageTarget } from "@/components/stage-changer";
 import { Badge, EmptyState, Select } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
@@ -11,6 +12,8 @@ import { STAGES, STAGE_MAP } from "@/lib/constants";
 import { cn, formatDate, daysUntil, inrCompact, num } from "@/lib/utils";
 import { changeStage } from "@/server/actions";
 import type { OpportunityCard } from "@/server/queries";
+
+const VIEW_KEY = "moeving:pipeline-view";
 
 type Props = {
   opportunities: OpportunityCard[];
@@ -29,7 +32,27 @@ export function PipelineBoard({
   const [query, setQuery] = React.useState("");
   const [owner, setOwner] = React.useState("all");
   const [target, setTarget] = React.useState<StageTarget | null>(null);
+  const [view, setView] = React.useState<"board" | "table">("board");
   const tabsRef = React.useRef<HTMLDivElement>(null);
+
+  // The chosen view is a per-person habit, so it survives a reload.
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_KEY);
+      if (saved === "table" || saved === "board") setView(saved);
+    } catch {
+      /* private mode — the default is fine */
+    }
+  }, []);
+
+  function chooseView(next: "board" | "table") {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      /* ignored */
+    }
+  }
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -92,6 +115,27 @@ export function PipelineBoard({
             className="h-11 w-full rounded-xl border border-line bg-white pl-9 pr-3 text-[15px] placeholder:text-muted/70 focus:border-brand focus:outline-none"
           />
         </div>
+        <div className="flex h-11 shrink-0 rounded-xl border border-line bg-white p-1">
+          {([
+            ["board", LayoutGrid, "Board"],
+            ["table", Rows3, "Table"],
+          ] as const).map(([key, Icon, label]) => (
+            <button
+              key={key}
+              onClick={() => chooseView(key)}
+              aria-label={`${label} view`}
+              aria-pressed={view === key}
+              title={`${label} view`}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium transition",
+                view === key ? "bg-ink text-white" : "text-muted",
+              )}
+            >
+              <Icon size={16} />
+              <span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
+        </div>
         <Select
           value={owner}
           onChange={(e) => setOwner(e.target.value)}
@@ -107,8 +151,12 @@ export function PipelineBoard({
         </Select>
       </div>
 
+      {view === "table" ? (
+        <PipelineTable opportunities={filtered} onStageTap={setTarget} />
+      ) : null}
+
       {/* ---------------------------------------------------------- mobile */}
-      <div className="md:hidden">
+      <div className={cn("md:hidden", view === "table" && "hidden")}>
         <div
           ref={tabsRef}
           className="no-scrollbar -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1"
@@ -162,7 +210,7 @@ export function PipelineBoard({
       </div>
 
       {/* --------------------------------------------------------- desktop */}
-      <div className="hidden md:block">
+      <div className={cn("hidden md:block", view === "table" && "md:hidden")}>
         <div className="no-scrollbar flex gap-4 overflow-x-auto pb-4">
           {STAGES.map((s) => {
             const list = byStage.get(s.value) ?? [];

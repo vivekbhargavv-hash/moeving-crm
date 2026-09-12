@@ -29,7 +29,11 @@ export type OpportunityCard = {
   fleetSize: number;
   price: number | null;
   value: number;
+  driverType: string | null;
+  chargingScope: string | null;
+  totalCost: number | null;
   expectedCloseDate: string | null;
+  updatedAt: Date;
   ownerName: string;
   ownerId: string;
 };
@@ -71,7 +75,11 @@ const cardColumns = {
   vehicleTypeId: opportunities.vehicleTypeId,
   fleetSize: opportunities.fleetSize,
   price: opportunities.price,
+  driverType: opportunities.driverType,
+  chargingScope: opportunities.chargingScope,
+  totalCost: opportunities.totalCost,
   expectedCloseDate: opportunities.expectedCloseDate,
+  updatedAt: opportunities.updatedAt,
   ownerName: users.name,
   ownerId: opportunities.ownerUserId,
 };

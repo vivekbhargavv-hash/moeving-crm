@@ -1,17 +1,10 @@
 "use client";
 
-import {
-  BatteryCharging,
-  Pencil,
-  Plug,
-  Repeat,
-  User,
-  UserPlus,
-  Users,
-} from "lucide-react";
+import { Pencil, Repeat } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
+import { CHARGING_ICONS, DRIVER_ICONS } from "@/components/choice-icons";
 import type { MasterData } from "@/components/quick-add";
 import { StageChanger, type StageTarget } from "@/components/stage-changer";
 import {
@@ -29,16 +22,6 @@ import { monthLabelShort, upcomingMonths } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { updateOpportunity } from "@/server/actions";
 
-const DRIVER_ICONS: Record<string, React.ReactNode> = {
-  driver_only: <User size={22} />,
-  driver_plus_helper: <Users size={22} />,
-  driver_cum_helper: <UserPlus size={22} />,
-};
-
-const CHARGING_ICONS: Record<string, React.ReactNode> = {
-  client: <Plug size={22} />,
-  moeving: <BatteryCharging size={22} />,
-};
 
 type Editable = {
   id: string;

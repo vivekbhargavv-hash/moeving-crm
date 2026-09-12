@@ -47,7 +47,10 @@ export function monthLabel(key: string) {
 export function monthLabelShort(key: string) {
   const [y, m] = key.split("-").map(Number);
   const date = new Date(Date.UTC(y!, m! - 1, 1));
-  const month = date.toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
+  // en-IN renders September as "Sept"; the team writes three letters.
+  const month = date
+    .toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" })
+    .slice(0, 3);
   return `${month}-${String(y!).slice(2)}`;
 }
 

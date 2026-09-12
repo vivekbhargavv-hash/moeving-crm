@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  BatteryCharging,
-  Check,
-  Plug,
-  Truck,
-  User,
-  UserPlus,
-  Users,
-} from "lucide-react";
+import { Check, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
@@ -21,6 +13,7 @@ import {
   Sheet,
   Textarea,
 } from "@/components/ui";
+import { CHARGING_ICONS, DRIVER_ICONS } from "@/components/choice-icons";
 import { CHARGING_SCOPES, DRIVER_TYPES } from "@/lib/constants";
 import {
   cn,
@@ -58,16 +51,6 @@ function readPrefs(): Prefs {
   }
 }
 
-const DRIVER_ICONS: Record<string, React.ReactNode> = {
-  driver_only: <User size={22} />,
-  driver_plus_helper: <Users size={22} />,
-  driver_cum_helper: <UserPlus size={22} />,
-};
-
-const CHARGING_ICONS: Record<string, React.ReactNode> = {
-  client: <Plug size={22} />,
-  moeving: <BatteryCharging size={22} />,
-};
 
 export function QuickAdd({
   open,

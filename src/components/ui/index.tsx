@@ -273,7 +273,12 @@ export function ChoiceGroup({
                   : "border-line bg-white text-muted hover:bg-canvas",
               )}
             >
-              <span className={selected ? "text-brand-ink" : "text-muted"}>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1",
+                  selected ? "text-brand-ink" : "text-muted",
+                )}
+              >
                 {o.icon}
               </span>
               <span className="text-[12px] font-medium leading-tight">{o.label}</span>

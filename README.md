@@ -41,6 +41,32 @@ Push to GitHub, import the repo in Vercel, set the same environment variables,
 deploy. `npm run db:push` against the production `DATABASE_URL` applies the
 schema. On a phone: open the URL → Share → Add to Home Screen.
 
+### Switching Clerk to production keys
+
+A Clerk **production** instance serves its Frontend API from a subdomain of
+*your* domain — `clerk.yourdomain.com` — which it reaches by CNAME records you
+add to that domain's DNS. That rules out `*.vercel.app`: it is Vercel's domain,
+not yours, so there is nowhere to put the records. `pk_live_…` keys on a
+vercel.app URL fail, because the host baked into the key answers from Vercel's
+edge instead of Clerk's API.
+
+So a custom domain comes first:
+
+1. Vercel → project → Domains → add e.g. `crm.moeving.com`, and add the CNAME
+   Vercel gives you to your DNS.
+2. Clerk → production instance → set the domain to `crm.moeving.com`, then add
+   Clerk's CNAME records (`clerk`, `accounts`, `clkmail`, and two DKIM records)
+   to the same DNS. Wait for Clerk to verify them.
+3. Only then swap `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` in
+   Vercel for the `pk_live_` / `sk_live_` pair, and redeploy.
+4. Set sign-up to **restricted** in Clerk so nobody can self-register, and
+   re-create the admin user — a production instance has its own user store, so
+   accounts do not carry over from development. The matching CRM row already
+   exists and links on first sign-in.
+
+Until the domain is ready, development keys are the right choice: they work on
+the vercel.app URL and are fine for a pilot of ten people.
+
 ---
 
 ## How it is put together

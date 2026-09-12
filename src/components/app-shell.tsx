@@ -18,10 +18,20 @@ import type { Session } from "@/server/auth";
 import { cn } from "@/lib/utils";
 
 const NAV = [
+  { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
   { href: "/forecast", label: "Forecast", icon: CalendarRange },
-  { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
 ];
+
+/** Page titles for the mobile header, so it never says "MoEVing" vaguely. */
+const TITLES: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/pipeline": "Pipeline",
+  "/forecast": "Forecast",
+  "/opportunities": "Deal",
+  "/admin/users": "Users",
+  "/admin/master-data": "Master data",
+};
 
 export function AppShell({
   session,
@@ -63,10 +73,14 @@ export function AppShell({
     ? [...NAV, { href: "/admin/users", label: "Admin", icon: Settings }]
     : NAV;
 
+  const title =
+    Object.entries(TITLES).find(([href]) => pathname.startsWith(href))?.[1] ??
+    "Good Deal";
+
   return (
     <div className="min-h-dvh md:flex">
       {/* Desktop rail */}
-      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-line bg-white px-3 py-5">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-white px-3 py-5 md:flex">
         <div className="px-3 pb-6">
           <p className="text-[17px] font-semibold tracking-tight">Good Deal</p>
           <p className="text-xs text-muted">MoEVing sales</p>
@@ -93,7 +107,7 @@ export function AppShell({
         </nav>
         <button
           onClick={() => setAddOpen(true)}
-          className="mt-4 flex h-11 items-center justify-center gap-2 rounded-xl bg-ink font-medium text-white hover:bg-ink/90"
+          className="mt-4 flex h-11 items-center justify-center gap-2 rounded-xl bg-brand font-medium text-white hover:brightness-95"
         >
           <Plus size={18} /> New deal
         </button>
@@ -101,46 +115,60 @@ export function AppShell({
           <UserButton />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{session.name}</p>
-            <p className="truncate text-xs capitalize text-muted">{session.role}</p>
+            <p className="truncate text-xs text-muted">
+              {session.role === "admin" ? "Admin" : "Deal Owner"}
+            </p>
           </div>
         </div>
       </aside>
 
-      <div className="flex-1 min-w-0 pb-24 md:pb-0">
-        {/* Mobile top bar */}
-        <header className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b border-line bg-white/90 px-4 py-3 backdrop-blur">
-          <p className="text-[17px] font-semibold tracking-tight">
-            {nav.find((n) => pathname.startsWith(n.href))?.label ?? "Good Deal"}
-          </p>
-          <UserButton />
+      <div className="min-w-0 flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
+        {/* Mobile header: one line, the page you are on, and you. */}
+        <header className="sticky top-0 z-30 border-b border-line bg-white/85 backdrop-blur-xl md:hidden">
+          <div className="flex items-center justify-between px-4 pb-2.5 pt-3">
+            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{title}</h1>
+            <div className="flex items-center gap-2">
+              {session.role === "admin" ? (
+                <Link
+                  href="/admin/users"
+                  aria-label="Admin"
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-muted active:bg-canvas"
+                >
+                  <Settings size={19} />
+                </Link>
+              ) : null}
+              <UserButton />
+            </div>
+          </div>
         </header>
 
-        <main className="mx-auto w-full max-w-6xl px-4 py-4 md:px-8 md:py-8">
+        <main className="mx-auto w-full max-w-6xl px-4 py-3 md:px-8 md:py-8">
           {children}
         </main>
       </div>
 
-      {/* Mobile bottom nav + FAB */}
-      <nav className="md:hidden fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 backdrop-blur safe-bottom">
-        <div className="mx-auto grid max-w-md grid-cols-4 items-center">
-          {nav.slice(0, 2).map((item) => (
+      {/* Mobile tab bar: Dashboard, Pipeline, Forecast, Add. */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/92 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-4">
+          {NAV.map((item) => (
             <NavTab key={item.href} {...item} pathname={pathname} />
           ))}
           <button
             onClick={() => setAddOpen(true)}
-            aria-label="New deal"
-            className="mx-auto -mt-6 flex h-14 w-14 items-center justify-center rounded-full bg-ink text-white shadow-lg shadow-ink/25 active:scale-95 transition"
+            className="flex flex-col items-center gap-1 py-2 text-[11px] font-semibold text-brand-ink active:opacity-70"
           >
-            <Plus size={26} strokeWidth={2.5} />
+            <span className="flex h-7 w-12 items-center justify-center rounded-full bg-brand text-white shadow-sm shadow-brand/30">
+              <Plus size={20} strokeWidth={2.6} />
+            </span>
+            Add deal
           </button>
-          <NavTab {...nav[2]!} pathname={pathname} />
         </div>
       </nav>
 
       {toast ? (
         <div
           role="status"
-          className="fixed inset-x-0 top-3 z-50 mx-auto w-fit max-w-[92vw] rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+          className="fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-50 mx-auto w-fit max-w-[92vw] rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white shadow-lg"
         >
           {toast}
         </div>
@@ -171,12 +199,20 @@ function NavTab({
   return (
     <Link
       href={href}
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition",
+        "flex flex-col items-center gap-1 py-2 text-[11px] font-medium transition active:opacity-70",
         active ? "text-brand-ink" : "text-muted",
       )}
     >
-      <Icon size={22} strokeWidth={active ? 2.4 : 2} />
+      <span
+        className={cn(
+          "flex h-7 w-12 items-center justify-center rounded-full transition",
+          active && "bg-brand-soft",
+        )}
+      >
+        <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+      </span>
       {label}
     </Link>
   );

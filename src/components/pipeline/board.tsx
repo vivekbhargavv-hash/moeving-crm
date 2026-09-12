@@ -1,16 +1,24 @@
 "use client";
 
-import { ChevronDown, LayoutGrid, Rows3, Search, Truck, Users } from "lucide-react";
+import {
+  ChevronRight,
+  LayoutGrid,
+  ListFilter,
+  Rows3,
+  Search,
+  Truck,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { PipelineTable } from "@/components/pipeline/table";
+import { PipelineList } from "@/components/pipeline/table";
 import { StageChanger, type StageTarget } from "@/components/stage-changer";
-import { Badge, EmptyState, Select } from "@/components/ui";
+import { Avatar, Badge, EmptyState, Select } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
-import { cn, formatDate, daysUntil, inrCompact, num } from "@/lib/utils";
+import { cn, daysUntil, formatDate, inrCompact, num } from "@/lib/utils";
 import { changeStage } from "@/server/actions";
 import type { OpportunityCard } from "@/server/queries";
 
@@ -33,7 +41,8 @@ export function PipelineBoard({
   const [query, setQuery] = React.useState("");
   const [owner, setOwner] = React.useState("all");
   const [target, setTarget] = React.useState<StageTarget | null>(null);
-  const [view, setView] = React.useState<"board" | "table">("board");
+  const [view, setView] = React.useState<"board" | "list">("board");
+  const [searching, setSearching] = React.useState(false);
   const router = useRouter();
   const tabsRef = React.useRef<HTMLDivElement>(null);
 
@@ -41,13 +50,13 @@ export function PipelineBoard({
   React.useEffect(() => {
     try {
       const saved = localStorage.getItem(VIEW_KEY);
-      if (saved === "table" || saved === "board") setView(saved);
+      if (saved === "list" || saved === "board") setView(saved);
     } catch {
       /* private mode — the default is fine */
     }
   }, []);
 
-  function chooseView(next: "board" | "table") {
+  function chooseView(next: "board" | "list") {
     setView(next);
     try {
       localStorage.setItem(VIEW_KEY, next);
@@ -101,10 +110,111 @@ export function PipelineBoard({
     el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [stageIndex]);
 
+  const ownerLabel =
+    owner === "all"
+      ? "All owners"
+      : owner === "mine"
+        ? "My deals"
+        : (owners.find((o) => o.id === owner)?.name ?? "All owners");
+
   return (
     <div>
-      {/* Filters */}
-      <div className="mb-4 flex gap-2">
+      {/* ------------------------------------------------ mobile controls */}
+      <div className="mb-3 md:hidden">
+        {searching ? (
+          <div className="relative mb-2">
+            <Search
+              size={17}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
+            />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Customer or city"
+              className="h-12 w-full rounded-2xl border border-line bg-white pl-10 pr-11 text-[16px] placeholder:text-muted/70 focus:border-brand focus:outline-none"
+            />
+            <button
+              onClick={() => {
+                setQuery("");
+                setSearching(false);
+              }}
+              aria-label="Close search"
+              className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-muted active:bg-canvas"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        ) : null}
+
+        <div className="flex items-center gap-2">
+          <div className="flex h-12 flex-1 rounded-2xl border border-line bg-white p-[3px]">
+            {(
+              [
+                ["board", LayoutGrid, "Board"],
+                ["list", Rows3, "List"],
+              ] as const
+            ).map(([key, Icon, label]) => (
+              <button
+                key={key}
+                onClick={() => chooseView(key)}
+                aria-pressed={view === key}
+                className={cn(
+                  "flex h-full flex-1 items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold transition",
+                  view === key ? "bg-ink text-white" : "text-muted",
+                )}
+              >
+                <Icon size={15} />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {!searching ? (
+            <button
+              onClick={() => setSearching(true)}
+              aria-label="Search deals"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-line bg-white text-muted active:bg-canvas"
+            >
+              <Search size={18} />
+            </button>
+          ) : null}
+
+          <div className="relative">
+            <select
+              value={owner}
+              onChange={(e) => setOwner(e.target.value)}
+              aria-label="Filter by deal owner"
+              className={cn(
+                "h-12 appearance-none rounded-2xl border bg-white pl-9 pr-3 text-[13px] font-semibold focus:outline-none",
+                owner === "all"
+                  ? "border-line text-muted"
+                  : "border-brand bg-brand-soft text-brand-ink",
+              )}
+            >
+              <option value="all">All owners</option>
+              <option value="mine">My deals</option>
+              {owners.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+            <ListFilter
+              size={16}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-current opacity-70"
+            />
+          </div>
+        </div>
+        {owner !== "all" ? (
+          <p className="mt-2 px-1 text-[12px] text-muted">
+            Showing {ownerLabel} · {filtered.length} deals
+          </p>
+        ) : null}
+      </div>
+
+      {/* ----------------------------------------------- desktop controls */}
+      <div className="mb-4 hidden gap-2 md:flex">
         <div className="relative flex-1">
           <Search
             size={16}
@@ -118,23 +228,23 @@ export function PipelineBoard({
           />
         </div>
         <div className="flex h-11 shrink-0 rounded-xl border border-line bg-white p-1">
-          {([
-            ["board", LayoutGrid, "Board"],
-            ["table", Rows3, "Table"],
-          ] as const).map(([key, Icon, label]) => (
+          {(
+            [
+              ["board", LayoutGrid, "Board"],
+              ["list", Rows3, "Table"],
+            ] as const
+          ).map(([key, Icon, label]) => (
             <button
               key={key}
               onClick={() => chooseView(key)}
-              aria-label={`${label} view`}
               aria-pressed={view === key}
-              title={`${label} view`}
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium transition",
                 view === key ? "bg-ink text-white" : "text-muted",
               )}
             >
               <Icon size={16} />
-              <span className="hidden sm:inline">{label}</span>
+              {label}
             </button>
           ))}
         </div>
@@ -143,7 +253,7 @@ export function PipelineBoard({
           onChange={(e) => setOwner(e.target.value)}
           className="h-11 w-36 shrink-0"
         >
-          <option value="all">Everyone</option>
+          <option value="all">All owners</option>
           <option value="mine">My deals</option>
           {owners.map((o) => (
             <option key={o.id} value={o.id}>
@@ -153,12 +263,12 @@ export function PipelineBoard({
         </Select>
       </div>
 
-      {view === "table" ? (
-        <PipelineTable opportunities={filtered} onStageTap={setTarget} />
+      {view === "list" ? (
+        <PipelineList opportunities={filtered} onStageTap={setTarget} />
       ) : null}
 
-      {/* ---------------------------------------------------------- mobile */}
-      <div className={cn("md:hidden", view === "table" && "hidden")}>
+      {/* ---------------------------------------------------- mobile board */}
+      <div className={cn("md:hidden", view === "list" && "hidden")}>
         <div
           ref={tabsRef}
           className="no-scrollbar -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1"
@@ -171,12 +281,13 @@ export function PipelineBoard({
                 key={s.value}
                 onClick={() => setStageIndex(i)}
                 className={cn(
-                  "flex h-9 shrink-0 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition",
+                  "flex h-10 shrink-0 items-center gap-2 rounded-full border px-4 text-[13px] font-semibold transition",
                   active
-                    ? "border-ink bg-ink text-white"
+                    ? "border-transparent bg-ink text-white"
                     : "border-line bg-white text-muted",
                 )}
               >
+                <span className={cn("h-2 w-2 rounded-full", s.dot)} />
                 {s.label}
                 <span
                   className={cn(
@@ -191,7 +302,7 @@ export function PipelineBoard({
           })}
         </div>
 
-        <StageSummary list={activeList} />
+        <StageSummary list={activeList} stage={activeStage.value} />
 
         <div
           className="space-y-2.5"
@@ -201,7 +312,7 @@ export function PipelineBoard({
           {activeList.length === 0 ? (
             <EmptyState
               title={`Nothing in ${activeStage.label}`}
-              body="Swipe left or right to see another stage, or tap + to add a deal."
+              body="Swipe left or right for another stage, or tap Add deal."
             />
           ) : (
             activeList.map((o) => (
@@ -211,8 +322,8 @@ export function PipelineBoard({
         </div>
       </div>
 
-      {/* --------------------------------------------------------- desktop */}
-      <div className={cn("hidden md:block", view === "table" && "md:hidden")}>
+      {/* --------------------------------------------------- desktop board */}
+      <div className={cn("hidden md:block", view === "list" && "md:hidden")}>
         <div className="no-scrollbar flex gap-4 overflow-x-auto pb-4">
           {STAGES.map((s) => {
             const list = byStage.get(s.value) ?? [];
@@ -254,17 +365,12 @@ export function PipelineBoard({
                     {fleet ? `${fleet} veh` : ""}
                   </span>
                 </div>
-                <p className="px-2 pb-2 tabular text-xs text-muted">
+                <p className="tabular px-2 pb-2 text-xs text-muted">
                   {value ? inrCompact(value) + " / mo" : "—"}
                 </p>
                 <div className="flex flex-col gap-2">
                   {list.map((o) => (
-                    <DealCard
-                      key={o.id}
-                      opp={o}
-                      onStageTap={setTarget}
-                      draggable
-                    />
+                    <DealCard key={o.id} opp={o} onStageTap={setTarget} draggable />
                   ))}
                 </div>
               </div>
@@ -282,15 +388,27 @@ export function PipelineBoard({
   );
 }
 
-function StageSummary({ list }: { list: OpportunityCard[] }) {
+function StageSummary({
+  list,
+  stage,
+}: {
+  list: OpportunityCard[];
+  stage: SalesStage;
+}) {
   const value = list.reduce((s, o) => s + o.value, 0);
   const fleet = list.reduce((s, o) => s + o.fleetSize, 0);
   if (!list.length) return null;
+  const meta = STAGE_MAP[stage];
   return (
-    <div className="mb-3 flex items-center gap-4 px-1 text-sm">
-      <span className="tabular font-semibold">{inrCompact(value)}</span>
-      <span className="text-muted">/ month</span>
-      <span className="ml-auto tabular text-muted">{num(fleet)} vehicles</span>
+    <div
+      className={cn(
+        "mb-3 flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[13px]",
+        meta.chip,
+      )}
+    >
+      <span className="tabular text-[17px] font-bold">{inrCompact(value)}</span>
+      <span className="opacity-80">/ month</span>
+      <span className="tabular ml-auto font-semibold">{num(fleet)} vehicles</span>
     </div>
   );
 }
@@ -320,6 +438,7 @@ function DealCard({
   const stage = STAGE_MAP[opp.stage];
   const due = daysUntil(opp.expectedCloseDate);
   const overdue = due !== null && due < 0 && stage.open;
+  const soon = due !== null && due >= 0 && due <= 14 && stage.open;
 
   return (
     <div
@@ -328,32 +447,49 @@ function DealCard({
         e.dataTransfer.setData("text/opp", opp.id);
         e.dataTransfer.setData("text/stage", opp.stage);
       }}
-      className="rounded-[14px] border border-line bg-white p-3.5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition active:scale-[0.995]"
+      className="relative overflow-hidden rounded-2xl border border-line bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition active:scale-[0.995]"
     >
-      <Link href={`/opportunities/${opp.id}`} className="block">
+      {/* Stage as a colour stripe: readable before a single word is. */}
+      <span className={cn("absolute inset-y-0 left-0 w-1", stage.dot)} />
+
+      <Link href={`/opportunities/${opp.id}`} className="block pl-4 pr-3.5 pt-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold leading-tight">
+            <p className="truncate text-[16px] font-semibold leading-tight">
               {opp.accountName}
             </p>
-            <p className="mt-0.5 truncate text-[13px] text-muted">
+            <p className="mt-1 truncate text-[13px] text-muted">
               {opp.city ?? "No city"}
               {dealLabel(opp) ? ` · ${dealLabel(opp)}` : ""}
             </p>
           </div>
-          <p className="tabular shrink-0 text-[15px] font-semibold">
-            {opp.value ? inrCompact(opp.value) : "—"}
-          </p>
+          <div className="shrink-0 text-right">
+            <p className="tabular text-[17px] font-bold leading-tight">
+              {opp.value ? inrCompact(opp.value) : "—"}
+            </p>
+            <p className="text-[11px] text-muted">per month</p>
+          </div>
         </div>
 
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted">
-          <span className="inline-flex items-center gap-1">
-            <Truck size={14} /> {opp.fleetSize} × {opp.vehicleType ?? "—"}
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-muted">
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-canvas px-2 py-1 font-medium text-ink">
+            <Truck size={14} className="text-muted" />
+            {opp.fleetSize} × {opp.vehicleType ?? "—"}
           </span>
-          <span className="inline-flex items-center gap-1">
-            <Users size={14} /> {opp.ownerName.split(" ")[0]}
+          <span className="inline-flex items-center gap-1.5">
+            <Avatar name={opp.ownerName} className="h-5 w-5 text-[9px]" />
+            {opp.ownerName.split(" ")[0]}
           </span>
-          <span className={cn("ml-auto tabular", overdue && "text-rose-600 font-medium")}>
+          <span
+            className={cn(
+              "tabular ml-auto rounded-lg px-2 py-1 font-medium",
+              overdue
+                ? "bg-rose-50 text-rose-700"
+                : soon
+                  ? "bg-amber-50 text-amber-800"
+                  : "text-muted",
+            )}
+          >
             {formatDate(opp.expectedCloseDate)}
           </span>
         </div>
@@ -370,11 +506,13 @@ function DealCard({
             fleetSize: opp.fleetSize,
           })
         }
-        className="mt-3 flex w-full items-center justify-between rounded-lg border border-line px-2.5 py-2 transition active:bg-canvas"
+        className="mt-3 flex w-full items-center justify-between border-t border-line py-3 pl-4 pr-3.5 text-left transition active:bg-canvas"
       >
-        <Badge className={stage.chip}>{stage.label}</Badge>
-        <span className="flex items-center gap-1 text-[12px] font-medium text-muted">
-          Move <ChevronDown size={14} />
+        <Badge className={cn(stage.chip, "px-2.5 py-1 text-[12px]")}>
+          {stage.label}
+        </Badge>
+        <span className="flex items-center gap-0.5 text-[13px] font-semibold text-brand-ink">
+          Move stage <ChevronRight size={15} />
         </span>
       </button>
     </div>

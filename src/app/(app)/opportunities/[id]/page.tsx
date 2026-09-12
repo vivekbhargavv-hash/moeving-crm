@@ -11,7 +11,7 @@ import {
   DRIVER_TYPE_LABEL,
   STAGE_MAP,
 } from "@/lib/constants";
-import { cn, formatDate, inr, num } from "@/lib/utils";
+import { cn, formatDate, inr, inrCompact, num } from "@/lib/utils";
 import { requireSession } from "@/server/auth";
 import { getMasterData, getOpportunity } from "@/server/queries";
 
@@ -39,31 +39,30 @@ export default async function OpportunityPage({
     <div className="mx-auto max-w-3xl">
       <Link
         href="/pipeline"
-        className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted"
+        className="mb-2 inline-flex h-9 items-center gap-1 pr-3 text-[15px] font-medium text-brand-ink active:opacity-70"
       >
-        <ArrowLeft size={16} /> Pipeline
+        <ArrowLeft size={18} /> Pipeline
       </Link>
 
-      <div className="mb-4">
-        <div className="flex items-start justify-between gap-4">
+      <div className={cn("mb-3 rounded-2xl border p-4", stage.chip, "border-transparent")}>
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold tracking-tight md:text-2xl">
+            <Badge className="bg-white/70 px-2.5 py-1 text-[12px]">
+              {stage.label}
+            </Badge>
+            <h1 className="mt-2 truncate text-[22px] font-bold tracking-[-0.02em]">
               {row.accountName}
             </h1>
-            <p className="truncate text-sm text-muted">
-              {opp.name !== row.accountName ? `${opp.name} · ` : ""}
+            <p className="mt-0.5 truncate text-[13px] opacity-80">
               {row.city ?? "No city"} · {row.ownerName}
             </p>
           </div>
-          <div className="text-right">
-            <p className="tabular text-xl font-semibold">{inr(value)}</p>
-            <p className="text-xs text-muted">per month</p>
+          <div className="shrink-0 text-right">
+            <p className="tabular text-[22px] font-bold leading-none">
+              {inrCompact(value)}
+            </p>
+            <p className="mt-1 text-[11px] opacity-70">per month</p>
           </div>
-        </div>
-        <div className="mt-3">
-          <Badge className={cn(stage.chip, "px-2.5 py-1 text-[12px]")}>
-            {stage.label}
-          </Badge>
         </div>
       </div>
 
@@ -89,14 +88,14 @@ export default async function OpportunityPage({
         role={session.role}
       />
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
         <Card>
           <CardHeader title="Deal" />
           <dl className="px-4 pb-4 text-sm">
             <Row label="Customer" value={row.accountName} />
             <Row label="Opportunity" value={opp.name} />
             <Row label="City" value={row.city ?? "—"} />
-            <Row label="Sales SPOC" value={row.ownerName} />
+            <Row label="Deal Owner" value={row.ownerName} />
             <Row
               label="Expected closing"
               value={formatDate(opp.expectedCloseDate)}

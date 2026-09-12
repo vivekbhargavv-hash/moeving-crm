@@ -35,11 +35,11 @@ export default async function ForecastPage({
 
   return (
     <>
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
+      <div className="mb-3">
+        <h1 className="hidden text-2xl font-semibold tracking-tight md:block">
           Closure forecast
         </h1>
-        <p className="text-sm text-muted">
+        <p className="text-[13px] text-muted md:text-sm">
           Expected vehicles by city and closing month. Tap a number to drill in.
         </p>
       </div>

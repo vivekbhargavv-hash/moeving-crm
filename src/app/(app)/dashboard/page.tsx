@@ -29,8 +29,8 @@ export default async function DashboardPage({
 
   return (
     <>
-      <div className="mb-4">
-        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Dashboard</h1>
+      <div className="mb-3 hidden md:block">
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted">
           Open pipeline is a monthly run-rate: price per vehicle × fleet.
         </p>
@@ -45,42 +45,50 @@ export default async function DashboardPage({
         }}
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">
         <Tile
           label="Pipeline value"
           value={inrCompact(kpis.pipelineValue)}
           sub={`${kpis.openCount} open deals`}
+          tone="blue"
+          wide
         />
         <Tile
-          label="Weighted pipeline"
+          label="Weighted"
           value={inrCompact(kpis.weightedPipeline)}
-          sub="By stage probability"
-        />
-        <Tile
-          label="Closed won"
-          value={inrCompact(kpis.wonValue)}
-          sub={`${kpis.wonCount} deals · ${num(kpis.wonFleet)} vehicles`}
-          tone="good"
+          sub="By stage odds"
+          tone="violet"
         />
         <Tile
           label="Fleet in pipeline"
           value={num(kpis.fleetInPipeline)}
-          sub="Vehicles, open stages"
+          sub="Vehicles, open"
+          tone="slate"
+        />
+        <Tile
+          label="Closed won"
+          value={inrCompact(kpis.wonValue)}
+          sub={`${kpis.wonCount} deals · ${num(kpis.wonFleet)} veh`}
+          tone="green"
         />
         <Tile
           label="Win rate"
           value={kpis.winRate === null ? "—" : `${kpis.winRate}%`}
-          sub="Won ÷ (won + lost)"
+          sub="Won ÷ decided"
+          tone="amber"
         />
         <Tile
           label="Gross margin"
           value={inrCompact(kpis.grossMargin)}
-          sub={kpis.marginPct === null ? "On won deals" : `${kpis.marginPct}% of revenue`}
-          tone={kpis.grossMargin < 0 ? "bad" : "good"}
+          sub={
+            kpis.marginPct === null ? "On won deals" : `${kpis.marginPct}% of revenue`
+          }
+          tone={kpis.grossMargin < 0 ? "rose" : "green"}
+          wide
         />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <Card>
           <CardHeader title="Funnel" />
           <Funnel
@@ -94,9 +102,9 @@ export default async function DashboardPage({
         </Card>
 
         <Card>
-          <CardHeader title="Open pipeline by salesperson" />
+          <CardHeader title="Open pipeline by deal owner" />
           <BarList
-            data={data.bySalesperson.map((s) => ({
+            data={data.byOwner.map((s) => ({
               label: s.name,
               value: s.value,
               secondary: `${s.fleet} veh`,
@@ -131,32 +139,44 @@ export default async function DashboardPage({
   );
 }
 
+const TONES = {
+  blue: "bg-sky-50 text-sky-900 border-sky-100",
+  violet: "bg-violet-50 text-violet-900 border-violet-100",
+  green: "bg-emerald-50 text-emerald-900 border-emerald-100",
+  amber: "bg-amber-50 text-amber-900 border-amber-100",
+  rose: "bg-rose-50 text-rose-900 border-rose-100",
+  slate: "bg-slate-50 text-slate-900 border-slate-200",
+} as const;
+
 function Tile({
   label,
   value,
   sub,
-  tone,
+  tone = "slate",
+  wide,
 }: {
   label: string;
   value: string;
   sub: string;
-  tone?: "good" | "bad";
+  tone?: keyof typeof TONES;
+  /** Spans both columns on a phone, for the two numbers people look at first. */
+  wide?: boolean;
 }) {
   return (
-    <Card className="px-4 py-3.5">
-      <p className="text-[12px] font-medium uppercase tracking-wide text-muted">
+    <div
+      className={cn(
+        "rounded-2xl border px-4 py-3.5",
+        TONES[tone],
+        wide && "col-span-2 lg:col-span-1",
+      )}
+    >
+      <p className="text-[12px] font-semibold uppercase tracking-wide opacity-70">
         {label}
       </p>
-      <p
-        className={cn(
-          "tabular mt-1 text-[22px] font-semibold leading-tight tracking-tight md:text-[26px]",
-          tone === "good" && "text-emerald-700",
-          tone === "bad" && "text-rose-700",
-        )}
-      >
+      <p className="tabular mt-1 text-[26px] font-bold leading-none tracking-[-0.02em]">
         {value}
       </p>
-      <p className="mt-0.5 truncate text-[12px] text-muted">{sub}</p>
-    </Card>
+      <p className="mt-1.5 truncate text-[12px] opacity-70">{sub}</p>
+    </div>
   );
 }

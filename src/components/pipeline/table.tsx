@@ -4,6 +4,8 @@ import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
+import Link from "next/link";
+
 import type { StageTarget } from "@/components/stage-changer";
 import { Badge } from "@/components/ui-server";
 import {
@@ -42,17 +44,28 @@ const COLUMNS: {
   { key: "price", label: "Price / veh", align: "right" },
   { key: "value", label: "Value / mo", align: "right" },
   { key: "totalCost", label: "Total cost", align: "right", wide: true },
-  { key: "ownerName", label: "Sales SPOC", wide: true },
+  { key: "ownerName", label: "Deal Owner", wide: true },
   { key: "expectedCloseDate", label: "Expected close", align: "right" },
   { key: "updatedAt", label: "Updated", align: "right", wide: true },
 ];
 
+const MOBILE_SORTS: { key: SortKey; label: string }[] = [
+  { key: "expectedCloseDate", label: "Closing" },
+  { key: "value", label: "Value" },
+  { key: "fleetSize", label: "Fleet" },
+  { key: "accountName", label: "Customer" },
+  { key: "stage", label: "Stage" },
+];
+
 /**
- * The spreadsheet view — for the manager who wants every deal on one screen,
- * sorted by whatever they care about today. The board stays the default; this
- * is one tap away.
+ * Every deal in one flat, sortable view.
+ *
+ * On a phone this is a list, not a shrunken table: a frozen first column plus
+ * ten more on a 390px screen leaves a sliver for the data that matters. Each
+ * deal gets a full-width row instead, so nothing scrolls sideways. The real
+ * table appears from md up, where the width exists to justify it.
  */
-export function PipelineTable({
+export function PipelineList({
   opportunities,
   onStageTap,
 }: {
@@ -113,7 +126,7 @@ export function PipelineTable({
 
   if (!rows.length) {
     return (
-      <div className="rounded-[14px] border border-dashed border-line bg-white/60 px-6 py-12 text-center">
+      <div className="rounded-2xl border border-dashed border-line bg-white/60 px-6 py-12 text-center">
         <p className="font-semibold">No deals match</p>
         <p className="mt-1 text-sm text-muted">
           Clear the search or filter, or tap + to add one.
@@ -123,7 +136,105 @@ export function PipelineTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-[14px] border border-line bg-white">
+    <>
+      {/* ------------------------------------------------- mobile list */}
+      <div className="md:hidden">
+        <div className="no-scrollbar -mx-4 mb-3 flex items-center gap-2 overflow-x-auto px-4">
+          <span className="shrink-0 text-[12px] font-medium text-muted">Sort</span>
+          {MOBILE_SORTS.map((c) => {
+            const on = sort.key === c.key;
+            return (
+              <button
+                key={c.key}
+                onClick={() => toggle(c.key)}
+                className={cn(
+                  "flex h-9 shrink-0 items-center gap-1 rounded-full border px-3.5 text-[13px] font-semibold transition",
+                  on
+                    ? "border-transparent bg-ink text-white"
+                    : "border-line bg-white text-muted",
+                )}
+              >
+                {c.label}
+                {on ? (
+                  sort.desc ? (
+                    <ArrowDown size={13} />
+                  ) : (
+                    <ArrowUp size={13} />
+                  )
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mb-2 flex items-center gap-2 px-1 text-[13px]">
+          <span className="font-semibold">{rows.length} deals</span>
+          <span className="text-muted">· {num(totals.fleet)} vehicles</span>
+          <span className="tabular ml-auto font-semibold">
+            {inrCompact(totals.value)}
+            <span className="font-normal text-muted"> / mo</span>
+          </span>
+        </div>
+
+        <ul className="space-y-2">
+          {rows.map((o) => {
+            const stage = STAGE_MAP[o.stage];
+            return (
+              <li
+                key={o.id}
+                className="relative overflow-hidden rounded-2xl border border-line bg-white"
+              >
+                <span className={cn("absolute inset-y-0 left-0 w-1", stage.dot)} />
+                <Link href={`/opportunities/${o.id}`} className="block py-3 pl-4 pr-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="truncate text-[15px] font-semibold">
+                      {o.accountName}
+                    </p>
+                    <p className="tabular shrink-0 text-[15px] font-bold">
+                      {o.value ? inrCompact(o.value) : "—"}
+                    </p>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-2 text-[13px] text-muted">
+                    <span className="truncate">
+                      {o.city ?? "No city"} · {o.fleetSize} × {o.vehicleType ?? "—"}
+                    </span>
+                    <span className="tabular ml-auto shrink-0">
+                      {formatDate(o.expectedCloseDate)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onStageTap({
+                          id: o.id,
+                          name: o.accountName,
+                          stage: o.stage,
+                          value: o.value,
+                          price: o.price,
+                          fleetSize: o.fleetSize,
+                        });
+                      }}
+                      className="active:opacity-70"
+                    >
+                      <Badge className={cn(stage.chip, "px-2.5 py-1 text-[12px]")}>
+                        {stage.label}
+                      </Badge>
+                    </button>
+                    <span className="ml-auto text-[12px] text-muted">
+                      {o.ownerName.split(" ")[0]}
+                    </span>
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {/* ---------------------------------------------------- desktop table */}
+      <div className="hidden overflow-x-auto rounded-[14px] border border-line bg-white md:block">
       <table className="w-full min-w-[1080px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-line bg-canvas/60">
@@ -251,6 +362,7 @@ export function PipelineTable({
           </tr>
         </tfoot>
       </table>
-    </div>
+      </div>
+    </>
   );
 }

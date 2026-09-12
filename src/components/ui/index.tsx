@@ -234,7 +234,7 @@ export type ChoiceOption = {
 };
 
 /**
- * Big tappable tiles instead of a dropdown. A salesperson picking a driver
+ * Big tappable tiles instead of a dropdown. A deal owner picking a driver
  * arrangement should see the choices at a glance, not open a select and read.
  */
 export function ChoiceGroup({

@@ -188,7 +188,7 @@ export const opportunities = pgTable(
     price: integer("price"),
     expectedCloseDate: date("expected_close_date"),
 
-    /** Sales SPOC. */
+    /** Deal Owner — the person who owns this deal. */
     ownerUserId: uuid("owner_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),

@@ -32,6 +32,24 @@
     font-family: var(--font-sans);
     font-feature-settings: "cv02", "cv03", "cv04", "tnum" 0;
     overscroll-behavior-y: none;
+    /* Momentum scrolling and no accidental text selection on a long press:
+       the two things that most give away a website pretending to be an app. */
+    -webkit-overflow-scrolling: touch;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Anything readable stays selectable. */
+  input,
+  textarea,
+  p,
+  h1,
+  h2,
+  h3,
+  dd,
+  td {
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   /* Numbers in tables and tiles line up. */
@@ -42,6 +60,14 @@
   button,
   a {
     touch-action: manipulation;
+  }
+
+  /* A phone has no hover: only apply hover styling where one exists. */
+  @media (hover: none) {
+    .hover\:bg-canvas:hover,
+    .hover\:bg-white:hover {
+      background-color: inherit;
+    }
   }
 
   input,
@@ -60,6 +86,11 @@
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+@utility tap-target {
+  min-height: 44px;
+  min-width: 44px;
 }
 
 @utility card {

@@ -63,7 +63,7 @@ export function AdminUsers({ users }: { users: Row[] }) {
                   : "bg-slate-100 text-slate-700"
               }
             >
-              {u.role}
+              {u.role === "admin" ? "Admin" : "Deal Owner"}
             </Badge>
           </button>
         ))}
@@ -92,7 +92,7 @@ export function AdminUsers({ users }: { users: Row[] }) {
           </Field>
           <Field label="Role">
             <Select name="role" defaultValue={current?.role ?? "sales"}>
-              <option value="sales">Sales user</option>
+              <option value="sales">Deal Owner</option>
               <option value="admin">Admin</option>
             </Select>
           </Field>

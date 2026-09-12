@@ -272,7 +272,7 @@ export async function getDashboard(filters: OpportunityFilters = {}) {
       marginPct: wonRevenue ? Math.round((grossMargin / wonRevenue) * 100) : null,
     },
     funnel,
-    bySalesperson: groupBy("ownerName"),
+    byOwner: groupBy("ownerName"),
     byCity: groupBy("city"),
     byVehicleType: groupBy("vehicleType"),
   };

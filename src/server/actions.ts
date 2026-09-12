@@ -118,7 +118,7 @@ export async function createOpportunity(
   }
   const input = parsed.data;
 
-  // Sales users always own what they create; only an admin may assign.
+  // Deal owners always own what they create; only an admin may assign.
   const ownerUserId =
     session.role === "admin" && input.ownerUserId
       ? await assertOrgUser(session.organizationId, input.ownerUserId)
@@ -132,7 +132,7 @@ export async function createOpportunity(
 
   // One customer wanting trucks in three cities is three deals: they close on
   // their own timelines and belong to different city forecasts. The form lets
-  // a salesperson say that once instead of filling the sheet three times.
+  // a deal owner say that once instead of filling the sheet three times.
   const cityIds = formData
     .getAll("cityIds")
     .filter((v): v is string => typeof v === "string" && v !== "");

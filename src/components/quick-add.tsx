@@ -333,7 +333,7 @@ export function QuickAdd({
               <Input name="name" placeholder="Optional" />
             </Field>
             {session.role === "admin" ? (
-              <Field label="Sales SPOC">
+              <Field label="Deal Owner">
                 <Select name="ownerUserId" defaultValue={session.userId}>
                   {master.users.map((u) => (
                     <option key={u.id} value={u.id}>

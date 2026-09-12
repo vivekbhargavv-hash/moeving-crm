@@ -84,21 +84,21 @@ export function ForecastGrid({
       <FilterBar filters={filters} options={options} metric={metric} setMetric={setMetric} />
 
       <div className="overflow-x-auto rounded-[14px] border border-line bg-white">
-        <table className="w-full min-w-[520px] border-collapse text-sm">
+        <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-line">
-              <th className="sticky left-0 z-10 bg-white px-4 py-3 text-left text-[13px] font-semibold uppercase tracking-wide text-muted">
+              <th className="sticky left-0 z-10 bg-white py-2.5 pl-3 pr-1 text-left text-[12px] font-semibold uppercase tracking-wide text-muted">
                 City
               </th>
               {months.map((m) => (
                 <th
                   key={m}
-                  className="px-2 py-3 text-center text-[13px] font-semibold uppercase tracking-wide text-muted"
+                  className="px-1 py-2.5 text-center text-[12px] font-semibold uppercase tracking-wide text-muted"
                 >
                   {monthLabel(m)}
                 </th>
               ))}
-              <th className="px-3 py-3 text-right text-[13px] font-semibold uppercase tracking-wide text-muted">
+              <th className="hidden px-3 py-3 text-right text-[13px] font-semibold uppercase tracking-wide text-muted sm:table-cell">
                 Total
               </th>
             </tr>
@@ -106,7 +106,7 @@ export function ForecastGrid({
           <tbody>
             {rows.map((r) => (
               <tr key={r.key} className="border-b border-line last:border-0">
-                <th className="sticky left-0 z-10 bg-white px-4 py-2.5 text-left font-medium">
+                <th className="sticky left-0 z-10 bg-white py-2 pl-3 pr-2 text-left text-[13px] font-semibold">
                   {r.city}
                 </th>
                 {r.cells.map((c, i) => {
@@ -120,7 +120,7 @@ export function ForecastGrid({
                           setDrill({ city: r.city, cityId: r.cityId, month: months[i]! })
                         }
                         className={cn(
-                          "tabular h-11 w-full min-w-14 rounded-lg text-[15px] font-semibold transition",
+                          "tabular h-11 w-full min-w-[42px] rounded-lg text-[15px] font-semibold transition",
                           c.count
                             ? "hover:ring-2 hover:ring-brand/30"
                             : "cursor-default text-muted/40",
@@ -138,7 +138,7 @@ export function ForecastGrid({
                     </td>
                   );
                 })}
-                <td className="tabular px-3 py-2.5 text-right font-semibold">
+                <td className="tabular hidden py-2 pl-1 pr-3 text-right text-[13px] font-bold sm:table-cell">
                   {show(r.total)}
                 </td>
               </tr>
@@ -151,15 +151,15 @@ export function ForecastGrid({
               </tr>
             ) : (
               <tr className="bg-canvas">
-                <th className="sticky left-0 z-10 bg-canvas px-4 py-3 text-left text-[13px] font-semibold uppercase tracking-wide text-muted">
+                <th className="sticky left-0 z-10 bg-canvas py-2.5 pl-3 pr-1 text-left text-[12px] font-semibold uppercase tracking-wide text-muted">
                   Total
                 </th>
                 {monthTotals.map((t, i) => (
-                  <td key={months[i]} className="tabular px-2 py-3 text-center font-semibold">
+                  <td key={months[i]} className="tabular px-1 py-2.5 text-center text-[13px] font-semibold">
                     {show(t)}
                   </td>
                 ))}
-                <td className="tabular px-3 py-3 text-right font-bold">
+                <td className="tabular hidden py-2.5 pl-1 pr-3 text-right text-[13px] font-bold sm:table-cell">
                   {show(
                     monthTotals.reduce(
                       (a, c) => ({
@@ -273,13 +273,13 @@ function FilterBar({
 
   return (
     <div className="no-scrollbar mb-4 flex gap-2 overflow-x-auto pb-1">
-      <div className="flex h-11 shrink-0 rounded-xl border border-line bg-white p-1">
+      <div className="flex h-12 shrink-0 rounded-2xl border border-line bg-white p-[3px]">
         {(["fleet", "value"] as const).map((m) => (
           <button
             key={m}
             onClick={() => setMetric(m)}
             className={cn(
-              "rounded-lg px-3 text-sm font-medium transition",
+              "h-full rounded-xl px-3.5 text-[13px] font-semibold transition",
               metric === m ? "bg-ink text-white" : "text-muted",
             )}
           >
@@ -288,7 +288,7 @@ function FilterBar({
         ))}
       </div>
       <Select
-        className="h-11 w-36 shrink-0"
+        className="h-12 w-[7.5rem] shrink-0 rounded-2xl text-[13px] font-medium"
         value={filters.cityId ?? ""}
         onChange={(e) => setParam("city", e.target.value)}
       >
@@ -300,7 +300,7 @@ function FilterBar({
         ))}
       </Select>
       <Select
-        className="h-11 w-36 shrink-0"
+        className="h-12 w-[7.5rem] shrink-0 rounded-2xl text-[13px] font-medium"
         value={filters.vehicleTypeId ?? ""}
         onChange={(e) => setParam("vehicle", e.target.value)}
       >
@@ -312,11 +312,11 @@ function FilterBar({
         ))}
       </Select>
       <Select
-        className="h-11 w-36 shrink-0"
+        className="h-12 w-[7.5rem] shrink-0 rounded-2xl text-[13px] font-medium"
         value={filters.ownerUserId ?? ""}
         onChange={(e) => setParam("spoc", e.target.value)}
       >
-        <option value="">All SPOCs</option>
+        <option value="">All owners</option>
         {options.users.map((u) => (
           <option key={u.id} value={u.id}>
             {u.name}
@@ -324,7 +324,7 @@ function FilterBar({
         ))}
       </Select>
       <Select
-        className="h-11 w-36 shrink-0"
+        className="h-12 w-[7.5rem] shrink-0 rounded-2xl text-[13px] font-medium"
         value={filters.stage ?? ""}
         onChange={(e) => setParam("stage", e.target.value)}
       >

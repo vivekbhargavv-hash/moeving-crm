@@ -56,7 +56,7 @@ export function StageChanger({
     (sum, f) => sum + (Number(costs[f.key] || 0) || 0),
     0,
   );
-  // Everything the salesperson types is per vehicle per month; the deal-level
+  // Everything the deal owner types is per vehicle per month; the deal-level
   // numbers underneath are simply that times the fleet.
   const revenueNum = Number(revenue || 0);
   const margin = revenueNum - totalCost;

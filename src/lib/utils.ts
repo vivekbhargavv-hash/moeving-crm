@@ -40,7 +40,9 @@ function monthKey(d: Date | string) {
 export function monthLabel(key: string) {
   const [y, m] = key.split("-").map(Number);
   const date = new Date(Date.UTC(y!, m! - 1, 1));
-  return date.toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
+  return date
+    .toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" })
+    .slice(0, 3);
 }
 
 /** "2026-09" -> "Sep-26" — how the team writes a closing month. */
@@ -79,12 +81,12 @@ export function upcomingMonths(count: number, from = new Date()) {
 export function formatDate(value: string | Date | null | undefined) {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
-  return d.toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "2-digit",
-    timeZone: "UTC",
-  });
+  const day = d.toLocaleDateString("en-IN", { day: "numeric", timeZone: "UTC" });
+  const month = d
+    .toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" })
+    .slice(0, 3);
+  const year = d.toLocaleDateString("en-IN", { year: "2-digit", timeZone: "UTC" });
+  return `${day} ${month} ${year}`;
 }
 
 export function daysUntil(value: string | null | undefined) {

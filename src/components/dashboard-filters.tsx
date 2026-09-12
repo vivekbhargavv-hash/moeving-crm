@@ -24,11 +24,11 @@ export function DashboardFilters({
   return (
     <div className="no-scrollbar mb-4 flex gap-2 overflow-x-auto pb-1">
       <Select
-        className="h-11 w-36 shrink-0"
+        className="h-12 w-[7rem] shrink-0 rounded-2xl text-[13px] font-medium"
         value={filters.ownerUserId ?? ""}
         onChange={(e) => setParam("spoc", e.target.value)}
       >
-        <option value="">All SPOCs</option>
+        <option value="">All owners</option>
         {options.users.map((u) => (
           <option key={u.id} value={u.id}>
             {u.name}
@@ -36,7 +36,7 @@ export function DashboardFilters({
         ))}
       </Select>
       <Select
-        className="h-11 w-36 shrink-0"
+        className="h-12 w-[7rem] shrink-0 rounded-2xl text-[13px] font-medium"
         value={filters.cityId ?? ""}
         onChange={(e) => setParam("city", e.target.value)}
       >
@@ -48,7 +48,7 @@ export function DashboardFilters({
         ))}
       </Select>
       <Select
-        className="h-11 w-36 shrink-0"
+        className="h-12 w-[7rem] shrink-0 rounded-2xl text-[13px] font-medium"
         value={filters.vehicleTypeId ?? ""}
         onChange={(e) => setParam("vehicle", e.target.value)}
       >

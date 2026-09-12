@@ -94,6 +94,8 @@ export function DetailActions({
     <>
       <div className="flex gap-2">
         <Button
+          size="lg"
+          variant="brand"
           className="flex-1"
           onClick={() =>
             setStageTarget({
@@ -108,7 +110,12 @@ export function DetailActions({
         >
           <Repeat size={17} /> Move stage
         </Button>
-        <Button variant="secondary" className="flex-1" onClick={() => setEditing(true)}>
+        <Button
+          size="lg"
+          variant="secondary"
+          className="flex-1"
+          onClick={() => setEditing(true)}
+        >
           <Pencil size={17} /> Edit
         </Button>
       </div>
@@ -232,7 +239,7 @@ export function DetailActions({
             <input type="hidden" name="expectedCloseMonth" value={month} />
           </div>
           {role === "admin" ? (
-            <Field label="Sales SPOC">
+            <Field label="Deal Owner">
               <Select name="ownerUserId" defaultValue={opp.ownerUserId}>
                 {master.users.map((u) => (
                   <option key={u.id} value={u.id}>

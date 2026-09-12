@@ -2,6 +2,7 @@
 
 import {
   ChevronRight,
+  Download,
   LayoutGrid,
   ListFilter,
   Rows3,
@@ -180,6 +181,14 @@ export function PipelineBoard({
             </button>
           ) : null}
 
+          <a
+            href="/api/export/deals"
+            aria-label="Export deals to a spreadsheet"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-line bg-white text-muted active:bg-canvas"
+          >
+            <Download size={18} />
+          </a>
+
           <div className="relative">
             <select
               value={owner}
@@ -261,6 +270,12 @@ export function PipelineBoard({
             </option>
           ))}
         </Select>
+        <a
+          href="/api/export/deals"
+          className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-sm font-medium text-muted hover:bg-canvas"
+        >
+          <Download size={16} /> Export
+        </a>
       </div>
 
       {view === "list" ? (

@@ -74,8 +74,10 @@ export function AppShell({
     : NAV;
 
   const title =
-    Object.entries(TITLES).find(([href]) => pathname.startsWith(href))?.[1] ??
-    "Good Deal";
+    pathname.startsWith("/forecast") && params.get("tab") === "wins"
+      ? "Wins"
+      : (Object.entries(TITLES).find(([href]) => pathname.startsWith(href))?.[1] ??
+        "Good Deal");
 
   return (
     <div className="min-h-dvh md:flex">
@@ -155,10 +157,11 @@ export function AppShell({
           ))}
           <button
             onClick={() => setAddOpen(true)}
-            className="flex flex-col items-center gap-1 py-2 text-[11px] font-semibold text-brand-ink active:opacity-70"
+            aria-label="Add deal"
+            className="flex flex-col items-center gap-1 py-2 text-[11px] font-semibold text-brand-ink active:scale-95"
           >
-            <span className="flex h-7 w-12 items-center justify-center rounded-full bg-brand text-white shadow-sm shadow-brand/30">
-              <Plus size={20} strokeWidth={2.6} />
+            <span className="-mt-6 mb-0.5 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg shadow-brand/40 ring-4 ring-white">
+              <Plus size={28} strokeWidth={2.8} />
             </span>
             Add deal
           </button>

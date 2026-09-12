@@ -427,3 +427,122 @@ export async function getForecastDrilldown(
 
   return [...groups.values()].sort((a, b) => b.fleet - a.fleet);
 }
+
+/* -------------------------------------------------------------- won history */
+
+export type WinCell = { deals: number; fleet: number; value: number };
+
+/**
+ * Historic wins: who closed how much, in which month.
+ *
+ * Keyed on closed_at — the month the deal was actually won — not the expected
+ * closing date it carried while it was open, which is a forecast and often
+ * wrong by the time it lands.
+ */
+export async function getWins(months: string[], filters: OpportunityFilters = {}) {
+  const session = await requireSession();
+  const monthExpr = sql<string>`to_char(${opportunities.closedAt}, 'YYYY-MM')`;
+
+  const rows = await db
+    .select({
+      ownerId: opportunities.ownerUserId,
+      owner: users.name,
+      month: monthExpr.as("month"),
+      deals: sql<number>`count(*)::int`,
+      fleet: sql<number>`sum(${opportunities.fleetSize})::int`,
+      value: sql<number>`sum(coalesce(${opportunities.revenue}, ${opportunities.price}, 0) * ${opportunities.fleetSize})::int`,
+    })
+    .from(opportunities)
+    .innerJoin(users, eq(users.id, opportunities.ownerUserId))
+    .where(
+      and(
+        ...filterConditions(session.organizationId, session.userId, {
+          ...filters,
+          stage: undefined,
+          from: undefined,
+          to: undefined,
+        }),
+        eq(opportunities.stage, "closed_won"),
+        sql`${opportunities.closedAt} is not null`,
+      ),
+    )
+    .groupBy(opportunities.ownerUserId, users.name, monthExpr);
+
+  const owners = new Map<string, string>();
+  const grid = new Map<string, WinCell>();
+  for (const r of rows) {
+    owners.set(r.ownerId, r.owner);
+    grid.set(`${r.ownerId}|${r.month}`, {
+      deals: Number(r.deals),
+      fleet: Number(r.fleet),
+      value: Number(r.value),
+    });
+  }
+
+  const ownerRows = [...owners.entries()]
+    .map(([ownerId, owner]) => {
+      const cells = months.map(
+        (m) => grid.get(`${ownerId}|${m}`) ?? { deals: 0, fleet: 0, value: 0 },
+      );
+      return {
+        key: ownerId,
+        ownerId,
+        owner,
+        cells,
+        total: cells.reduce(
+          (a, c) => ({
+            deals: a.deals + c.deals,
+            fleet: a.fleet + c.fleet,
+            value: a.value + c.value,
+          }),
+          { deals: 0, fleet: 0, value: 0 },
+        ),
+      };
+    })
+    .filter((r) => r.total.deals > 0)
+    .sort((a, b) => b.total.deals - a.total.deals);
+
+  const monthTotals = months.map((_, i) =>
+    ownerRows.reduce(
+      (a, r) => ({
+        deals: a.deals + r.cells[i]!.deals,
+        fleet: a.fleet + r.cells[i]!.fleet,
+        value: a.value + r.cells[i]!.value,
+      }),
+      { deals: 0, fleet: 0, value: 0 },
+    ),
+  );
+
+  return { months, rows: ownerRows, monthTotals };
+}
+
+/** The accounts one owner closed in one month. */
+export async function getWinsDrilldown(ownerId: string, month: string) {
+  const session = await requireSession();
+  const rows = await db
+    .select({
+      id: opportunities.id,
+      name: opportunities.name,
+      accountName: accounts.name,
+      city: cities.name,
+      vehicleType: vehicleTypes.name,
+      fleetSize: opportunities.fleetSize,
+      revenue: opportunities.totalRevenue,
+      margin: opportunities.grossMargin,
+      closedAt: opportunities.closedAt,
+    })
+    .from(opportunities)
+    .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
+    .leftJoin(cities, eq(cities.id, opportunities.cityId))
+    .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
+    .where(
+      and(
+        eq(opportunities.organizationId, session.organizationId),
+        eq(opportunities.ownerUserId, ownerId),
+        eq(opportunities.stage, "closed_won"),
+        sql`to_char(${opportunities.closedAt}, 'YYYY-MM') = ${month}`,
+      ),
+    )
+    .orderBy(desc(opportunities.closedAt));
+  return rows;
+}

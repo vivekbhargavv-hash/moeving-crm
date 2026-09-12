@@ -51,6 +51,27 @@ export function ForecastGrid({
   } | null>(null);
   const [groups, setGroups] = React.useState<Group[] | null>(null);
   const [open, setOpen] = React.useState<string | null>(null);
+  const [expanded, setExpanded] = React.useState<string | null>(null);
+  const [clients, setClients] = React.useState<Group[] | null>(null);
+
+  // Expanding a city asks for the same drill-down data, without a month filter:
+  // every client expected to close in the window shown.
+  React.useEffect(() => {
+    if (!expanded) return;
+    setClients(null);
+    const row = rows.find((r) => r.key === expanded);
+    if (!row) return;
+    let cancelled = false;
+    Promise.all(
+      months.map((m) => loadDrilldown(row.cityId, m, filters)),
+    ).then((all) => {
+      if (cancelled) return;
+      setClients(all.flat() as Group[]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, months, rows, filters]);
 
   React.useEffect(() => {
     if (!drill) return;
@@ -105,9 +126,23 @@ export function ForecastGrid({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.key} className="border-b border-line last:border-0">
-                <th className="sticky left-0 z-10 bg-white py-2 pl-3 pr-2 text-left text-[13px] font-semibold">
-                  {r.city}
+              <React.Fragment key={r.key}>
+              <tr className="border-b border-line last:border-0">
+                <th className="sticky left-0 z-10 bg-white py-2 pl-3 pr-1 text-left text-[13px] font-semibold">
+                  <button
+                    onClick={() => setExpanded(expanded === r.key ? null : r.key)}
+                    className="flex items-center gap-1 py-1 text-left active:opacity-70"
+                    aria-expanded={expanded === r.key}
+                  >
+                    <ChevronRight
+                      size={14}
+                      className={cn(
+                        "shrink-0 text-muted transition",
+                        expanded === r.key && "rotate-90",
+                      )}
+                    />
+                    {r.city}
+                  </button>
                 </th>
                 {r.cells.map((c, i) => {
                   const n = metric === "fleet" ? c.fleet : c.value;
@@ -142,6 +177,52 @@ export function ForecastGrid({
                   {show(r.total)}
                 </td>
               </tr>
+              {expanded === r.key ? (
+                <tr className="border-b border-line bg-canvas/60">
+                  <td colSpan={months.length + 2} className="p-0">
+                    <div className="sticky left-0 w-[calc(100vw-2.5rem)] px-3 py-2 sm:w-auto">
+                    {clients === null ? (
+                      <p className="py-2 text-[13px] text-muted">Loading clients…</p>
+                    ) : clients.length === 0 ? (
+                      <p className="py-2 text-[13px] text-muted">
+                        No open deals in this window.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-line">
+                        {clients
+                          .flatMap((g) => g.items)
+                          .sort((a, b) => b.fleetSize - a.fleetSize)
+                          .map((o) => (
+                            <li key={o.id}>
+                              <Link
+                                href={`/opportunities/${o.id}`}
+                                className="flex items-center gap-2 py-2.5 active:opacity-70"
+                              >
+                                <span
+                                  className={cn(
+                                    "h-2 w-2 shrink-0 rounded-full",
+                                    STAGE_MAP[o.stage as SalesStage].dot,
+                                  )}
+                                />
+                                <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
+                                  {o.accountName}
+                                </span>
+                                <span className="tabular shrink-0 text-[13px] text-muted">
+                                  {o.fleetSize} × {o.vehicleType ?? "—"}
+                                </span>
+                                <span className="tabular w-[72px] shrink-0 whitespace-nowrap text-right text-[13px] font-semibold">
+                                  {formatDate(o.expectedCloseDate)}
+                                </span>
+                              </Link>
+                            </li>
+                          ))}
+                      </ul>
+                    )}
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
+              </React.Fragment>
             ))}
             {rows.length === 0 ? (
               <tr>

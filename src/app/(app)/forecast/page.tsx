@@ -1,7 +1,14 @@
 import { ForecastGrid } from "@/components/forecast/grid";
+import { ForecastTabs } from "@/components/forecast/tabs";
+import { WinsGrid } from "@/components/forecast/wins";
 import type { SalesStage } from "@/db/schema";
-import { upcomingMonths } from "@/lib/utils";
-import { getForecast, getMasterData, type OpportunityFilters } from "@/server/queries";
+import { pastMonths, upcomingMonths } from "@/lib/utils";
+import {
+  getForecast,
+  getMasterData,
+  getWins,
+  type OpportunityFilters,
+} from "@/server/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -28,32 +35,50 @@ export default async function ForecastPage({
     to: lastDayOf(months[months.length - 1]!),
   };
 
-  const [forecast, master] = await Promise.all([
+  const tab = one("tab") === "wins" ? "wins" : "forecast";
+  const winMonths = pastMonths(6);
+
+  const [forecast, wins, master] = await Promise.all([
     getForecast(months, filters),
+    // Both are cheap grouped queries; fetching them together keeps switching
+    // tabs instant instead of a round trip to Singapore each time.
+    getWins(winMonths, { ownerUserId: filters.ownerUserId }),
     getMasterData(),
   ]);
 
   return (
     <>
-      <div className="mb-3">
-        <h1 className="hidden text-2xl font-semibold tracking-tight md:block">
-          Closure forecast
-        </h1>
-        <p className="text-[13px] text-muted md:text-sm">
-          Expected vehicles by city and closing month. Tap a number to drill in.
-        </p>
-      </div>
-      <ForecastGrid
-        months={forecast.months}
-        rows={forecast.rows}
-        monthTotals={forecast.monthTotals}
-        filters={filters}
-        options={{
-          cities: master.cities,
-          vehicleTypes: master.vehicleTypes,
-          users: master.users,
-        }}
-      />
+      <h1 className="mb-3 hidden text-2xl font-semibold tracking-tight md:block">
+        {tab === "wins" ? "Wins" : "Closure forecast"}
+      </h1>
+
+      <ForecastTabs active={tab} />
+
+      <p className="mb-3 text-[13px] text-muted md:text-sm">
+        {tab === "wins"
+          ? "Accounts closed won, by owner and month. Tap a number for the accounts."
+          : "Expected vehicles by city and closing month. Tap a city for its clients, or a number to drill in."}
+      </p>
+
+      {tab === "wins" ? (
+        <WinsGrid
+          months={wins.months}
+          rows={wins.rows}
+          monthTotals={wins.monthTotals}
+        />
+      ) : (
+        <ForecastGrid
+          months={forecast.months}
+          rows={forecast.rows}
+          monthTotals={forecast.monthTotals}
+          filters={filters}
+          options={{
+            cities: master.cities,
+            vehicleTypes: master.vehicleTypes,
+            users: master.users,
+          }}
+        />
+      )}
     </>
   );
 }

@@ -78,6 +78,18 @@ export function upcomingMonths(count: number, from = new Date()) {
   return keys;
 }
 
+/** The last `count` month keys ending with the current month, UTC. */
+export function pastMonths(count: number, from = new Date()) {
+  const keys: string[] = [];
+  const base = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(base);
+    d.setUTCMonth(base.getUTCMonth() - i);
+    keys.push(monthKey(d));
+  }
+  return keys;
+}
+
 export function formatDate(value: string | Date | null | undefined) {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;

@@ -111,7 +111,9 @@ SELECT
   CASE WHEN g.stage = 'closed_won' THEN round(g.price * 0.03) END,
   CASE WHEN g.stage = 'closed_won' THEN round(g.price * 0.02) END,
   CASE WHEN g.stage = 'closed_lost' THEN rs.id END,
-  CASE WHEN g.stage IN ('closed_won','closed_lost') THEN now() END
+  -- Spread closures over the past six months so the Wins view has history.
+  CASE WHEN g.stage IN ('closed_won','closed_lost')
+       THEN now() - ((g.a_idx % 6) || ' months')::interval END
 FROM grid g
 CROSS JOIN org
 JOIN customer_list cu ON cu.idx = g.a_idx

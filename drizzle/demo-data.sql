@@ -48,6 +48,20 @@ customer_list AS (
   SELECT a.id, a.name, row_number() OVER (ORDER BY a.name) - 1 AS idx
   FROM accounts a, org WHERE a.organization_id = org.id
 ),
+-- Three deals per customer, each in a DIFFERENT city with its own fleet and
+-- price. Two deals that differ only by stage look like duplicate rows on the
+-- pipeline, which is exactly the confusion this avoids.
+deal_grid AS (
+  SELECT c.idx AS a_idx, n,
+         (c.idx + n * 5) % 8  AS city_idx,
+         (c.idx + n) % 4      AS vehicle_idx,
+         (c.idx * 3 + n) % 3  AS rep_idx,
+         (c.idx * 2 + n) % 7  AS stage_idx,
+         (ARRAY[3,5,8,10,12,15,18,20,25,30])[((c.idx * 3 + n) % 10) + 1]                        AS fleet,
+         (ARRAY[38000,42000,45000,52000,56000,64000,68000,74000,86000,105000])[((c.idx * 7 + n * 3) % 10) + 1] AS price,
+         (c.idx + n * 2) % 5  AS month_offset
+  FROM customer_list c, generate_series(0, 2) AS n
+),
 city_list AS (
   SELECT c.id, c.name, row_number() OVER (ORDER BY c.sort_order) - 1 AS idx
   FROM cities c, org WHERE c.organization_id = org.id
@@ -61,20 +75,17 @@ reason_list AS (
   FROM lost_reasons l, org WHERE l.organization_id = org.id
 ),
 
--- 36 deals: every stage, city and vehicle type in turn.
 grid AS (
   SELECT
-    i,
+    g.a_idx, g.city_idx, g.vehicle_idx, g.rep_idx, g.fleet, g.price,
     (ARRAY['first_contact','solutioning','proposal','negotiation',
-           'closed_won','closed_lost','dormant'])[(i % 7) + 1]::sales_stage AS stage,
-    (ARRAY[3, 5, 10, 15, 20, 25])[(i % 6) + 1]                              AS fleet,
-    (ARRAY[38000, 45000, 56000, 68000, 74000, 105000])[(i % 6) + 1]         AS price,
-    (ARRAY['driver_only','driver_plus_helper','driver_cum_helper'])[(i % 3) + 1]::driver_type
-                                                                            AS driver,
-    (ARRAY['client','moeving'])[(i % 2) + 1]::charging_scope                AS charging,
-    (date_trunc('month', now()) + ((i % 5) || ' months')::interval
-       + interval '1 month' - interval '1 day')::date                       AS close_date
-  FROM generate_series(0, 35) AS i
+           'closed_won','closed_lost','dormant'])[g.stage_idx + 1]::sales_stage AS stage,
+    (ARRAY['driver_only','driver_plus_helper','driver_cum_helper'])[(g.a_idx + g.n) % 3 + 1]::driver_type AS driver,
+    (ARRAY['client','moeving'])[(g.a_idx + g.n) % 2 + 1]::charging_scope AS charging,
+    (date_trunc('month', now()) + (g.month_offset || ' months')::interval
+       + interval '1 month' - interval '1 day')::date AS close_date,
+    (g.a_idx * 3 + g.n) % 8 AS reason_idx
+  FROM deal_grid g
 )
 
 INSERT INTO opportunities (
@@ -89,24 +100,25 @@ SELECT
   org.id, cu.id, cu.name || ' - ' || ci.name, g.stage, ci.id, ve.id,
   g.driver, g.charging, g.fleet, g.price, g.close_date, re.id,
   '[demo] Sample deal - safe to delete.',
-  -- Won deals carry a full cost sheet; the check constraint requires it.
-  CASE WHEN g.stage = 'closed_won' THEN g.price * g.fleet END,
-  CASE WHEN g.stage = 'closed_won' THEN round(g.price * g.fleet * 0.46) END,
-  CASE WHEN g.stage = 'closed_won' THEN round(g.price * g.fleet * 0.22) END,
-  CASE WHEN g.stage = 'closed_won' THEN round(g.price * g.fleet * 0.09) END,
-  CASE WHEN g.stage = 'closed_won' THEN round(g.price * g.fleet * 0.03) END,
-  CASE WHEN g.stage = 'closed_won' THEN round(g.price * g.fleet * 0.04) END,
-  CASE WHEN g.stage = 'closed_won' THEN round(g.price * g.fleet * 0.03) END,
-  CASE WHEN g.stage = 'closed_won' THEN round(g.price * g.fleet * 0.02) END,
+  -- Won deals carry a full cost sheet, PER VEHICLE PER MONTH, as the check
+  -- constraint requires. Roughly 11% margin on a typical lease.
+  CASE WHEN g.stage = 'closed_won' THEN g.price END,
+  CASE WHEN g.stage = 'closed_won' THEN round(g.price * 0.46) END,
+  CASE WHEN g.stage = 'closed_won' THEN round(g.price * 0.22) END,
+  CASE WHEN g.stage = 'closed_won' THEN round(g.price * 0.09) END,
+  CASE WHEN g.stage = 'closed_won' THEN round(g.price * 0.03) END,
+  CASE WHEN g.stage = 'closed_won' THEN round(g.price * 0.04) END,
+  CASE WHEN g.stage = 'closed_won' THEN round(g.price * 0.03) END,
+  CASE WHEN g.stage = 'closed_won' THEN round(g.price * 0.02) END,
   CASE WHEN g.stage = 'closed_lost' THEN rs.id END,
   CASE WHEN g.stage IN ('closed_won','closed_lost') THEN now() END
 FROM grid g
 CROSS JOIN org
-JOIN customer_list cu ON cu.idx = g.i % 12
-JOIN city_list     ci ON ci.idx = g.i % 8
-JOIN vehicle_list  ve ON ve.idx = g.i % 4
-JOIN rep_list      re ON re.idx = g.i % 3
-JOIN reason_list   rs ON rs.idx = g.i % 8
+JOIN customer_list cu ON cu.idx = g.a_idx
+JOIN city_list     ci ON ci.idx = g.city_idx
+JOIN vehicle_list  ve ON ve.idx = g.vehicle_idx
+JOIN rep_list      re ON re.idx = g.rep_idx
+JOIN reason_list   rs ON rs.idx = g.reason_idx
 -- Only seed an empty pipeline; re-running never doubles up.
 WHERE NOT EXISTS (
   SELECT 1 FROM opportunities o WHERE o.organization_id = org.id

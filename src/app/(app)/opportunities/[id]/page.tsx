@@ -133,7 +133,7 @@ export default async function OpportunityPage({
 
         {isWon ? (
           <Card>
-            <CardHeader title="Margin" />
+            <CardHeader title="Unit economics — per vehicle / month" />
             <dl className="px-4 pb-4 text-sm">
               <Row label="Revenue" value={inr(opp.revenue)} />
               {COST_FIELDS.map((f) => (
@@ -144,17 +144,47 @@ export default async function OpportunityPage({
                   muted
                 />
               ))}
-              <Row label="Total cost" value={inr(opp.totalCost)} />
-              <Row label="Gross margin" value={inr(opp.grossMargin)} strong />
+              <Row label="Cost per vehicle" value={inr(opp.costPerVehicle)} />
+              <Row
+                label="Margin per vehicle"
+                value={inr(opp.marginPerVehicle)}
+                strong
+              />
               <Row
                 label="Margin %"
-                value={opp.marginPct === null ? "—" : `${Number(opp.marginPct).toFixed(1)}%`}
+                value={
+                  opp.marginPct === null
+                    ? "—"
+                    : `${Number(opp.marginPct).toFixed(1)}%`
+                }
                 strong
                 tone={
                   opp.marginPct !== null && Number(opp.marginPct) < 0
                     ? "text-rose-700"
                     : "text-emerald-700"
                 }
+              />
+            </dl>
+          </Card>
+        ) : null}
+
+        {isWon ? (
+          <Card>
+            <CardHeader title={`Whole deal — ${num(opp.fleetSize)} vehicles`} />
+            <dl className="px-4 pb-4 text-sm">
+              <Row label="Revenue / month" value={inr(opp.totalRevenue)} />
+              <Row label="Total cost / month" value={inr(opp.totalCost)} />
+              <Row
+                label="Gross margin / month"
+                value={inr(opp.grossMargin)}
+                strong
+                tone={
+                  (opp.grossMargin ?? 0) < 0 ? "text-rose-700" : "text-emerald-700"
+                }
+              />
+              <Row
+                label="Gross margin / year"
+                value={inr((opp.grossMargin ?? 0) * 12)}
               />
             </dl>
           </Card>

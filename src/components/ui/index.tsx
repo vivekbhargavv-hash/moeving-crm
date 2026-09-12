@@ -113,10 +113,16 @@ export function Field({
   children: React.ReactNode;
   className?: string;
 }) {
+  // A <label> wrapping the control associates the two implicitly, so tapping
+  // the caption focuses the field and screen readers announce it correctly.
   return (
     <div className={className}>
-      <Label>{label}</Label>
-      {children}
+      <label className="block">
+        <span className="mb-1.5 block text-[13px] font-medium tracking-tight text-muted">
+          {label}
+        </span>
+        {children}
+      </label>
       {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
     </div>
   );

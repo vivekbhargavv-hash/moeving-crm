@@ -14,8 +14,11 @@ export type StageTarget = {
   id: string;
   name: string;
   stage: SalesStage;
-  /** price x fleet — seeds the revenue field on Closed Won. */
+  /** Monthly value of the whole deal: price x fleet. */
   value: number;
+  /** Rent for one vehicle per month — seeds revenue on Closed Won. */
+  price: number | null;
+  fleetSize: number;
 };
 
 /**
@@ -43,7 +46,7 @@ export function StageChanger({
       setMode("pick");
       setError(null);
       setCosts({});
-      setRevenue(target.value ? String(target.value) : "");
+      setRevenue(target.price ? String(target.price) : "");
     }
   }, [target]);
 
@@ -53,9 +56,12 @@ export function StageChanger({
     (sum, f) => sum + (Number(costs[f.key] || 0) || 0),
     0,
   );
+  // Everything the salesperson types is per vehicle per month; the deal-level
+  // numbers underneath are simply that times the fleet.
   const revenueNum = Number(revenue || 0);
   const margin = revenueNum - totalCost;
   const marginPct = revenueNum ? (margin / revenueNum) * 100 : null;
+  const fleet = target.fleetSize;
 
   function pick(stage: SalesStage) {
     if (stage === target!.stage) return onClose();
@@ -120,7 +126,20 @@ export function StageChanger({
           className="space-y-4"
           id="won-form"
         >
-          <Field label="Revenue (monthly)" hint="Pre-filled from price × fleet.">
+          <div className="rounded-xl bg-brand-soft/60 px-4 py-3 text-sm">
+            <p className="font-medium text-brand-ink">
+              Unit economics — per vehicle, per month
+            </p>
+            <p className="mt-0.5 text-muted">
+              Quoted at {target.price ? inr(target.price) : "—"} per vehicle ·{" "}
+              {fleet} {fleet === 1 ? "vehicle" : "vehicles"} in this deal.
+            </p>
+          </div>
+
+          <Field
+            label="Revenue per vehicle / month"
+            hint="Pre-filled from the quoted price. Change it if the closing rate differs."
+          >
             <Input
               name="revenue"
               inputMode="numeric"
@@ -129,6 +148,10 @@ export function StageChanger({
               onChange={(e) => setRevenue(e.target.value.replace(/\D/g, ""))}
             />
           </Field>
+
+          <p className="!mt-5 text-[13px] font-medium text-muted">
+            Monthly cost of running one vehicle
+          </p>
 
           <div className="grid grid-cols-2 gap-3">
             {COST_FIELDS.map((f) => (
@@ -151,15 +174,26 @@ export function StageChanger({
           </div>
 
           <dl className="rounded-xl bg-canvas p-4 text-sm">
-            <Row label="Total cost" value={inr(totalCost)} />
-            <Row label="Gross margin" value={inr(margin)} strong />
+            <Row label="Cost per vehicle" value={inr(totalCost)} />
+            <Row label="Margin per vehicle" value={inr(margin)} strong />
             <Row
               label="Margin %"
               value={marginPct === null ? "—" : `${marginPct.toFixed(1)}%`}
               tone={
-                marginPct === null ? "" : marginPct >= 0 ? "text-emerald-700" : "text-rose-700"
+                marginPct === null
+                  ? ""
+                  : marginPct >= 0
+                    ? "text-emerald-700"
+                    : "text-rose-700"
               }
             />
+            <div className="my-2 border-t border-line" />
+            <p className="pb-1 text-[12px] font-medium uppercase tracking-wide text-muted">
+              Whole deal × {fleet}
+            </p>
+            <Row label="Revenue / month" value={inr(revenueNum * fleet)} />
+            <Row label="Cost / month" value={inr(totalCost * fleet)} />
+            <Row label="Gross margin / month" value={inr(margin * fleet)} strong />
           </dl>
 
           {error ? <p className="text-sm text-rose-700">{error}</p> : null}

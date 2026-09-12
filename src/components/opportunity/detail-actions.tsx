@@ -66,6 +66,8 @@ export function DetailActions({
               name: opp.name,
               stage: opp.stage,
               value: opp.value,
+              price: opp.price,
+              fleetSize: opp.fleetSize,
             })
           }
         >

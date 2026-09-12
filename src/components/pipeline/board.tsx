@@ -2,6 +2,7 @@
 
 import { ChevronDown, LayoutGrid, Rows3, Search, Truck, Users } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { PipelineTable } from "@/components/pipeline/table";
@@ -33,6 +34,7 @@ export function PipelineBoard({
   const [owner, setOwner] = React.useState("all");
   const [target, setTarget] = React.useState<StageTarget | null>(null);
   const [view, setView] = React.useState<"board" | "table">("board");
+  const router = useRouter();
   const tabsRef = React.useRef<HTMLDivElement>(null);
 
   // The chosen view is a per-person habit, so it survives a reload.
@@ -233,11 +235,13 @@ export function PipelineBoard({
                       name: opp.accountName,
                       stage: opp.stage,
                       value: opp.value,
+                      price: opp.price,
+                      fleetSize: opp.fleetSize,
                     });
                     return;
                   }
                   await changeStage(id, s.value);
-                  window.location.reload();
+                  router.refresh();
                 }}
               >
                 <div className="flex items-baseline justify-between px-2 py-2">
@@ -291,6 +295,19 @@ function StageSummary({ list }: { list: OpportunityCard[] }) {
   );
 }
 
+/**
+ * The part of a deal's name that is not already on the card. Two deals for the
+ * same customer in the same city are otherwise indistinguishable, which reads
+ * as a duplicate row.
+ */
+function dealLabel(opp: OpportunityCard) {
+  const name = opp.name.trim();
+  if (name === opp.accountName) return "";
+  const redundant = `${opp.accountName} - ${opp.city ?? ""}`.trim();
+  if (name === redundant) return "";
+  return name.replace(new RegExp(`^${opp.accountName}\\s*[-–·]\\s*`), "");
+}
+
 function DealCard({
   opp,
   onStageTap,
@@ -321,7 +338,7 @@ function DealCard({
             </p>
             <p className="mt-0.5 truncate text-[13px] text-muted">
               {opp.city ?? "No city"}
-              {opp.name !== opp.accountName ? ` · ${opp.name}` : ""}
+              {dealLabel(opp) ? ` · ${dealLabel(opp)}` : ""}
             </p>
           </div>
           <p className="tabular shrink-0 text-[15px] font-semibold">
@@ -349,6 +366,8 @@ function DealCard({
             name: opp.accountName,
             stage: opp.stage,
             value: opp.value,
+            price: opp.price,
+            fleetSize: opp.fleetSize,
           })
         }
         className="mt-3 flex w-full items-center justify-between rounded-lg border border-line px-2.5 py-2 transition active:bg-canvas"

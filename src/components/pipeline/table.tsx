@@ -186,6 +186,8 @@ export function PipelineTable({
                         name: o.accountName,
                         stage: o.stage,
                         value: o.value,
+                        price: o.price,
+                        fleetSize: o.fleetSize,
                       });
                     }}
                     title="Move stage"

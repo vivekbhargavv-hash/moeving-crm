@@ -16,8 +16,12 @@ import {
 
 /**
  * Money is stored as whole rupees in `integer` columns. No paise, no floats,
- * no numeric-as-string round trips. `price` is the MONTHLY RENT PER VEHICLE;
- * deal value is always price x fleet_size.
+ * no numeric-as-string round trips.
+ *
+ * Every money column is PER VEHICLE PER MONTH — `price` is the rent one truck
+ * pays, and the Closed Won cost sheet is that truck's running cost. Deal-level
+ * figures are always the per-vehicle number times fleet_size, so the app has
+ * one unit and never mixes the two.
  */
 
 export const userRole = pgEnum("user_role", ["admin", "sales"]);
@@ -190,7 +194,8 @@ export const opportunities = pgTable(
       .references(() => users.id, { onDelete: "restrict" }),
     notes: text("notes"),
 
-    /* --- Closed Won block: null until the deal is won --- */
+    /* --- Closed Won block: null until the deal is won.
+       Every figure here is PER VEHICLE PER MONTH, matching `price` above. --- */
     revenue: integer("revenue"),
     leaseCost: integer("lease_cost"),
     driverCost: integer("driver_cost"),
@@ -200,13 +205,29 @@ export const opportunities = pgTable(
     supervisorCost: integer("supervisor_cost"),
     miscCost: integer("misc_cost"),
 
-    /** Postgres computes these, so no two screens can disagree. */
-    totalCost: integer("total_cost").generatedAlwaysAs(
+    /**
+     * Postgres computes these, so no two screens can disagree.
+     *
+     * Everything above is PER VEHICLE PER MONTH — the unit economics of one
+     * truck. Deal-level numbers are that times the fleet, which means a change
+     * to fleet_size rescales the whole deal automatically.
+     */
+    costPerVehicle: integer("cost_per_vehicle").generatedAlwaysAs(
       sql`coalesce(lease_cost, 0) + coalesce(driver_cost, 0) + coalesce(charging_cost, 0) + coalesce(parking_cost, 0) + coalesce(maintenance_cost, 0) + coalesce(supervisor_cost, 0) + coalesce(misc_cost, 0)`,
     ),
-    grossMargin: integer("gross_margin").generatedAlwaysAs(
+    marginPerVehicle: integer("margin_per_vehicle").generatedAlwaysAs(
       sql`coalesce(revenue, 0) - (coalesce(lease_cost, 0) + coalesce(driver_cost, 0) + coalesce(charging_cost, 0) + coalesce(parking_cost, 0) + coalesce(maintenance_cost, 0) + coalesce(supervisor_cost, 0) + coalesce(misc_cost, 0))`,
     ),
+    totalRevenue: integer("total_revenue").generatedAlwaysAs(
+      sql`coalesce(revenue, 0) * fleet_size`,
+    ),
+    totalCost: integer("total_cost").generatedAlwaysAs(
+      sql`(coalesce(lease_cost, 0) + coalesce(driver_cost, 0) + coalesce(charging_cost, 0) + coalesce(parking_cost, 0) + coalesce(maintenance_cost, 0) + coalesce(supervisor_cost, 0) + coalesce(misc_cost, 0)) * fleet_size`,
+    ),
+    grossMargin: integer("gross_margin").generatedAlwaysAs(
+      sql`(coalesce(revenue, 0) - (coalesce(lease_cost, 0) + coalesce(driver_cost, 0) + coalesce(charging_cost, 0) + coalesce(parking_cost, 0) + coalesce(maintenance_cost, 0) + coalesce(supervisor_cost, 0) + coalesce(misc_cost, 0))) * fleet_size`,
+    ),
+    /** Identical per vehicle and per deal — the fleet cancels out. */
     marginPct: numeric("margin_pct", { precision: 7, scale: 2 }).generatedAlwaysAs(
       sql`case when coalesce(revenue, 0) > 0 then round(((coalesce(revenue, 0) - (coalesce(lease_cost, 0) + coalesce(driver_cost, 0) + coalesce(charging_cost, 0) + coalesce(parking_cost, 0) + coalesce(maintenance_cost, 0) + coalesce(supervisor_cost, 0) + coalesce(misc_cost, 0)))::numeric * 100) / revenue, 2) else null end`,
     ),

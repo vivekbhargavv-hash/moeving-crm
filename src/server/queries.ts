@@ -1,6 +1,7 @@
 import "server-only";
 
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { cache } from "react";
 
 import { db } from "@/db";
 import {
@@ -150,7 +151,7 @@ export async function getOpportunity(id: string) {
 
 /* ------------------------------------------------------------- master data */
 
-export async function getMasterData() {
+export const getMasterData = cache(async () => {
   const session = await requireSession();
   const org = session.organizationId;
   const [cityRows, vehicleRows, reasonRows, userRows, accountRows] =
@@ -193,9 +194,11 @@ export async function getMasterData() {
     users: userRows,
     accounts: accountRows,
   };
-}
+});
 
-export async function getStageProbabilities(): Promise<Record<SalesStage, number>> {
+export const getStageProbabilities = cache(async (): Promise<
+  Record<SalesStage, number>
+> => {
   const session = await requireSession();
   const rows = await db
     .select()
@@ -204,7 +207,7 @@ export async function getStageProbabilities(): Promise<Record<SalesStage, number
   const map = { ...DEFAULT_STAGE_PROBABILITY };
   for (const r of rows) map[r.stage] = r.probability;
   return map;
-}
+});
 
 /* ----------------------------------------------------------------- metrics */
 
@@ -227,10 +230,10 @@ export async function getDashboard(filters: OpportunityFilters = {}) {
     0,
   );
   const fleetInPipeline = open.reduce((s, o) => s + o.fleetSize, 0);
-  const wonValue = won.reduce((s, o) => s + (o.revenue ?? o.value), 0);
+  const wonValue = won.reduce((s, o) => s + (o.totalRevenue || o.value), 0);
   const wonFleet = won.reduce((s, o) => s + o.fleetSize, 0);
   const grossMargin = won.reduce((s, o) => s + (o.grossMargin ?? 0), 0);
-  const wonRevenue = won.reduce((s, o) => s + (o.revenue ?? 0), 0);
+  const wonRevenue = won.reduce((s, o) => s + (o.totalRevenue ?? 0), 0);
   const decided = won.length + lost.length;
 
   const funnel = OPEN_STAGES.concat(["closed_won"] as SalesStage[]).map((stage) => {
@@ -276,7 +279,8 @@ export async function getDashboard(filters: OpportunityFilters = {}) {
 }
 
 type RawOpp = OpportunityCard & {
-  revenue: number | null;
+  /** Deal-level: per-vehicle revenue x fleet, computed by Postgres. */
+  totalRevenue: number | null;
   grossMargin: number | null;
 };
 
@@ -287,7 +291,7 @@ async function listOpportunitiesRaw(
   const rows = await db
     .select({
       ...cardColumns,
-      revenue: opportunities.revenue,
+      totalRevenue: opportunities.totalRevenue,
       grossMargin: opportunities.grossMargin,
     })
     .from(opportunities)

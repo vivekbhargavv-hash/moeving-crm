@@ -37,13 +37,27 @@ export function AppShell({
   const params = useSearchParams();
   const [addOpen, setAddOpen] = React.useState(false);
 
+  const [toast, setToast] = React.useState<string | null>(null);
+
   // /pipeline?new=1 — the PWA "New deal" shortcut and any deep link.
+  // /pipeline?created=N — confirmation after creating several deals at once.
   React.useEffect(() => {
     if (params.get("new") === "1") {
       setAddOpen(true);
       router.replace(pathname);
     }
+    const created = Number(params.get("created"));
+    if (created > 0) {
+      setToast(`${created} deals created`);
+      router.replace(pathname);
+    }
   }, [params, pathname, router]);
+
+  React.useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const nav = session.role === "admin"
     ? [...NAV, { href: "/admin/users", label: "Admin", icon: Settings }]
@@ -122,6 +136,15 @@ export function AppShell({
           <NavTab {...nav[2]!} pathname={pathname} />
         </div>
       </nav>
+
+      {toast ? (
+        <div
+          role="status"
+          className="fixed inset-x-0 top-3 z-50 mx-auto w-fit max-w-[92vw] rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+        >
+          {toast}
+        </div>
+      ) : null}
 
       <QuickAdd
         open={addOpen}

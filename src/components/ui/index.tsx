@@ -130,20 +130,29 @@ export function Field({
 
 /* ------------------------------------------------------------------- sheet */
 
-/** Bottom sheet on phones, centred dialog on desktop. Native <dialog>-free so
- *  it behaves identically in iOS standalone PWA mode. */
+/**
+ * Bottom sheet on phones, centred dialog on desktop. Native <dialog>-free so
+ * it behaves identically in iOS standalone PWA mode.
+ *
+ * Pass `action` and the whole sheet becomes one <form>, so a footer button is
+ * a real submit button inside it. The alternative — a button outside the form
+ * calling requestSubmit() — silently does nothing on iOS Safari before 16,
+ * which is exactly how a "nothing happens when I tap Create" bug is born.
+ */
 export function Sheet({
   open,
   onClose,
   title,
   children,
   footer,
+  action,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  action?: (formData: FormData) => void;
 }) {
   React.useEffect(() => {
     if (!open) return;
@@ -184,15 +193,95 @@ export function Sheet({
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer ? (
-          <div className="shrink-0 border-t border-line px-5 py-3 safe-bottom">
-            {footer}
-          </div>
-        ) : null}
+        <Body action={action}>
+          <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+          {footer ? (
+            <div className="shrink-0 border-t border-line px-5 py-3 safe-bottom">
+              {footer}
+            </div>
+          ) : null}
+        </Body>
       </div>
       <style>{`@keyframes sheet{from{transform:translateY(12px);opacity:.6}to{transform:none;opacity:1}}`}</style>
     </div>
+  );
+}
+
+/** One <form> around scroll area and footer, or a plain wrapper when there is
+ *  no action to submit. */
+function Body({
+  action,
+  children,
+}: {
+  action?: (formData: FormData) => void;
+  children: React.ReactNode;
+}) {
+  if (!action) return <div className="flex min-h-0 flex-1 flex-col">{children}</div>;
+  return (
+    <form action={action} className="flex min-h-0 flex-1 flex-col">
+      {children}
+    </form>
+  );
+}
+
+/* ------------------------------------------------------------ icon choice */
+
+export type ChoiceOption = {
+  value: string;
+  label: string;
+  icon: React.ReactNode;
+  hint?: string;
+};
+
+/**
+ * Big tappable tiles instead of a dropdown. A salesperson picking a driver
+ * arrangement should see the choices at a glance, not open a select and read.
+ */
+export function ChoiceGroup({
+  name,
+  options,
+  value,
+  onChange,
+  columns = 3,
+}: {
+  name: string;
+  options: ChoiceOption[];
+  value: string | null;
+  onChange: (value: string | null) => void;
+  columns?: 2 | 3;
+}) {
+  return (
+    <>
+      <input type="hidden" name={name} value={value ?? ""} />
+      <div
+        role="radiogroup"
+        className={cn("grid gap-2", columns === 2 ? "grid-cols-2" : "grid-cols-3")}
+      >
+        {options.map((o) => {
+          const selected = value === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(selected ? null : o.value)}
+              className={cn(
+                "flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-3 text-center transition active:scale-[0.98]",
+                selected
+                  ? "border-brand bg-brand-soft text-brand-ink ring-2 ring-brand/20"
+                  : "border-line bg-white text-muted hover:bg-canvas",
+              )}
+            >
+              <span className={selected ? "text-brand-ink" : "text-muted"}>
+                {o.icon}
+              </span>
+              <span className="text-[12px] font-medium leading-tight">{o.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

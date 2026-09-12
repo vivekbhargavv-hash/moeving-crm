@@ -86,7 +86,7 @@ export const DEFAULT_STAGE_PROBABILITY: Record<SalesStage, number> = {
 export const DRIVER_TYPES = [
   { value: "driver_only", label: "Driver Only" },
   { value: "driver_plus_helper", label: "Driver + Helper" },
-  { value: "driver_cum_helper", label: "Driver-cum-Helper" },
+  { value: "driver_cum_helper", label: "Driver-cum-Delivery" },
 ] as const;
 
 export const CHARGING_SCOPES = [

@@ -1,10 +1,20 @@
 "use client";
 
+import {
+  BatteryCharging,
+  Check,
+  Plug,
+  Truck,
+  User,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import {
   Button,
+  ChoiceGroup,
   Field,
   Input,
   Select,
@@ -12,7 +22,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import { CHARGING_SCOPES, DRIVER_TYPES } from "@/lib/constants";
-import { cn, inrCompact } from "@/lib/utils";
+import { cn, inrCompact, monthLabelLong, upcomingMonths } from "@/lib/utils";
 import { createOpportunity } from "@/server/actions";
 import type { Session } from "@/server/auth";
 
@@ -27,7 +37,7 @@ export type MasterData = {
 const PREFS_KEY = "moeving:last-used";
 
 type Prefs = {
-  cityId?: string;
+  cityIds?: string[];
   vehicleTypeId?: string;
   driverType?: string;
   chargingScope?: string;
@@ -42,12 +52,16 @@ function readPrefs(): Prefs {
   }
 }
 
-/** dd of the last day of the month `offset` months from now, as YYYY-MM-DD. */
-function monthEnd(offset: number) {
-  const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset + 1, 0));
-  return d.toISOString().slice(0, 10);
-}
+const DRIVER_ICONS: Record<string, React.ReactNode> = {
+  driver_only: <User size={22} />,
+  driver_plus_helper: <Users size={22} />,
+  driver_cum_helper: <UserPlus size={22} />,
+};
+
+const CHARGING_ICONS: Record<string, React.ReactNode> = {
+  client: <Plug size={22} />,
+  moeving: <BatteryCharging size={22} />,
+};
 
 export function QuickAdd({
   open,
@@ -63,51 +77,69 @@ export function QuickAdd({
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
-  const [prefs, setPrefs] = React.useState<Prefs>({});
+  const [cityIds, setCityIds] = React.useState<string[]>([]);
+  const [vehicleTypeId, setVehicleTypeId] = React.useState("");
+  const [driverType, setDriverType] = React.useState<string | null>(null);
+  const [chargingScope, setChargingScope] = React.useState<string | null>(null);
   const [fleet, setFleet] = React.useState(5);
   const [price, setPrice] = React.useState("");
-  const [closeDate, setCloseDate] = React.useState(monthEnd(1));
+  const [month, setMonth] = React.useState(() => upcomingMonths(1)[0]!);
   const [showMore, setShowMore] = React.useState(false);
-  const formRef = React.useRef<HTMLFormElement>(null);
+
+  const months = React.useMemo(() => upcomingMonths(6), []);
 
   React.useEffect(() => {
-    if (open) {
-      setPrefs(readPrefs());
-      setError(null);
-      setFleet(5);
-      setPrice("");
-      setCloseDate(monthEnd(1));
-      setShowMore(false);
-    }
+    if (!open) return;
+    const prefs = readPrefs();
+    setError(null);
+    setCityIds(prefs.cityIds ?? []);
+    setVehicleTypeId(prefs.vehicleTypeId ?? "");
+    setDriverType(prefs.driverType ?? null);
+    setChargingScope(prefs.chargingScope ?? null);
+    setFleet(5);
+    setPrice("");
+    setMonth(upcomingMonths(1)[0]!);
+    setShowMore(false);
   }, [open]);
 
-  const value = Number(price || 0) * fleet;
+  const perDeal = Number(price || 0) * fleet;
+  const dealCount = Math.max(1, cityIds.length);
 
   function submit(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      const result = await createOpportunity(formData);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
       try {
-        localStorage.setItem(
-          PREFS_KEY,
-          JSON.stringify({
-            cityId: formData.get("cityId"),
-            vehicleTypeId: formData.get("vehicleTypeId"),
-            driverType: formData.get("driverType"),
-            chargingScope: formData.get("chargingScope"),
-          }),
+        const result = await createOpportunity(formData);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        try {
+          localStorage.setItem(
+            PREFS_KEY,
+            JSON.stringify({ cityIds, vehicleTypeId, driverType, chargingScope }),
+          );
+        } catch {
+          /* private mode — defaults just won't stick */
+        }
+        const { id, count } = result.data!;
+        onClose();
+        router.refresh();
+        // One deal opens directly; several go back to the pipeline, where
+        // seeing the new cards is the point.
+        router.push(
+          count > 1 ? `/pipeline?created=${count}` : `/opportunities/${id}`,
         );
       } catch {
-        /* private mode — defaults just won't stick */
+        setError("Could not save that. Check your connection and try again.");
       }
-      onClose();
-      router.push(`/opportunities/${result.data!.id}`);
-      router.refresh();
     });
+  }
+
+  function toggleCity(id: string) {
+    setCityIds((ids) =>
+      ids.includes(id) ? ids.filter((c) => c !== id) : [...ids, id],
+    );
   }
 
   return (
@@ -115,26 +147,29 @@ export function QuickAdd({
       open={open}
       onClose={onClose}
       title="New deal"
+      action={submit}
       footer={
         <div className="flex items-center gap-3">
           <div className="flex-1 text-sm">
-            <span className="text-muted">Monthly value </span>
-            <span className="font-semibold tabular">
-              {value ? inrCompact(value) : "—"}
+            <span className="text-muted">
+              {dealCount > 1 ? `${dealCount} deals · ` : "Monthly value "}
             </span>
+            <span className="tabular font-semibold">
+              {perDeal ? inrCompact(perDeal) : "—"}
+            </span>
+            {dealCount > 1 ? <span className="text-muted"> each</span> : null}
           </div>
-          <Button
-            variant="brand"
-            size="lg"
-            disabled={pending}
-            onClick={() => formRef.current?.requestSubmit()}
-          >
-            {pending ? "Saving…" : "Create deal"}
+          <Button variant="brand" size="lg" disabled={pending}>
+            {pending
+              ? "Saving…"
+              : dealCount > 1
+                ? `Create ${dealCount} deals`
+                : "Create deal"}
           </Button>
         </div>
       }
     >
-      <form ref={formRef} action={submit} className="space-y-4">
+      <div className="space-y-4">
         <Field label="Customer">
           <Input
             name="accountName"
@@ -152,28 +187,54 @@ export function QuickAdd({
           </datalist>
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="City">
-            <Select name="cityId" defaultValue={prefs.cityId ?? ""}>
-              <option value="">Select</option>
-              {master.cities.map((c) => (
-                <option key={c.id} value={c.id}>
+        <div>
+          <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
+            City
+            <span className="ml-1 font-normal">
+              — pick more than one for a deal per city
+            </span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {master.cities.map((c) => {
+              const on = cityIds.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleCity(c.id)}
+                  className={cn(
+                    "inline-flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition active:scale-[0.98]",
+                    on
+                      ? "border-brand bg-brand-soft text-brand-ink"
+                      : "border-line bg-white text-muted",
+                  )}
+                >
+                  {on ? <Check size={15} /> : null}
                   {c.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Vehicle">
-            <Select name="vehicleTypeId" defaultValue={prefs.vehicleTypeId ?? ""}>
-              <option value="">Select</option>
-              {master.vehicleTypes.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+                </button>
+              );
+            })}
+          </div>
+          {cityIds.map((id) => (
+            <input key={id} type="hidden" name="cityIds" value={id} />
+          ))}
         </div>
+
+        <Field label="Vehicle">
+          <Select
+            name="vehicleTypeId"
+            value={vehicleTypeId}
+            onChange={(e) => setVehicleTypeId(e.target.value)}
+          >
+            <option value="">Select</option>
+            {master.vehicleTypes.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fleet size">
@@ -181,7 +242,7 @@ export function QuickAdd({
               <button
                 type="button"
                 onClick={() => setFleet((f) => Math.max(1, f - 1))}
-                className="h-full w-12 text-xl text-muted active:bg-canvas rounded-l-xl"
+                className="h-full w-12 rounded-l-xl text-xl text-muted active:bg-canvas"
                 aria-label="Decrease fleet size"
               >
                 −
@@ -189,16 +250,19 @@ export function QuickAdd({
               <input
                 name="fleetSize"
                 inputMode="numeric"
+                aria-label="Fleet size"
                 value={fleet}
                 onChange={(e) =>
-                  setFleet(Math.max(1, Number(e.target.value.replace(/\D/g, "")) || 1))
+                  setFleet(
+                    Math.max(1, Number(e.target.value.replace(/\D/g, "")) || 1),
+                  )
                 }
-                className="w-full border-0 bg-transparent text-center text-lg font-semibold tabular focus:outline-none"
+                className="tabular w-full border-0 bg-transparent text-center text-lg font-semibold focus:outline-none"
               />
               <button
                 type="button"
                 onClick={() => setFleet((f) => f + 1)}
-                className="h-full w-12 text-xl text-muted active:bg-canvas rounded-r-xl"
+                className="h-full w-12 rounded-r-xl text-xl text-muted active:bg-canvas"
                 aria-label="Increase fleet size"
               >
                 +
@@ -216,63 +280,66 @@ export function QuickAdd({
           </Field>
         </div>
 
-        <Field label="Expected closing">
-          <div className="mb-2 flex gap-2">
-            {[0, 1, 2].map((offset) => {
-              const date = monthEnd(offset);
-              const label = new Date(date).toLocaleDateString("en-IN", {
-                month: "short",
-                timeZone: "UTC",
-              });
-              return (
-                <button
-                  key={offset}
-                  type="button"
-                  onClick={() => setCloseDate(date)}
-                  className={cn(
-                    "h-10 flex-1 rounded-xl border text-sm font-medium transition",
-                    closeDate === date
-                      ? "border-brand bg-brand-soft text-brand-ink"
-                      : "border-line text-muted",
-                  )}
-                >
-                  {label}
-                </button>
-              );
-            })}
+        <div>
+          <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
+            Expected closing month
+          </p>
+          <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+            {months.map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={month === m}
+                onClick={() => setMonth(m)}
+                className={cn(
+                  "h-11 shrink-0 rounded-xl border px-4 text-sm font-medium transition",
+                  month === m
+                    ? "border-brand bg-brand-soft text-brand-ink"
+                    : "border-line bg-white text-muted",
+                )}
+              >
+                {monthLabelLong(m)}
+              </button>
+            ))}
           </div>
-          <Input
-            type="date"
-            name="expectedCloseDate"
-            value={closeDate}
-            onChange={(e) => setCloseDate(e.target.value)}
+          <input type="hidden" name="expectedCloseMonth" value={month} />
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
+            Driver type
+          </p>
+          <ChoiceGroup
+            name="driverType"
+            value={driverType}
+            onChange={setDriverType}
+            options={DRIVER_TYPES.map((d) => ({
+              value: d.value,
+              label: d.label,
+              icon: DRIVER_ICONS[d.value],
+            }))}
           />
-        </Field>
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
+            Charging scope
+          </p>
+          <ChoiceGroup
+            name="chargingScope"
+            columns={2}
+            value={chargingScope}
+            onChange={setChargingScope}
+            options={CHARGING_SCOPES.map((c) => ({
+              value: c.value,
+              label: `${c.label} scope`,
+              icon: CHARGING_ICONS[c.value],
+            }))}
+          />
+        </div>
 
         {showMore ? (
           <div className="space-y-4 border-t border-line pt-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Driver type">
-                <Select name="driverType" defaultValue={prefs.driverType ?? ""}>
-                  <option value="">Select</option>
-                  {DRIVER_TYPES.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Charging">
-                <Select name="chargingScope" defaultValue={prefs.chargingScope ?? ""}>
-                  <option value="">Select</option>
-                  {CHARGING_SCOPES.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
             <Field label="Deal name" hint="Defaults to the customer name.">
               <Input name="name" placeholder="Optional" />
             </Field>
@@ -297,13 +364,15 @@ export function QuickAdd({
             onClick={() => setShowMore(true)}
             className="text-sm font-medium text-brand-ink"
           >
-            + Driver, charging, notes
+            + Deal name, notes
           </button>
         )}
 
-        <p className="text-xs text-muted">
+        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
+          <Truck size={13} />
           Saved as <span className="font-medium">First Contact</span>, owned by{" "}
-          <span className="font-medium">{session.name}</span>.
+          <span className="font-medium">{session.name}</span>, closing end of{" "}
+          <span className="font-medium">{monthLabelLong(month)}</span>.
         </p>
 
         {error ? (
@@ -311,7 +380,7 @@ export function QuickAdd({
             {error}
           </p>
         ) : null}
-      </form>
+      </div>
     </Sheet>
   );
 }

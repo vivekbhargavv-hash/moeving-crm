@@ -1,13 +1,13 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/db";
 import {
   accounts,
-  cities,
+  cities as cityTable,
   lostReasons,
   opportunities,
   opportunityEvents,
@@ -46,6 +46,19 @@ const stageEnum = z.enum([
   "dormant",
 ]);
 
+/** "2026-10" -> "2026-10-31". The team thinks in months, the database in dates. */
+function monthToLastDay(month: string) {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
+}
+
+const closeMonth = z
+  .string()
+  .regex(/^\d{4}-\d{2}$/, "Pick an expected closing month")
+  .nullable()
+  .optional()
+  .transform((v) => (v ? monthToLastDay(v) : null));
+
 const baseOpportunity = z.object({
   accountName: z.string().trim().min(1, "Customer is required").max(160),
   name: z.string().trim().max(160).optional(),
@@ -58,12 +71,7 @@ const baseOpportunity = z.object({
   chargingScope: z.enum(["client", "moeving"]).nullable().optional(),
   fleetSize: z.coerce.number().int().min(1).max(100_000),
   price: optionalMoney,
-  expectedCloseDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullable()
-    .optional()
-    .or(z.literal("").transform(() => null)),
+  expectedCloseMonth: closeMonth,
   notes: z.string().trim().max(4000).nullable().optional(),
   ownerUserId: uuidish,
   stage: stageEnum.optional(),
@@ -102,7 +110,7 @@ function formToObject(formData: FormData) {
 
 export async function createOpportunity(
   formData: FormData,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; count: number }>> {
   const session = await requireSession();
   const parsed = baseOpportunity.safeParse(formToObject(formData));
   if (!parsed.success) {
@@ -122,37 +130,71 @@ export async function createOpportunity(
     input.accountName,
   );
 
-  const [created] = await db
+  // One customer wanting trucks in three cities is three deals: they close on
+  // their own timelines and belong to different city forecasts. The form lets
+  // a salesperson say that once instead of filling the sheet three times.
+  const cityIds = formData
+    .getAll("cityIds")
+    .filter((v): v is string => typeof v === "string" && v !== "");
+  const cities = cityIds.length ? cityIds : [input.cityId];
+
+  const cityNames = new Map<string, string>();
+  if (cityIds.length) {
+    const rows = await db
+      .select({ id: cityTable.id, name: cityTable.name })
+      .from(cityTable)
+      .where(
+        and(
+          eq(cityTable.organizationId, session.organizationId),
+          inArray(cityTable.id, cityIds),
+        ),
+      );
+    for (const r of rows) cityNames.set(r.id, r.name);
+    // A city id that is not this organization's is simply not a city here.
+    if (rows.length !== cityIds.length) {
+      return { ok: false, error: "One of those cities is no longer available" };
+    }
+  }
+
+  const baseName = input.name?.trim() || input.accountName.trim();
+  const created = await db
     .insert(opportunities)
-    .values({
-      organizationId: session.organizationId,
-      accountId,
-      name: input.name?.trim() || input.accountName.trim(),
-      stage: input.stage ?? "first_contact",
-      cityId: input.cityId,
-      vehicleTypeId: input.vehicleTypeId,
-      driverType: input.driverType ?? null,
-      chargingScope: input.chargingScope ?? null,
-      fleetSize: input.fleetSize,
-      price: input.price,
-      expectedCloseDate: input.expectedCloseDate ?? null,
-      ownerUserId,
-      notes: input.notes ?? null,
-    })
+    .values(
+      cities.map((cityId) => ({
+        organizationId: session.organizationId,
+        accountId,
+        name:
+          cities.length > 1 && cityId && cityNames.get(cityId)
+            ? `${baseName} - ${cityNames.get(cityId)}`
+            : baseName,
+        stage: input.stage ?? "first_contact",
+        cityId,
+        vehicleTypeId: input.vehicleTypeId,
+        driverType: input.driverType ?? null,
+        chargingScope: input.chargingScope ?? null,
+        fleetSize: input.fleetSize,
+        price: input.price,
+        expectedCloseDate: input.expectedCloseMonth,
+        ownerUserId,
+        notes: input.notes ?? null,
+      })),
+    )
     .returning();
 
-  await db.insert(opportunityEvents).values({
-    organizationId: session.organizationId,
-    opportunityId: created!.id,
-    userId: session.userId,
-    kind: "created",
-    toStage: created!.stage,
-  });
+  await db.insert(opportunityEvents).values(
+    created.map((o) => ({
+      organizationId: session.organizationId,
+      opportunityId: o.id,
+      userId: session.userId,
+      kind: "created" as const,
+      toStage: o.stage,
+    })),
+  );
 
   revalidatePath("/pipeline");
   revalidatePath("/dashboard");
   revalidatePath("/forecast");
-  return { ok: true, data: { id: created!.id } };
+  return { ok: true, data: { id: created[0]!.id, count: created.length } };
 }
 
 export async function updateOpportunity(
@@ -190,7 +232,7 @@ export async function updateOpportunity(
       chargingScope: input.chargingScope ?? null,
       fleetSize: input.fleetSize,
       price: input.price,
-      expectedCloseDate: input.expectedCloseDate ?? null,
+      expectedCloseDate: input.expectedCloseMonth,
       ownerUserId,
       notes: input.notes ?? null,
       updatedAt: new Date(),
@@ -379,7 +421,7 @@ export async function upsertUser(formData: FormData): Promise<ActionResult> {
   return { ok: true };
 }
 
-const masterTables = { cities, vehicleTypes, lostReasons } as const;
+const masterTables = { cities: cityTable, vehicleTypes, lostReasons } as const;
 type MasterTable = keyof typeof masterTables;
 
 export async function upsertMasterItem(

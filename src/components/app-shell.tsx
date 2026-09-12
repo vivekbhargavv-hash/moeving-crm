@@ -126,7 +126,7 @@ export function AppShell({
 
       <div className="min-w-0 flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
         {/* Mobile header: one line, the page you are on, and you. */}
-        <header className="sticky top-0 z-30 border-b border-line bg-white/85 backdrop-blur-xl md:hidden">
+        <header className="glass sticky top-0 z-30 border-b border-line/70 md:hidden">
           <div className="flex items-center justify-between px-4 pb-2.5 pt-3">
             <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{title}</h1>
             <div className="flex items-center gap-2">
@@ -150,7 +150,7 @@ export function AppShell({
       </div>
 
       {/* Mobile tab bar: Dashboard, Pipeline, Forecast, Add. */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/92 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
+      <nav className="glass fixed inset-x-0 bottom-0 z-30 pb-[env(safe-area-inset-bottom)] shadow-[0_-1px_0_rgba(16,24,40,0.06)] before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-white/60 md:hidden">
         <div className="mx-auto grid max-w-md grid-cols-4">
           {NAV.map((item) => (
             <NavTab key={item.href} {...item} pathname={pathname} />
@@ -160,7 +160,7 @@ export function AppShell({
             aria-label="Add deal"
             className="flex flex-col items-center gap-1 py-2 text-[11px] font-semibold text-brand-ink active:scale-95"
           >
-            <span className="-mt-6 mb-0.5 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg shadow-brand/40 ring-4 ring-white">
+            <span className="-mt-6 mb-0.5 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg shadow-brand/40 ring-[5px] ring-white/70">
               <Plus size={28} strokeWidth={2.8} />
             </span>
             Add deal
@@ -204,8 +204,8 @@ function NavTab({
       href={href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex flex-col items-center gap-1 py-2 text-[11px] font-medium transition active:opacity-70",
-        active ? "text-brand-ink" : "text-muted",
+        "flex flex-col items-center gap-1 py-2 text-[11px] font-semibold tracking-[0.01em] transition active:opacity-70",
+        active ? "text-brand-ink" : "text-ink/60",
       )}
     >
       <span

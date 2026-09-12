@@ -149,7 +149,11 @@ export function PipelineBoard({
         ) : null}
 
         <div className="flex items-center gap-2">
-          <div className="flex h-12 flex-1 rounded-2xl border border-line bg-white p-[3px]">
+          {/* Board/List gets the room; the rest are icons. A native select
+              sized to its longest option was 11px wider than the screen, which
+              on mobile stretches the layout viewport — that is what made the
+              fixed tab bar change width between pages. */}
+          <div className="flex h-12 min-w-0 flex-1 rounded-2xl border border-line bg-white p-[3px]">
             {(
               [
                 ["board", LayoutGrid, "Board"],
@@ -161,11 +165,11 @@ export function PipelineBoard({
                 onClick={() => chooseView(key)}
                 aria-pressed={view === key}
                 className={cn(
-                  "flex h-full flex-1 items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold transition",
+                  "flex h-full min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl text-[14px] font-semibold transition",
                   view === key ? "bg-ink text-white" : "text-muted",
                 )}
               >
-                <Icon size={15} />
+                <Icon size={16} />
                 {label}
               </button>
             ))}
@@ -177,29 +181,29 @@ export function PipelineBoard({
               aria-label="Search deals"
               className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-line bg-white text-muted active:bg-canvas"
             >
-              <Search size={18} />
+              <Search size={19} />
             </button>
           ) : null}
 
-          <a
-            href="/api/export/deals"
-            aria-label="Export deals to a spreadsheet"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-line bg-white text-muted active:bg-canvas"
+          {/* The select is an invisible layer over an icon button: native
+              picker on every platform, fixed 48px footprint. */}
+          <div
+            className={cn(
+              "relative h-12 w-12 shrink-0 rounded-2xl border",
+              owner === "all"
+                ? "border-line bg-white text-muted"
+                : "border-brand bg-brand-soft text-brand-ink",
+            )}
           >
-            <Download size={18} />
-          </a>
-
-          <div className="relative">
+            <ListFilter
+              size={19}
+              className="pointer-events-none absolute inset-0 m-auto"
+            />
             <select
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
               aria-label="Filter by deal owner"
-              className={cn(
-                "h-12 appearance-none rounded-2xl border bg-white pl-9 pr-3 text-[13px] font-semibold focus:outline-none",
-                owner === "all"
-                  ? "border-line text-muted"
-                  : "border-brand bg-brand-soft text-brand-ink",
-              )}
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             >
               <option value="all">All owners</option>
               <option value="mine">My deals</option>
@@ -209,12 +213,9 @@ export function PipelineBoard({
                 </option>
               ))}
             </select>
-            <ListFilter
-              size={16}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-current opacity-70"
-            />
           </div>
         </div>
+
         {owner !== "all" ? (
           <p className="mt-2 px-1 text-[12px] text-muted">
             Showing {ownerLabel} · {filtered.length} deals

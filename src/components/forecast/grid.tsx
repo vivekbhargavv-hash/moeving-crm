@@ -1,0 +1,340 @@
+"use client";
+
+import { ChevronRight, Loader2 } from "lucide-react";
+import Link from "next/link";
+import * as React from "react";
+
+import { Badge, Select, Sheet } from "@/components/ui";
+import { STAGES, STAGE_MAP } from "@/lib/constants";
+import type { SalesStage } from "@/db/schema";
+import { cn, formatDate, inrCompact, monthLabel, monthLabelLong, num } from "@/lib/utils";
+import { loadDrilldown } from "@/server/forecast-actions";
+import type { ForecastCell, OpportunityCard, OpportunityFilters } from "@/server/queries";
+
+type Row = {
+  key: string;
+  cityId: string | null;
+  city: string;
+  cells: ForecastCell[];
+  total: ForecastCell;
+};
+
+type Group = {
+  vehicleType: string;
+  fleet: number;
+  value: number;
+  items: OpportunityCard[];
+};
+
+export function ForecastGrid({
+  months,
+  rows,
+  monthTotals,
+  filters,
+  options,
+}: {
+  months: string[];
+  rows: Row[];
+  monthTotals: ForecastCell[];
+  filters: OpportunityFilters;
+  options: {
+    cities: { id: string; name: string }[];
+    vehicleTypes: { id: string; name: string }[];
+    users: { id: string; name: string }[];
+  };
+}) {
+  const [metric, setMetric] = React.useState<"fleet" | "value">("fleet");
+  const [drill, setDrill] = React.useState<{
+    city: string;
+    cityId: string | null;
+    month: string;
+  } | null>(null);
+  const [groups, setGroups] = React.useState<Group[] | null>(null);
+  const [open, setOpen] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!drill) return;
+    setGroups(null);
+    setOpen(null);
+    let cancelled = false;
+    loadDrilldown(drill.cityId, drill.month, filters).then((result) => {
+      if (!cancelled) setGroups(result as Group[]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [drill, filters]);
+
+  const max = Math.max(
+    1,
+    ...rows.flatMap((r) => r.cells.map((c) => (metric === "fleet" ? c.fleet : c.value))),
+  );
+
+  const show = (c: ForecastCell) =>
+    metric === "fleet"
+      ? c.fleet
+        ? num(c.fleet)
+        : "·"
+      : c.value
+        ? inrCompact(c.value)
+        : "·";
+
+  return (
+    <div>
+      <FilterBar filters={filters} options={options} metric={metric} setMetric={setMetric} />
+
+      <div className="overflow-x-auto rounded-[14px] border border-line bg-white">
+        <table className="w-full min-w-[520px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-line">
+              <th className="sticky left-0 z-10 bg-white px-4 py-3 text-left text-[13px] font-semibold uppercase tracking-wide text-muted">
+                City
+              </th>
+              {months.map((m) => (
+                <th
+                  key={m}
+                  className="px-2 py-3 text-center text-[13px] font-semibold uppercase tracking-wide text-muted"
+                >
+                  {monthLabel(m)}
+                </th>
+              ))}
+              <th className="px-3 py-3 text-right text-[13px] font-semibold uppercase tracking-wide text-muted">
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} className="border-b border-line last:border-0">
+                <th className="sticky left-0 z-10 bg-white px-4 py-2.5 text-left font-medium">
+                  {r.city}
+                </th>
+                {r.cells.map((c, i) => {
+                  const n = metric === "fleet" ? c.fleet : c.value;
+                  const intensity = n / max;
+                  return (
+                    <td key={months[i]} className="p-1 text-center">
+                      <button
+                        disabled={!c.count}
+                        onClick={() =>
+                          setDrill({ city: r.city, cityId: r.cityId, month: months[i]! })
+                        }
+                        className={cn(
+                          "tabular h-11 w-full min-w-14 rounded-lg text-[15px] font-semibold transition",
+                          c.count
+                            ? "hover:ring-2 hover:ring-brand/30"
+                            : "cursor-default text-muted/40",
+                        )}
+                        style={
+                          c.count
+                            ? {
+                                backgroundColor: `color-mix(in oklab, var(--color-brand) ${8 + intensity * 42}%, white)`,
+                              }
+                            : undefined
+                        }
+                      >
+                        {show(c)}
+                      </button>
+                    </td>
+                  );
+                })}
+                <td className="tabular px-3 py-2.5 text-right font-semibold">
+                  {show(r.total)}
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={months.length + 2} className="px-4 py-10 text-center text-muted">
+                  No open deals with an expected closing date in this window.
+                </td>
+              </tr>
+            ) : (
+              <tr className="bg-canvas">
+                <th className="sticky left-0 z-10 bg-canvas px-4 py-3 text-left text-[13px] font-semibold uppercase tracking-wide text-muted">
+                  Total
+                </th>
+                {monthTotals.map((t, i) => (
+                  <td key={months[i]} className="tabular px-2 py-3 text-center font-semibold">
+                    {show(t)}
+                  </td>
+                ))}
+                <td className="tabular px-3 py-3 text-right font-bold">
+                  {show(
+                    monthTotals.reduce(
+                      (a, c) => ({
+                        fleet: a.fleet + c.fleet,
+                        value: a.value + c.value,
+                        count: a.count + c.count,
+                      }),
+                      { fleet: 0, value: 0, count: 0 },
+                    ),
+                  )}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-3 px-1 text-xs text-muted">
+        Open deals only, placed in the month of their expected closing date.
+        {metric === "fleet" ? " Numbers are vehicles." : " Numbers are monthly value."}
+      </p>
+
+      <Sheet
+        open={Boolean(drill)}
+        onClose={() => setDrill(null)}
+        title={drill ? `${drill.city} · ${monthLabelLong(drill.month)}` : ""}
+      >
+        {groups === null ? (
+          <div className="flex justify-center py-10 text-muted">
+            <Loader2 className="animate-spin" />
+          </div>
+        ) : groups.length === 0 ? (
+          <p className="py-10 text-center text-muted">Nothing here.</p>
+        ) : (
+          <div className="space-y-2">
+            {groups.map((g) => (
+              <div key={g.vehicleType} className="rounded-xl border border-line">
+                <button
+                  onClick={() => setOpen(open === g.vehicleType ? null : g.vehicleType)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                >
+                  <ChevronRight
+                    size={16}
+                    className={cn(
+                      "shrink-0 text-muted transition",
+                      open === g.vehicleType && "rotate-90",
+                    )}
+                  />
+                  <span className="font-medium">{g.vehicleType}</span>
+                  <span className="tabular ml-auto font-semibold">{g.fleet}</span>
+                  <span className="tabular w-20 text-right text-sm text-muted">
+                    {inrCompact(g.value)}
+                  </span>
+                </button>
+                {open === g.vehicleType ? (
+                  <ul className="border-t border-line">
+                    {g.items.map((o) => (
+                      <li key={o.id}>
+                        <Link
+                          href={`/opportunities/${o.id}`}
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-canvas"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">{o.accountName}</p>
+                            <p className="truncate text-[13px] text-muted">
+                              {o.ownerName.split(" ")[0]} ·{" "}
+                              {formatDate(o.expectedCloseDate)}
+                            </p>
+                          </div>
+                          <Badge className={STAGE_MAP[o.stage as SalesStage].chip}>
+                            {STAGE_MAP[o.stage as SalesStage].short}
+                          </Badge>
+                          <span className="tabular w-12 text-right font-semibold">
+                            {o.fleetSize}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </Sheet>
+    </div>
+  );
+}
+
+function FilterBar({
+  filters,
+  options,
+  metric,
+  setMetric,
+}: {
+  filters: OpportunityFilters;
+  options: {
+    cities: { id: string; name: string }[];
+    vehicleTypes: { id: string; name: string }[];
+    users: { id: string; name: string }[];
+  };
+  metric: "fleet" | "value";
+  setMetric: (m: "fleet" | "value") => void;
+}) {
+  function setParam(key: string, value: string) {
+    const url = new URL(window.location.href);
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+    window.location.href = url.toString();
+  }
+
+  return (
+    <div className="no-scrollbar mb-4 flex gap-2 overflow-x-auto pb-1">
+      <div className="flex h-11 shrink-0 rounded-xl border border-line bg-white p-1">
+        {(["fleet", "value"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMetric(m)}
+            className={cn(
+              "rounded-lg px-3 text-sm font-medium transition",
+              metric === m ? "bg-ink text-white" : "text-muted",
+            )}
+          >
+            {m === "fleet" ? "Vehicles" : "Value"}
+          </button>
+        ))}
+      </div>
+      <Select
+        className="h-11 w-36 shrink-0"
+        value={filters.cityId ?? ""}
+        onChange={(e) => setParam("city", e.target.value)}
+      >
+        <option value="">All cities</option>
+        {options.cities.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </Select>
+      <Select
+        className="h-11 w-36 shrink-0"
+        value={filters.vehicleTypeId ?? ""}
+        onChange={(e) => setParam("vehicle", e.target.value)}
+      >
+        <option value="">All vehicles</option>
+        {options.vehicleTypes.map((v) => (
+          <option key={v.id} value={v.id}>
+            {v.name}
+          </option>
+        ))}
+      </Select>
+      <Select
+        className="h-11 w-36 shrink-0"
+        value={filters.ownerUserId ?? ""}
+        onChange={(e) => setParam("spoc", e.target.value)}
+      >
+        <option value="">All SPOCs</option>
+        {options.users.map((u) => (
+          <option key={u.id} value={u.id}>
+            {u.name}
+          </option>
+        ))}
+      </Select>
+      <Select
+        className="h-11 w-36 shrink-0"
+        value={filters.stage ?? ""}
+        onChange={(e) => setParam("stage", e.target.value)}
+      >
+        <option value="">All open stages</option>
+        {STAGES.filter((s) => s.open).map((s) => (
+          <option key={s.value} value={s.value}>
+            {s.label}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
+}

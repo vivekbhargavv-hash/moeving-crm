@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: oklch(0.21 0.02 264);
+  --color-muted: oklch(0.52 0.02 264);
+  --color-line: oklch(0.92 0.006 264);
+  --color-surface: oklch(1 0 0);
+  --color-canvas: oklch(0.985 0.003 264);
+  --color-brand: oklch(0.62 0.16 152);
+  --color-brand-ink: oklch(0.38 0.12 152);
+  --color-brand-soft: oklch(0.95 0.04 152);
+
+  --font-sans: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Inter,
+    system-ui, sans-serif;
+
+  --radius-card: 0.875rem;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "tnum" 0;
+    overscroll-behavior-y: none;
+  }
+
+  /* Numbers in tables and tiles line up. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  button,
+  a {
+    touch-action: manipulation;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* stops iOS Safari zooming on focus */
+  }
+}
+
+@utility safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+}

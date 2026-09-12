@@ -54,8 +54,8 @@ export function AppShell({
       {/* Desktop rail */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-line bg-white px-3 py-5">
         <div className="px-3 pb-6">
-          <p className="text-[17px] font-semibold tracking-tight">MoEVing</p>
-          <p className="text-xs text-muted">Sales CRM</p>
+          <p className="text-[17px] font-semibold tracking-tight">Good Deal</p>
+          <p className="text-xs text-muted">MoEVing sales</p>
         </div>
         <nav className="flex flex-col gap-1">
           {nav.map((item) => {
@@ -96,7 +96,7 @@ export function AppShell({
         {/* Mobile top bar */}
         <header className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b border-line bg-white/90 px-4 py-3 backdrop-blur">
           <p className="text-[17px] font-semibold tracking-tight">
-            {nav.find((n) => pathname.startsWith(n.href))?.label ?? "MoEVing"}
+            {nav.find((n) => pathname.startsWith(n.href))?.label ?? "Good Deal"}
           </p>
           <UserButton />
         </header>

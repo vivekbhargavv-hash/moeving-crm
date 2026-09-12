@@ -5,12 +5,12 @@ import { ServiceWorker } from "@/components/service-worker";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MoEVing CRM",
+  title: "Good Deal",
   description: "Pipeline, forecast and margins for the MoEVing EV logistics team.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "MoEVing CRM",
+    title: "Good Deal",
     statusBarStyle: "default",
   },
 };

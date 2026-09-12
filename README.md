@@ -1,4 +1,4 @@
-# MoEVing CRM
+# Good Deal
 
 A mobile-first sales CRM for MoEVing's EV logistics team. Five screens, no
 modules, no tabs-inside-tabs: pipeline, closure forecast, dashboard, deal
@@ -20,6 +20,12 @@ npm run dev
 
 Add `-- --demo` to the seed for ~36 sample deals to click around in:
 `npm run db:seed -- --demo`.
+
+**No Node to hand, or port 5432 blocked?** Paste `drizzle/bootstrap.sql` into
+Neon's SQL Editor instead. It creates the schema, the MoEVing organization, all
+master data and the first admin in one go, and is safe to run twice.
+`scripts/apply-migration.mjs` does the same over Neon's HTTPS endpoint when only
+443 is open.
 
 ### Adding the team
 

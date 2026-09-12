@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "MoEVing CRM",
-    short_name: "MoEVing",
+    name: "Good Deal",
+    short_name: "Good Deal",
     description: "Sales pipeline for the MoEVing EV logistics team.",
     start_url: "/pipeline",
     scope: "/",

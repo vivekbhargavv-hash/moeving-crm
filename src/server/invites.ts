@@ -11,10 +11,17 @@ import { clerkClient } from "@clerk/nextjs/server";
  * and in what role — Clerk only proves who someone is. So an invitation that
  * fails to send is never allowed to fail the whole operation: the row is
  * written, the admin is told, and the invite can be sent again.
+ *
+ * Clerk reporting success does NOT mean the email arrived. On a development
+ * instance it is sent from a shared Clerk domain that corporate mail servers
+ * routinely reject or file as spam, and nothing reports that back. That is why
+ * the accept link is kept: Admin can hand it over by hand when the mail does
+ * not land. The real cure is a production Clerk instance on a custom domain.
  */
 
 export type InviteOutcome =
-  | { sent: true }
+  /** `url` is Clerk's accept link — see the note above about email delivery. */
+  | { sent: true; url: string | null }
   /** Already invited, or already has a Clerk account — nothing to do. */
   | { sent: false; reason: "already-invited" }
   | { sent: false; reason: "failed"; message: string };
@@ -22,7 +29,7 @@ export type InviteOutcome =
 export async function sendInvitation(email: string): Promise<InviteOutcome> {
   try {
     const clerk = await clerkClient();
-    await clerk.invitations.createInvitation({
+    const invitation = await clerk.invitations.createInvitation({
       emailAddress: email,
       // A path is enough; Clerk resolves it against the instance's app URL.
       redirectUrl: "/sign-up",
@@ -30,7 +37,9 @@ export async function sendInvitation(email: string): Promise<InviteOutcome> {
       // an error worth showing an admin.
       ignoreExisting: true,
     });
-    return { sent: true };
+    // Clerk returns the accept link. Keeping it means onboarding does not
+    // depend on an email arriving: an admin can hand it over directly.
+    return { sent: true, url: invitation.url ?? null };
   } catch (error) {
     const message = clerkErrorMessage(error);
     // "duplicate" covers both an outstanding invitation and an address that

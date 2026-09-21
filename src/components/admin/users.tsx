@@ -1,6 +1,6 @@
 "use client";
 
-import { MailCheck, Trash2 } from "lucide-react";
+import { Check, Link2, MailCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
@@ -15,6 +15,8 @@ type Row = {
   isActive: boolean;
   linked: boolean;
   invitedAt: Date | null;
+  /** Clerk's accept link, kept because the email often does not arrive. */
+  inviteUrl: string | null;
   /** Deals they own. A user who owns any cannot be deleted, only suspended. */
   dealCount: number;
 };
@@ -32,6 +34,29 @@ export function AdminUsers({
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
+  const [copied, setCopied] = React.useState<string | null>(null);
+
+  /**
+   * Handing the sign-up link over directly.
+   *
+   * Clerk accepts the invitation and reports success, but on a development
+   * instance the email is sent from a shared Clerk domain that corporate mail
+   * routinely rejects — so the person never sees it. This is the way round
+   * that: copy the link, send it however you actually reach them.
+   */
+  async function copyInvite(u: Row) {
+    if (!u.inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(u.inviteUrl);
+    } catch {
+      // Clipboard is blocked outside a secure context or without permission;
+      // a prompt still lets them copy it by hand rather than dead-ending.
+      window.prompt(`Sign-up link for ${u.name}`, u.inviteUrl);
+      return;
+    }
+    setCopied(u.id);
+    setTimeout(() => setCopied((c) => (c === u.id ? null : c)), 2000);
+  }
 
   function save(formData: FormData) {
     setError(null);
@@ -118,6 +143,22 @@ export function AdminUsers({
                 </div>
               </button>
 
+              {/* The link is the reliable path; the email is best effort. */}
+              {!u.linked && u.isActive && u.inviteUrl ? (
+                <button
+                  onClick={() => copyInvite(u)}
+                  title="Copy their sign-up link"
+                  aria-label={`Copy sign-up link for ${u.name}`}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-canvas"
+                >
+                  {copied === u.id ? (
+                    <Check size={17} className="text-emerald-600" />
+                  ) : (
+                    <Link2 size={17} />
+                  )}
+                </button>
+              ) : null}
+
               {/* Re-send is only meaningful for somebody who has not signed in. */}
               {!u.linked && u.isActive ? (
                 <button
@@ -163,6 +204,10 @@ export function AdminUsers({
         Suspending blocks sign-in and takes someone out of the Deal Owner
         dropdowns, while their name stays on the deals they closed. Deleting is
         only offered for someone who owns no deals.
+        <br />
+        If someone says the invitation email never arrived, use the link button
+        to copy their sign-up link and send it to them directly — it is the same
+        link the email contains.
       </p>
 
       <Sheet

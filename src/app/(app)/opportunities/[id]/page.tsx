@@ -87,6 +87,14 @@ export default async function OpportunityPage({
         }}
         master={master}
         role={session.role}
+        // Owner or admin for anything open; a recorded win is admin-only,
+        // since deleting it restates a month that has already been reported.
+        canDelete={
+          (session.role === "admin" ||
+            opp.ownerUserId === session.userId) &&
+          (session.role === "admin" || opp.stage !== "closed_won")
+        }
+        expansionCount={row.expansions.length}
       />
 
       {/* Repeat business. A won customer coming back for more trucks gets a
@@ -95,17 +103,23 @@ export default async function OpportunityPage({
       {isWon ? (
         <div className="mt-3">
           <ExpandDeal
-            master={master}
-            session={session}
-            prefill={{
-              parentOpportunityId: opp.id,
-              parentLabel: opp.name,
+            cities={master.cities}
+            source={{
+              id: opp.id,
               accountName: row.accountName,
-              cityIds: opp.cityId ? [opp.cityId] : [],
-              vehicleTypeId: opp.vehicleTypeId ?? "",
-              driverType: opp.driverType,
-              chargingScope: opp.chargingScope,
-              price: opp.revenue ? String(opp.revenue) : String(opp.price ?? ""),
+              cityId: opp.cityId,
+              cityName: row.city,
+              vehicleType: row.vehicleType,
+              driverTypeLabel: opp.driverType
+                ? DRIVER_TYPE_LABEL[opp.driverType]!
+                : null,
+              chargingScopeLabel: opp.chargingScope
+                ? CHARGING_SCOPE_LABEL[opp.chargingScope]!
+                : null,
+              revenue: opp.revenue,
+              costPerVehicle: opp.costPerVehicle,
+              marginPerVehicle: opp.marginPerVehicle,
+              marginPct: opp.marginPct === null ? null : Number(opp.marginPct),
             }}
           />
         </div>

@@ -105,6 +105,7 @@ CREATE TABLE "users" (
 	"role" "user_role" DEFAULT 'sales' NOT NULL,
 	"is_active" boolean DEFAULT true NOT NULL,
 	"invited_at" timestamp with time zone,
+	"invite_url" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_clerk_user_id_unique" UNIQUE("clerk_user_id")
 );

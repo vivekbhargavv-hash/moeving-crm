@@ -82,8 +82,6 @@ const baseOpportunity = z.object({
   notes: z.string().trim().max(4000).nullable().optional(),
   ownerUserId: uuidish,
   stage: stageEnum.optional(),
-  /** Set when this deal grew out of an earlier one — see § repeat business. */
-  parentOpportunityId: uuidish,
 });
 
 /** Find-or-create the customer, scoped to the caller's org. */
@@ -165,18 +163,6 @@ export async function createOpportunity(
     }
   }
 
-  // A parent id comes off a form, so it is checked against this organization
-  // before it is trusted, like every other id crossing the wire.
-  let parentOpportunityId: string | null = null;
-  if (input.parentOpportunityId) {
-    const parent = await loadOwned(
-      session.organizationId,
-      input.parentOpportunityId,
-    );
-    if (!parent) return { ok: false, error: "That original deal no longer exists" };
-    parentOpportunityId = parent.id;
-  }
-
   const baseName = input.name?.trim() || input.accountName.trim();
   const created = await db
     .insert(opportunities)
@@ -198,7 +184,6 @@ export async function createOpportunity(
         expectedCloseDate: input.expectedCloseMonth,
         ownerUserId,
         notes: input.notes ?? null,
-        parentOpportunityId,
       })),
     )
     .returning();
@@ -212,22 +197,6 @@ export async function createOpportunity(
       toStage: o.stage,
     })),
   );
-
-  // The original deal's timeline should say the customer came back, or the
-  // repeat order is only visible from the new deal looking backwards.
-  if (parentOpportunityId) {
-    await db.insert(opportunityEvents).values({
-      organizationId: session.organizationId,
-      opportunityId: parentOpportunityId,
-      userId: session.userId,
-      kind: "note",
-      body:
-        created.length > 1
-          ? `Follow-on deployment: ${created.length} new deals opened for this customer.`
-          : `Follow-on deployment opened: ${created[0]!.name} (${created[0]!.fleetSize} vehicles).`,
-    });
-    revalidatePath(`/opportunities/${parentOpportunityId}`);
-  }
 
   revalidatePath("/pipeline");
   revalidatePath("/dashboard");
@@ -294,6 +263,131 @@ export async function updateOpportunity(
   revalidatePath("/forecast");
   revalidatePath("/dashboard");
   return { ok: true };
+}
+
+/* ---------------------------------------------------------------- expansion */
+
+/**
+ * Repeat business: an existing customer taking more vehicles on terms that are
+ * already agreed.
+ *
+ * Three things are genuinely new — where the trucks go, how many, and when.
+ * Everything else is the won deal's, copied here rather than re-entered,
+ * because the unit economics of that contract are settled. The copy happens on
+ * the server reading the parent row, so the locked figures are not merely
+ * disabled inputs someone could re-enable and post.
+ *
+ * It lands as Closed Won: nothing about it is being sold. Its `closed_at` is
+ * the deployment month, so the revenue counts in Wins-by-month when the trucks
+ * actually go out rather than the day the paperwork was raised.
+ */
+const expansionSchema = z.object({
+  cityId: uuidish,
+  fleetSize: z.coerce.number().int().min(1).max(100_000),
+  deploymentMonth: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/, "Pick a deployment month"),
+});
+
+export async function createExpansion(
+  parentId: string,
+  formData: FormData,
+): Promise<ActionResult<{ id: string }>> {
+  const session = await requireSession();
+  const parent = await loadOwned(session.organizationId, parentId);
+  if (!parent) return { ok: false, error: "That deal no longer exists" };
+  if (parent.stage !== "closed_won") {
+    return { ok: false, error: "Only a won deal can take more vehicles" };
+  }
+
+  const parsed = expansionSchema.safeParse(formToObject(formData));
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const input = parsed.data;
+
+  // A city id comes off a form, so it is checked against this organization.
+  let cityId: string | null = null;
+  let cityName: string | null = null;
+  if (input.cityId) {
+    const city = await db.query.cities.findFirst({
+      where: and(
+        eq(cityTable.id, input.cityId),
+        eq(cityTable.organizationId, session.organizationId),
+      ),
+    });
+    if (!city) return { ok: false, error: "That city is no longer available" };
+    cityId = city.id;
+    cityName = city.name;
+  }
+
+  const account = await db.query.accounts.findFirst({
+    where: and(
+      eq(accounts.id, parent.accountId),
+      eq(accounts.organizationId, session.organizationId),
+    ),
+  });
+
+  const deployOn = monthToLastDay(input.deploymentMonth);
+  const label = `+${input.fleetSize} vehicle${input.fleetSize === 1 ? "" : "s"}`;
+  const name = cityName
+    ? `${account?.name ?? parent.name} - ${cityName} (${label})`
+    : `${account?.name ?? parent.name} (${label})`;
+
+  const [created] = await db
+    .insert(opportunities)
+    .values({
+      organizationId: session.organizationId,
+      accountId: parent.accountId,
+      name: name.slice(0, 160),
+      stage: "closed_won",
+      // --- the three things this sheet asks for ---
+      cityId,
+      fleetSize: input.fleetSize,
+      expectedCloseDate: deployOn,
+      // Wins count on closed_at, so the deployment month is the month it lands.
+      closedAt: new Date(`${deployOn}T00:00:00Z`),
+      // --- locked: the contract this grew out of, not a fresh negotiation ---
+      vehicleTypeId: parent.vehicleTypeId,
+      driverType: parent.driverType,
+      chargingScope: parent.chargingScope,
+      price: parent.price,
+      revenue: parent.revenue,
+      leaseCost: parent.leaseCost,
+      driverCost: parent.driverCost,
+      chargingCost: parent.chargingCost,
+      parkingCost: parent.parkingCost,
+      maintenanceCost: parent.maintenanceCost,
+      supervisorCost: parent.supervisorCost,
+      miscCost: parent.miscCost,
+      // The account stays with whoever owns the relationship.
+      ownerUserId: parent.ownerUserId,
+      parentOpportunityId: parent.id,
+    })
+    .returning();
+
+  await db.insert(opportunityEvents).values([
+    {
+      organizationId: session.organizationId,
+      opportunityId: created!.id,
+      userId: session.userId,
+      kind: "created" as const,
+      toStage: created!.stage,
+    },
+    {
+      organizationId: session.organizationId,
+      opportunityId: parent.id,
+      userId: session.userId,
+      kind: "note" as const,
+      body: `Follow-on deployment: ${label}${cityName ? ` in ${cityName}` : ""}, deploying ${input.deploymentMonth}.`,
+    },
+  ]);
+
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+  revalidatePath("/forecast");
+  revalidatePath(`/opportunities/${parent.id}`);
+  return { ok: true, data: { id: created!.id } };
 }
 
 /* ------------------------------------------------------------ stage change */
@@ -382,12 +476,30 @@ export async function addNote(id: string, body: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * Remove a deal for good.
+ *
+ * A won deal is not just a row: it is a month in the wins report and a slice
+ * of reported margin. Deleting one silently restates both, so that is an
+ * admin's call, not a deal owner's. Anything still open is the owner's to
+ * clear up — a duplicate typed in twice should not need an admin.
+ *
+ * Follow-on deployments are left standing (`parent_opportunity_id` is ON
+ * DELETE SET NULL); the caller is told how many so it is not a surprise.
+ */
 export async function deleteOpportunity(id: string): Promise<ActionResult> {
   const session = await requireSession();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Opportunity not found" };
   if (session.role !== "admin" && existing.ownerUserId !== session.userId) {
     return { ok: false, error: "Only the deal owner or an admin can delete this" };
+  }
+  if (existing.stage === "closed_won" && session.role !== "admin") {
+    return {
+      ok: false,
+      error:
+        "This is a recorded win — deleting it changes past reported revenue. Ask an admin.",
+    };
   }
   await db
     .delete(opportunities)
@@ -398,6 +510,8 @@ export async function deleteOpportunity(id: string): Promise<ActionResult> {
       ),
     );
   revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+  revalidatePath("/forecast");
   return { ok: true };
 }
 
@@ -453,7 +567,7 @@ export async function upsertUser(
 
   const row = {
     ...values,
-    ...(invite?.sent ? { invitedAt: new Date() } : {}),
+    ...(invite?.sent ? { invitedAt: new Date(), inviteUrl: invite.url } : {}),
   };
 
   if (id) {
@@ -584,7 +698,10 @@ export async function resendInvite(id: string): Promise<ActionResult> {
   }
   await db
     .update(users)
-    .set({ invitedAt: new Date() })
+    .set({
+      invitedAt: new Date(),
+      ...(invite.sent ? { inviteUrl: invite.url } : {}),
+    })
     .where(eq(users.id, id));
   revalidatePath("/admin/users");
   return { ok: true };

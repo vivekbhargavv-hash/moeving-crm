@@ -7,6 +7,7 @@ import {
   KanbanSquare,
   Plus,
   Settings,
+  Shield,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -31,6 +32,7 @@ const TITLES: Record<string, string> = {
   "/opportunities": "Deal",
   "/admin/users": "Users",
   "/admin/master-data": "Master data",
+  "/settings": "Settings",
 };
 
 export function AppShell({
@@ -69,9 +71,15 @@ export function AppShell({
     return () => clearTimeout(t);
   }, [toast]);
 
-  const nav = session.role === "admin"
-    ? [...NAV, { href: "/admin/users", label: "Admin", icon: Settings }]
-    : NAV;
+  // Settings is everyone's — it is where the install button lives, and the
+  // people who most need to install this are the ones who are not admins.
+  const nav = [
+    ...NAV,
+    ...(session.role === "admin"
+      ? [{ href: "/admin/users", label: "Admin", icon: Shield }]
+      : []),
+    { href: "/settings", label: "Settings", icon: Settings },
+  ];
 
   const title =
     pathname.startsWith("/forecast") && params.get("tab") === "wins"
@@ -130,15 +138,13 @@ export function AppShell({
           <div className="flex items-center justify-between px-4 pb-2.5 pt-3">
             <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{title}</h1>
             <div className="flex items-center gap-2">
-              {session.role === "admin" ? (
-                <Link
-                  href="/admin/users"
-                  aria-label="Admin"
-                  className="flex h-10 w-10 items-center justify-center rounded-full text-muted active:bg-canvas"
-                >
-                  <Settings size={19} />
-                </Link>
-              ) : null}
+              <Link
+                href="/settings"
+                aria-label="Settings"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-muted active:bg-canvas"
+              >
+                <Settings size={19} />
+              </Link>
               <UserButton />
             </div>
           </div>

@@ -41,36 +41,16 @@ export type MasterData = {
  * only pre-filled sheet is an expansion, which copies the deal it grew from.
  */
 
-/**
- * Repeat business: the same customer asking for more trucks.
- *
- * The follow-on is a NEW deal carrying the original's setup, never an edit to
- * the won one — a won deal that grows would move a recorded win out of the
- * month it actually happened in and quietly restate the wins report.
- */
-export type Prefill = {
-  parentOpportunityId: string;
-  parentLabel: string;
-  accountName: string;
-  cityIds: string[];
-  vehicleTypeId: string;
-  driverType: string | null;
-  chargingScope: string | null;
-  price: string;
-};
-
 export function QuickAdd({
   open,
   onClose,
   master,
   session,
-  prefill,
 }: {
   open: boolean;
   onClose: () => void;
   master: MasterData;
   session: Session;
-  prefill?: Prefill;
 }) {
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
@@ -90,18 +70,16 @@ export function QuickAdd({
 
   React.useEffect(() => {
     if (!open) return;
-    // An expansion starts from the deal it grew out of. Everything else starts
-    // blank — nothing is carried over from the last deal this person created.
     setError(null);
-    setCityIds(prefill?.cityIds ?? []);
-    setVehicleTypeId(prefill?.vehicleTypeId ?? "");
-    setDriverType(prefill?.driverType ?? null);
-    setChargingScope(prefill?.chargingScope ?? null);
+    setCityIds([]);
+    setVehicleTypeId("");
+    setDriverType(null);
+    setChargingScope(null);
     setFleet("");
-    setPrice(prefill?.price ?? "");
+    setPrice("");
     setMonth("");
     setShowMore(false);
-  }, [open, prefill]);
+  }, [open]);
 
   const fleetCount = Number(fleet || 0);
   const perDeal = Number(price || 0) * fleetCount;
@@ -140,7 +118,7 @@ export function QuickAdd({
     <Sheet
       open={open}
       onClose={onClose}
-      title={prefill ? "Deploy more vehicles" : "New deal"}
+      title="New deal"
       action={submit}
       footer={
         <div className="flex items-center gap-3">
@@ -164,28 +142,12 @@ export function QuickAdd({
       }
     >
       <div className="space-y-4">
-        {prefill ? (
-          <>
-            <input
-              type="hidden"
-              name="parentOpportunityId"
-              value={prefill.parentOpportunityId}
-            />
-            <p className="rounded-xl bg-brand-soft px-4 py-3 text-[13px] text-brand-ink">
-              A new deal for <strong>{prefill.accountName}</strong>, carrying the
-              setup from {prefill.parentLabel}. The won deal is left exactly as
-              it is, so the month it closed in still counts.
-            </p>
-          </>
-        ) : null}
         <Field label="Customer">
           <Input
             name="accountName"
             list="account-options"
             required
-            autoFocus={!prefill}
-            readOnly={Boolean(prefill)}
-            defaultValue={prefill?.accountName ?? ""}
+            autoFocus
             autoComplete="off"
             placeholder="e.g. Berger Paints"
             enterKeyHint="next"

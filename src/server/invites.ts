@@ -1,4 +1,7 @@
 import { clerkClient } from "@clerk/nextjs/server";
+import { headers } from "next/headers";
+
+import { inviteRedirectUrl } from "@/server/invite-url";
 
 /**
  * Asking Clerk to email someone a sign-up link.
@@ -26,13 +29,35 @@ export type InviteOutcome =
   | { sent: false; reason: "already-invited" }
   | { sent: false; reason: "failed"; message: string };
 
+/**
+ * The origin to send the invited person back to.
+ *
+ * The host the admin is currently on is the best answer: it is, by definition,
+ * a domain this app is served from. `VERCEL_PROJECT_PRODUCTION_URL` is the
+ * fallback for anything running outside a request.
+ */
+async function appOrigin(): Promise<string | null> {
+  try {
+    const h = await headers();
+    const host = h.get("x-forwarded-host") ?? h.get("host");
+    if (host) return `${h.get("x-forwarded-proto") ?? "https"}://${host}`;
+  } catch {
+    /* no request context — fall through */
+  }
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (production) return `https://${production}`;
+  return process.env.NEXT_PUBLIC_APP_URL ?? null;
+}
+
 export async function sendInvitation(email: string): Promise<InviteOutcome> {
   try {
     const clerk = await clerkClient();
+    // Must be absolute — see invite-url.ts for the 404 this caused.
+    const redirectUrl = inviteRedirectUrl(await appOrigin());
+
     const invitation = await clerk.invitations.createInvitation({
       emailAddress: email,
-      // A path is enough; Clerk resolves it against the instance's app URL.
-      redirectUrl: "/sign-up",
+      redirectUrl,
       // Re-inviting someone who already has an invitation is a duplicate, not
       // an error worth showing an admin.
       ignoreExisting: true,

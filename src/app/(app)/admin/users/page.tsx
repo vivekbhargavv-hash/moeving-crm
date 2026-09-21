@@ -20,6 +20,7 @@ export default async function AdminUsersPage() {
       isActive: users.isActive,
       clerkUserId: users.clerkUserId,
       invitedAt: users.invitedAt,
+      inviteUrl: users.inviteUrl,
       // Table names are spelled out rather than interpolated: Drizzle renders
       // a column inside a sql template UNQUALIFIED, so `${users.id}` in a
       // subquery over opportunities becomes a bare "id" that resolves to the
@@ -37,8 +38,9 @@ export default async function AdminUsersPage() {
       <div className="mb-4">
         <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Users</h1>
         <p className="text-sm text-muted">
-          Adding someone here emails them a sign-up link. They are linked to
-          this CRM the first time they sign in.
+          Adding someone here emails them a sign-up link, and keeps a copy of
+          that link in case the email does not arrive. They are linked to this
+          CRM the first time they sign in.
         </p>
       </div>
       <AdminUsers
@@ -51,6 +53,7 @@ export default async function AdminUsersPage() {
           isActive: u.isActive,
           linked: Boolean(u.clerkUserId),
           invitedAt: u.invitedAt,
+          inviteUrl: u.inviteUrl,
           dealCount: u.dealCount,
         }))}
       />

@@ -52,6 +52,8 @@ export const requireSession = cache(async (): Promise<Session> => {
     .update(users)
     .set({
       clerkUserId,
+      // They are in; the accept link is spent and should not sit in the row.
+      inviteUrl: null,
       name:
         invited.name ||
         [clerk?.firstName, clerk?.lastName].filter(Boolean).join(" ") ||

@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 21 September 2026 (second session)
+**Last updated:** 21 September 2026 (third session)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -11,11 +11,9 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-0. **Run the two new migrations against production** before or with the next
-   deploy, in this order and as separate statements:
-   `drizzle/0002_contracting_stage.sql`, then
-   `drizzle/0003_expansions_and_invites.sql`. Until 0002 lands, the app's
-   Contracting stage has no matching database value. Both are safe to re-run.
+0. **Run `drizzle/0004_invite_link.sql` against production** before or with
+   the next deploy. One additive column; safe to re-run. (0002 and 0003 are
+   already applied.)
 
 1. **Rotate the Clerk secret key.** `sk_live_…` was pasted into a chat
    transcript. Clerk → API Keys → regenerate. A live secret can read and
@@ -40,7 +38,7 @@ Next.js 15 (App Router) · TypeScript · Tailwind v4 · Neon Postgres · Drizzle
 Clerk · installable PWA · Vercel.
 
 **Screens:** Dashboard · Pipeline (board + list) · Forecast (forecast + wins) ·
-Deal detail · Quick Add · Admin (users, master data).
+Deal detail · Quick Add · Settings (install) · Admin (users, master data).
 
 ---
 
@@ -58,7 +56,10 @@ Change these only deliberately — a lot of code assumes them.
 | **Wins count on `closed_at`**, not `expected_close_date`. | The expected date is a forecast and usually wrong by the time a deal lands. |
 | **A deal owner's Pipeline opens on their own deals; only admins get All owners.** | A rep scrolling past thirty other people's deals stops opening the app. It is a default view, not a permission — the server still sends the whole org and any owner can be picked by name. |
 | **The Pipeline opens on the table, sorted by most recently updated.** | What moved since you last looked is the reason to open the screen. The board is one tap away and the choice is remembered per person. |
-| **Repeat business is a NEW deal linked to the won one** (`parent_opportunity_id`), never an edit to the won row. | A won deal that grows would move a recorded win out of the month it happened in and silently restate Wins-by-month. Each deployment closes on its own date and carries its own cost sheet. |
+| **Repeat business is a NEW deal linked to the won one** (`parent_opportunity_id`), never an edit to the won row. | A won deal that grows would move a recorded win out of the month it happened in and silently restate Wins-by-month. |
+| **An expansion asks only city, fleet and deployment month.** Everything else is copied off the parent BY THE SERVER, not by the form. | The unit economics came with that contract. Copying server-side means the lock is real: posting `price` or `stage` into that action changes nothing. |
+| **An expansion lands as `closed_won` with `closed_at` = the deployment month.** | Nothing is being sold, so it is not a pipeline stage; and the revenue belongs to the month the trucks go out, not the day the paperwork was raised. Its cost sheet is the parent's, so margin_pct and total_cost compute themselves. |
+| **Deleting a `closed_won` deal is admin-only**; anything open is the owner's to delete. | A win is a month in the wins report and a slice of reported margin. Deleting one restates both. |
 | **Suspending, not deleting, is how someone leaves.** `owner_user_id` is `ON DELETE RESTRICT`. | Their name is part of the history of every deal they closed. Delete is offered only for a row that owns nothing — a wrong address typed in. |
 | **Auth checks sit next to the data**, not in middleware path matching. | Clerk deprecated `createRouteMatcher` for exactly this reason: path matching drifts from how Next routes requests. |
 | **Vercel functions are pinned to `sin1`** in `vercel.json`. | Neon is in `ap-southeast-1`. They were in Washington DC; every query crossed the Pacific twice. |
@@ -70,7 +71,8 @@ Change these only deliberately — a lot of code assumes them.
 ```
 src/
   app/
-    (app)/            dashboard · pipeline · forecast · opportunities/[id] · admin
+    (app)/            dashboard · pipeline · forecast · opportunities/[id]
+                      settings (everyone) · admin (admins)
     api/export/deals  CSV export (org-scoped, UTF-8 BOM for Excel)
     sign-in, sign-up, no-access, offline
   components/
@@ -80,6 +82,7 @@ src/
     pipeline/         board.tsx (kanban) · table.tsx (list + table) · filters.tsx
     forecast/         grid.tsx (city × month) · wins.tsx (owner × month) · tabs.tsx
     opportunity/      detail-actions.tsx · note-box.tsx · expand-deal.tsx
+    install-app.tsx   PWA install: a real button on Android, steps on iOS
     ui/               Button, Input, Select, Sheet, Field, ChoiceGroup
     ui-server.tsx     Card, Badge, Avatar, EmptyState (no "use client")
   db/schema.ts        the whole data model in one file
@@ -97,6 +100,7 @@ drizzle/
   0001_*.sql          per-vehicle economics migration
   0002_*.sql          the Contracting stage — ALTER TYPE alone, see § 5
   0003_*.sql          expansion links, invited_at, Contracting's probability
+  0004_*.sql          users.invite_url — the accept link, see § 7
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
 ```
@@ -146,7 +150,7 @@ su pgtest -c "PATH=/usr/lib/postgresql/16/bin:\$PATH pg_ctl -D /home/pgtest/data
   -o '-p 5433 -h 127.0.0.1 -k /home/pgtest' -l /home/pgtest/log start"
 psql "postgresql://postgres@127.0.0.1:5433/postgres" -c "create database demo"
 for f in bootstrap 0001_per_vehicle_economics 0002_contracting_stage \
-         0003_expansions_and_invites demo-data; do
+         0003_expansions_and_invites 0004_invite_link demo-data; do
   psql -v ON_ERROR_STOP=1 "postgresql://postgres@127.0.0.1:5433/demo" -f drizzle/$f.sql
 done
 
@@ -236,6 +240,13 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
   request after an idle spell pays a ~500ms cold start.
 - **Vercel project:** `good-deal-crm` (`prj_Rpb213Y0l7kkPtDKZ7V9in4VXgH3`),
   team `vivek-5ea1b3e5`, region `sin1`, auto-deploys on push to `main`.
+- **Invitation emails do not reliably arrive.** Clerk accepts
+  `createInvitation` and reports success — `invited_at` gets set — but the
+  development instance sends from a shared Clerk domain that corporate mail
+  (notably `moeving.com`) rejects or files as spam, and nothing reports that
+  back. Admin therefore keeps Clerk's accept link in `users.invite_url` and
+  offers a **Copy invite link** button. That is a workaround; the cure is the
+  production instance below.
 - **Clerk:** still on the **development** instance. A production instance needs
   a custom domain first — see README § "Switching Clerk to production keys".
   `pk_live` keys on a `*.vercel.app` URL cannot work: the host baked into the
@@ -294,10 +305,17 @@ Roughly in order of value to adoption:
 - Test coverage is the stage-change path and the database rules (§ 4). Quick
   Add, the forecast maths and the CSV export have none; the same two-file
   pattern extends to them.
-- **The invitation email has never been seen to arrive.** The code path is
-  proven — a failure keeps the CRM row and shows the admin a warning, which was
-  tested by running with Clerk unreachable — but this sandbox cannot reach
-  `api.clerk.com`. Add a user in the live app and confirm the email lands.
+- **The invitation email has never been seen to arrive**, and on the
+  development instance it probably does not — see § 7. Copy invite link is the
+  path that works today.
+- **An expansion dated in a future month is invisible on the Wins tab** until
+  that month arrives, because Wins shows `pastMonths(6)`. It is a Closed Won
+  deal immediately, so it does show in the Pipeline. That is the direct
+  consequence of dating the win by deployment month, and it is intended, but it
+  surprises people who expect to see it straight away.
+- **An expansion can be moved to a different city while the costs stay the
+  parent's.** The sheet warns when the city differs, but nothing stops it; if
+  driver or parking rates differ materially by city, that margin is optimistic.
 - Pipeline filters are applied in the browser over the deals already loaded.
   Right at the scale where the Pipeline needs pagination, they need to move to
   the query — the `OpportunityFilters` type in `queries.ts` already has the

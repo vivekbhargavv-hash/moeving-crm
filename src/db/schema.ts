@@ -82,6 +82,11 @@ export const users = pgTable(
     isActive: boolean("is_active").notNull().default(true),
     /** When Clerk was asked to email this person a sign-up invitation. */
     invitedAt: timestamp("invited_at", { withTimezone: true }),
+    /**
+     * The accept link from that invitation, so onboarding survives an email
+     * that never arrives. Cleared on first sign-in — see requireSession().
+     */
+    inviteUrl: text("invite_url"),
     createdAt: createdAt(),
   },
   (t) => [

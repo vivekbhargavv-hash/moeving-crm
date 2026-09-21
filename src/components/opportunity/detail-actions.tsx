@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Repeat } from "lucide-react";
+import { Pencil, Repeat, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
@@ -20,7 +20,7 @@ import type { SalesStage } from "@/db/schema";
 import { CHARGING_SCOPES, DRIVER_TYPES } from "@/lib/constants";
 import { monthLabelShort, upcomingMonths } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { updateOpportunity } from "@/server/actions";
+import { deleteOpportunity, updateOpportunity } from "@/server/actions";
 
 
 type Editable = {
@@ -45,14 +45,21 @@ export function DetailActions({
   opp,
   master,
   role,
+  canDelete,
+  expansionCount,
 }: {
   opp: Editable;
   master: MasterData;
   role: "admin" | "sales";
+  /** False when this is a recorded win and the viewer is not an admin. */
+  canDelete: boolean;
+  /** Follow-on deployments, which survive but lose their link. */
+  expansionCount: number;
 }) {
   const router = useRouter();
   const [stageTarget, setStageTarget] = React.useState<StageTarget | null>(null);
   const [editing, setEditing] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
   const [driverType, setDriverType] = React.useState<string | null>(opp.driverType);
@@ -90,6 +97,23 @@ export function DetailActions({
     });
   }
 
+  function remove() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await deleteOpportunity(opp.id);
+        if (!result.ok) return setError(result.error);
+        setConfirmDelete(false);
+        router.refresh();
+        router.push("/pipeline");
+      } catch {
+        setError("Could not delete that. Check your connection and try again.");
+      }
+    });
+  }
+
+  const isWon = opp.stage === "closed_won";
+
   return (
     <>
       <div className="flex gap-2">
@@ -120,11 +144,70 @@ export function DetailActions({
         </Button>
       </div>
 
+      {/* Delete sits apart from Move stage and Edit, and reads as plain text
+          rather than a button: it is rare, and it is not undoable. */}
+      {canDelete ? (
+        <button
+          onClick={() => setConfirmDelete(true)}
+          className="mt-3 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl text-[13px] font-medium text-muted hover:bg-rose-50 hover:text-rose-700"
+        >
+          <Trash2 size={15} /> Delete this deal
+        </button>
+      ) : null}
+
       <StageChanger
         target={stageTarget}
         lostReasons={master.lostReasons}
         onClose={() => setStageTarget(null)}
       />
+
+      <Sheet
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Delete this deal"
+      >
+        <p className="text-sm">
+          Permanently delete <strong>{opp.accountName}</strong>
+          {opp.dealName && opp.dealName !== opp.accountName
+            ? ` — ${opp.dealName}`
+            : ""}
+          ? This cannot be undone.
+        </p>
+        {isWon ? (
+          <p className="mt-3 rounded-xl bg-rose-50 px-4 py-3 text-[13px] text-rose-800">
+            This is a recorded win. Deleting it removes its revenue and margin
+            from the month it closed in, so the Forecast and Wins numbers you
+            have already reported will change.
+          </p>
+        ) : null}
+        {expansionCount > 0 ? (
+          <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+            {expansionCount} follow-on{" "}
+            {expansionCount === 1 ? "deployment" : "deployments"} grew out of
+            this deal. {expansionCount === 1 ? "It stays" : "They stay"} in the
+            pipeline, but the link back to this one is lost.
+          </p>
+        ) : null}
+        {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
+        <div className="mt-4 flex gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="flex-1"
+            onClick={() => setConfirmDelete(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            className="flex-1 bg-rose-600 text-white hover:bg-rose-700"
+            disabled={pending}
+            onClick={remove}
+          >
+            {pending ? "Deleting…" : "Delete"}
+          </Button>
+        </div>
+      </Sheet>
 
       <Sheet
         open={editing}

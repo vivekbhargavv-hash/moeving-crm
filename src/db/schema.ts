@@ -25,7 +25,13 @@ import {
  * one unit and never mixes the two.
  */
 
-export const userRole = pgEnum("user_role", ["admin", "sales"]);
+export const userRole = pgEnum("user_role", [
+  "admin",
+  "sales",
+  // The operations team. They see Deployments and nothing else — not the
+  // pipeline, not a margin.
+  "ops",
+]);
 
 export const salesStage = pgEnum("sales_stage", [
   "first_contact",
@@ -197,7 +203,21 @@ export const opportunities = pgTable(
     fleetSize: integer("fleet_size").notNull().default(1),
     /** Monthly rent per vehicle, whole rupees. */
     price: integer("price"),
+    /** A sales forecast of when the deal closes. Not a deployment date. */
     expectedCloseDate: date("expected_close_date"),
+
+    /* --- operations --- */
+    /**
+     * When the vehicles are due on the road, captured at the moment the deal
+     * is won. `expected_close_date` is a forecast of a different thing and is
+     * routinely months stale by then, so ops gets its own column.
+     */
+    deploymentDate: date("deployment_date"),
+    /**
+     * How many of `fleet_size` are actually out. A count, not a flag: part of
+     * a fleet going first is normal, and "8 of 12" is the honest state.
+     */
+    vehiclesDeployed: integer("vehicles_deployed").notNull().default(0),
 
     /** Deal Owner — the person who owns this deal. */
     ownerUserId: uuid("owner_user_id")
@@ -293,6 +313,16 @@ export const opportunities = pgTable(
       "opps_lost_requires_reason",
       sql`${t.stage} <> 'closed_lost' or ${t.lostReasonId} is not null`,
     ),
+    // A won deal ops cannot schedule is a won deal ops will forget about.
+    check(
+      "opps_won_requires_deployment_date",
+      sql`${t.stage} <> 'closed_won' or ${t.deploymentDate} is not null`,
+    ),
+    check(
+      "opps_deployed_within_fleet",
+      sql`${t.vehiclesDeployed} >= 0 and ${t.vehiclesDeployed} <= ${t.fleetSize}`,
+    ),
+    index("opps_org_deployment_idx").on(t.organizationId, t.deploymentDate),
   ],
 );
 

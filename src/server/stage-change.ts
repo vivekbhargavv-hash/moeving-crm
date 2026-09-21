@@ -25,12 +25,29 @@ const money = z
   // A non-numeric string becomes NaN here, which `z.number()` rejects.
   .pipe(z.number().int().min(0).max(2_000_000_000));
 
+/** "2026-10" -> "2026-10-31". The team thinks in months, the database in dates. */
+export function monthToLastDay(month: string) {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
+}
+
 /**
- * A won deal carries its full cost sheet. The same rule is a check constraint
- * in Postgres (`opps_won_requires_costs`); this is the copy that produces a
- * friendly "fill the sheet" prompt instead of a constraint violation.
+ * What a won deal must carry: its full cost sheet, and the month the trucks
+ * are due out. The cost rule is also a check constraint in Postgres
+ * (`opps_won_requires_costs`), as is the date (`opps_won_requires_deployment_date`);
+ * this is the copy that produces a friendly prompt instead of a violation.
  */
 export const closeWonSchema = z.object({
+  /**
+   * When the trucks are due on the road.
+   *
+   * Asked here, at the moment of winning, because this is the only point where
+   * anyone actually knows it. `expected_close_date` is a forecast made much
+   * earlier about a different thing, and ops cannot plan against it.
+   */
+  deploymentMonth: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/, "Pick an expected deployment month"),
   revenue: money,
   leaseCost: money,
   driverCost: money,
@@ -50,7 +67,9 @@ export type StagePatch = {
   stage: SalesStage;
   updatedAt: Date;
   closedAt: Date | null;
-} & Partial<z.infer<typeof closeWonSchema>>;
+  /** Set only on the way into closed_won. */
+  deploymentDate?: string;
+} & Partial<Omit<z.infer<typeof closeWonSchema>, "deploymentMonth">>;
 
 export type StagePlan =
   /** Already in that stage — nothing to write. */
@@ -93,7 +112,9 @@ export function planStageChange({
   if (to === "closed_won") {
     const parsed = closeWonSchema.safeParse(fields ?? {});
     if (!parsed.success) return { type: "needs", needs: "won" };
-    Object.assign(patch, parsed.data);
+    const { deploymentMonth, ...costs } = parsed.data;
+    Object.assign(patch, costs);
+    patch.deploymentDate = monthToLastDay(deploymentMonth);
     return { type: "move", patch, lostReason: null };
   }
 

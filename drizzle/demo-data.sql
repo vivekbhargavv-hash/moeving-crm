@@ -91,6 +91,7 @@ grid AS (
 INSERT INTO opportunities (
   organization_id, account_id, name, stage, city_id, vehicle_type_id,
   driver_type, charging_scope, fleet_size, price, expected_close_date,
+  deployment_date, vehicles_deployed,
   owner_user_id, notes,
   revenue, lease_cost, driver_cost, charging_cost, parking_cost,
   maintenance_cost, supervisor_cost, misc_cost,
@@ -98,7 +99,13 @@ INSERT INTO opportunities (
 )
 SELECT
   org.id, cu.id, cu.name || ' - ' || ci.name, g.stage, ci.id, ve.id,
-  g.driver, g.charging, g.fleet, g.price, g.close_date, re.id,
+  g.driver, g.charging, g.fleet, g.price, g.close_date,
+  -- A won deal must carry a deployment date (opps_won_requires_deployment_date).
+  -- Some are part-deployed so the Deployments page has realistic progress.
+  CASE WHEN g.stage = 'closed_won' THEN g.close_date END,
+  CASE WHEN g.stage = 'closed_won' AND g.a_idx % 2 = 0
+       THEN greatest(1, round(g.fleet * 0.4))::int ELSE 0 END,
+  re.id,
   '[demo] Sample deal - safe to delete.',
   -- Won deals carry a full cost sheet, PER VEHICLE PER MONTH, as the check
   -- constraint requires. Roughly 11% margin on a typical lease.

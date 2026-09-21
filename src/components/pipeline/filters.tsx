@@ -48,7 +48,6 @@ export function PipelineFilterSheet({
   owners,
   vehicleTypes,
   currentUserId,
-  isAdmin,
   matchCount,
 }: {
   open: boolean;
@@ -59,30 +58,22 @@ export function PipelineFilterSheet({
   owners: Option[];
   vehicleTypes: Option[];
   currentUserId: string;
-  isAdmin: boolean;
   matchCount: number;
 }) {
   if (!open) return null;
 
-  /**
-   * Toggling within a group. A deal owner must always have at least one owner
-   * selected — All owners stays an admin view — so clearing the last chip puts
-   * their own deals back rather than quietly widening to the whole team.
-   */
+  /** Toggling within a group; an empty group means all of them. */
   function toggle<K extends keyof Filters>(key: K, id: string) {
     const current = value[key] as string[];
     const next = current.includes(id)
       ? current.filter((v) => v !== id)
       : [...current, id];
-    if (key === "ownerIds" && !isAdmin && next.length === 0) {
-      onChange({ ...value, ownerIds: [currentUserId] });
-      return;
-    }
     onChange({ ...value, [key]: next });
   }
 
+  // Clearing returns to the default view — your own deals — not to everyone.
   function clearAll() {
-    onChange(isAdmin ? EMPTY_FILTERS : { ...EMPTY_FILTERS, ownerIds: [currentUserId] });
+    onChange({ ...EMPTY_FILTERS, ownerIds: [currentUserId] });
   }
 
   const count = activeFilterCount(value);

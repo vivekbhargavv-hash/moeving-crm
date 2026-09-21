@@ -1,28 +1,41 @@
 "use client";
 
-import { Check, ListFilter, Truck } from "lucide-react";
+import { Check, ListFilter, MapPin } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Badge, Button, Sheet } from "@/components/ui";
-import { cn, formatDate, monthLabelLong, num } from "@/lib/utils";
+import { groupByCity, groupByDueDate } from "@/lib/deployment-groups";
+import type { Group } from "@/lib/deployment-groups";
+import { cn, daysUntil, formatDate, num } from "@/lib/utils";
 import { recordDeployment } from "@/server/actions";
 import type { Deployment } from "@/server/queries";
 
 /**
  * What ops has to put on the road.
  *
- * Every row answers the four questions in one line — which customer, which
- * city, how many of what, by when — and carries how many are already out,
- * because a fleet rarely goes in one trip.
+ * Every row answers the five questions in one line — which customer, which
+ * vehicle, how many, which city, by when — and carries how many are already
+ * out, because a fleet rarely goes in one trip. The count still to deploy is
+ * the big figure on the left, so "how many" reads before anything else.
  *
- * Outstanding work is at the top and overdue is red. Completed deployments
- * drop to the bottom rather than disappearing, so "did we do that one" has an
- * answer.
+ * Two ways through the same queue:
+ *
+ * - **By date** (the default) groups by urgency — overdue, this week, next
+ *   week, then by month. It answers "what is late and what is next", which is
+ *   the question someone opens this screen with.
+ * - **By city** groups by place with a running total per city. It answers
+ *   "what does Bangalore owe", which is how trucks are actually planned when
+ *   a hub loads them.
+ *
+ * Completed deployments drop to the bottom in both rather than disappearing,
+ * so "did we do that one" has an answer.
  */
 
-type Group = { key: string; label: string; rows: Deployment[] };
+type View = "date" | "city";
+
+const VIEW_KEY = "moeving.deployments.view";
 
 export function DeploymentsBoard({
   deployments,
@@ -41,6 +54,27 @@ export function DeploymentsBoard({
   const [vehicleIds, setVehicleIds] = React.useState<string[]>([]);
   const [filtering, setFiltering] = React.useState(false);
   const [target, setTarget] = React.useState<Deployment | null>(null);
+  const [view, setView] = React.useState<View>("date");
+
+  // Which grouping someone works in is a per-person habit, so it survives a
+  // reload — the same rule the Pipeline's board/list choice follows.
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_KEY);
+      if (saved === "date" || saved === "city") setView(saved);
+    } catch {
+      /* private mode — the default is fine */
+    }
+  }, []);
+
+  function chooseView(next: View) {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      /* ignored */
+    }
+  }
 
   const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -55,8 +89,8 @@ export function DeploymentsBoard({
   const outstanding = filtered.filter((d) => d.vehiclesDeployed < d.fleetSize);
   const done = filtered.filter((d) => d.vehiclesDeployed >= d.fleetSize);
 
-  const remaining = (d: Deployment) => d.fleetSize - d.vehiclesDeployed;
-  const isOverdue = (d: Deployment) => Boolean(d.deploymentDate && d.deploymentDate < today);
+  const isOverdue = (d: Deployment) =>
+    Boolean(d.deploymentDate && d.deploymentDate < today);
   const thisMonth = today.slice(0, 7);
 
   const totals = {
@@ -67,21 +101,13 @@ export function DeploymentsBoard({
     overdue: outstanding.filter(isOverdue).reduce((s, d) => s + remaining(d), 0),
   };
 
-  // Grouped by the month they are due, which is how ops plans a week.
-  const groups = React.useMemo<Group[]>(() => {
-    const map = new Map<string, Deployment[]>();
-    for (const d of outstanding) {
-      const key = d.deploymentDate?.slice(0, 7) ?? "undated";
-      (map.get(key) ?? map.set(key, []).get(key)!).push(d);
-    }
-    return [...map.entries()]
-      .sort((a, b) => (a[0] === "undated" ? 1 : b[0] === "undated" ? -1 : a[0] < b[0] ? -1 : 1))
-      .map(([key, rows]) => ({
-        key,
-        label: key === "undated" ? "No date set" : monthLabelLong(key),
-        rows,
-      }));
-  }, [outstanding]);
+  const groups = React.useMemo<Group<Deployment>[]>(
+    () =>
+      view === "city"
+        ? groupByCity(outstanding)
+        : groupByDueDate(outstanding, today),
+    [outstanding, view, today],
+  );
 
   const filterCount = cityIds.length + vehicleIds.length;
 
@@ -97,27 +123,44 @@ export function DeploymentsBoard({
         />
       </div>
 
+      {/* One row, and no text that grows: a control row wider than the screen
+          stretches the layout viewport and takes the fixed tab bar with it. */}
       <div className="mb-3 flex items-center gap-2">
+        <div
+          role="group"
+          aria-label="Group deployments by"
+          className="flex min-w-0 flex-1 rounded-xl bg-canvas p-0.5"
+        >
+          <ViewTab
+            active={view === "date"}
+            onClick={() => chooseView("date")}
+            label="By date"
+          />
+          <ViewTab
+            active={view === "city"}
+            onClick={() => chooseView("city")}
+            label="By city"
+          />
+        </div>
         <button
           onClick={() => setFiltering(true)}
+          aria-label={
+            filterCount ? `Filter — ${filterCount} applied` : "Filter"
+          }
           className={cn(
-            "flex h-11 items-center gap-2 rounded-xl border px-3.5 text-sm font-medium",
+            "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border",
             filterCount
               ? "border-brand bg-brand-soft text-brand-ink"
               : "border-line bg-white text-muted",
           )}
         >
-          <ListFilter size={16} />
-          Filter
+          <ListFilter size={18} />
           {filterCount ? (
-            <span className="tabular flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[11px] font-bold text-white">
+            <span className="tabular absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1 text-[10px] font-bold text-white">
               {filterCount}
             </span>
           ) : null}
         </button>
-        <p className="text-[13px] text-muted">
-          {outstanding.length} outstanding · {done.length} done
-        </p>
       </div>
 
       {outstanding.length === 0 ? (
@@ -133,12 +176,34 @@ export function DeploymentsBoard({
 
       {groups.map((g) => (
         <section key={g.key} className="mb-5">
-          <div className="mb-2 flex items-baseline justify-between px-1">
-            <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
+          <div className="mb-2 flex items-baseline gap-2 px-1">
+            <h2
+              className={cn(
+                "flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide",
+                g.tone === "bad" ? "text-rose-700" : "text-muted",
+              )}
+            >
+              {view === "city" ? (
+                <MapPin size={13} className="shrink-0" aria-hidden="true" />
+              ) : null}
               {g.label}
             </h2>
-            <span className="tabular text-[13px] font-semibold">
-              {num(g.rows.reduce((s, d) => s + remaining(d), 0))} vehicles
+            <span
+              className={cn(
+                "h-px flex-1",
+                g.tone === "bad" ? "bg-rose-200" : "bg-line",
+              )}
+            />
+            {g.note ? (
+              <span className="text-[12px] text-muted">{g.note}</span>
+            ) : null}
+            <span
+              className={cn(
+                "tabular text-[13px] font-semibold",
+                g.tone === "bad" ? "text-rose-700" : "text-ink",
+              )}
+            >
+              {num(g.rows.reduce((s, d) => s + remaining(d), 0))} veh
             </span>
           </div>
           <ul className="space-y-2">
@@ -238,6 +303,18 @@ export function DeploymentsBoard({
   );
 }
 
+const remaining = (d: Deployment) => d.fleetSize - d.vehiclesDeployed;
+
+/** "in 3 days" / "6 days late" — the bit a date alone makes you work out. */
+function dueNote(date: string | null) {
+  const days = daysUntil(date);
+  if (days === null) return null;
+  if (days < 0) return `${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} late`;
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  return `in ${days} days`;
+}
+
 function Row({
   d,
   overdue,
@@ -249,75 +326,111 @@ function Row({
   canOpenDeals: boolean;
   onRecord: () => void;
 }) {
-  const remaining = d.fleetSize - d.vehiclesDeployed;
-  const complete = remaining <= 0;
+  const left = remaining(d);
+  const complete = left <= 0;
   const started = d.vehiclesDeployed > 0 && !complete;
+  const note = dueNote(d.deploymentDate);
 
   const head = (
-    <>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex items-baseline gap-1.5 text-[16px] font-semibold leading-tight">
-            <span className="truncate">{d.accountName}</span>
-            {d.isRepeat ? (
-              <span className="shrink-0 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-700">
-                Repeat
-              </span>
-            ) : null}
-          </p>
-          <p className="mt-1 truncate text-[13px] text-muted">
-            {d.city ?? "No city"} · {d.ownerName.split(" ")[0]}
-          </p>
-        </div>
-        <div className="shrink-0 text-right">
+    <div className="flex items-start gap-3">
+      {/* How many still to put out: the first thing ops needs off this row. */}
+      <div
+        className={cn(
+          "flex h-[52px] w-[52px] shrink-0 flex-col items-center justify-center rounded-xl",
+          complete
+            ? "bg-emerald-50 text-emerald-700"
+            : overdue
+              ? "bg-rose-50 text-rose-700"
+              : started
+                ? "bg-amber-50 text-amber-800"
+                : "bg-brand-soft text-brand-ink",
+        )}
+      >
+        {complete ? (
+          <Check size={22} strokeWidth={2.6} />
+        ) : (
+          <>
+            <span className="tabular text-[21px] font-bold leading-none">
+              {left}
+            </span>
+            <span className="mt-0.5 text-[9px] font-bold uppercase tracking-wider">
+              left
+            </span>
+          </>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="flex items-baseline gap-1.5 text-[16px] font-semibold leading-tight">
+          <span className="truncate">{d.accountName}</span>
+          {d.isRepeat ? (
+            <span className="shrink-0 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-700">
+              Repeat
+            </span>
+          ) : null}
+        </p>
+        <p className="mt-0.5 truncate text-[13.5px] font-semibold">
+          {d.fleetSize} × {d.vehicleType ?? "—"}
+        </p>
+        <p className="mt-0.5 truncate text-[12.5px] text-muted">
+          {d.city ?? "No city"} · {d.ownerName.split(" ")[0]}
+        </p>
+        {started ? (
+          <div className="mt-1.5 flex items-center gap-2">
+            <span
+              className="block h-1.5 w-[74px] overflow-hidden rounded-full bg-line"
+              aria-hidden="true"
+            >
+              <span
+                className="block h-1.5 rounded-full bg-amber-500"
+                style={{
+                  width: `${Math.round((d.vehiclesDeployed / d.fleetSize) * 74)}px`,
+                }}
+              />
+            </span>
+            <span className="tabular text-[11.5px] font-semibold text-amber-800">
+              {d.vehiclesDeployed} of {d.fleetSize} out
+            </span>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="shrink-0 text-right">
+        <p
+          className={cn(
+            "tabular text-[13.5px] font-bold",
+            overdue ? "text-rose-700" : "text-ink",
+          )}
+        >
+          {d.deploymentDate ? formatDate(d.deploymentDate) : "No date"}
+        </p>
+        {note ? (
           <p
             className={cn(
-              "tabular text-[13px] font-semibold",
+              "mt-0.5 text-[11px] font-semibold",
               overdue ? "text-rose-700" : "text-muted",
             )}
           >
-            {d.deploymentDate ? formatDate(d.deploymentDate) : "No date"}
+            {note}
           </p>
-          {overdue ? (
-            <p className="text-[11px] font-semibold text-rose-700">Overdue</p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]">
-        <span className="inline-flex items-center gap-1.5 rounded-lg bg-canvas px-2 py-1 font-medium">
-          <Truck size={14} className="text-muted" />
-          {d.fleetSize} × {d.vehicleType ?? "—"}
-        </span>
+        ) : null}
         {complete ? (
-          <Badge className="bg-emerald-100 text-emerald-800">
-            <Check size={12} className="mr-1 inline align-[-1px]" />
-            All {d.fleetSize} deployed
+          <Badge className="mt-1 bg-emerald-100 text-emerald-800">
+            All out
           </Badge>
-        ) : (
-          <span
-            className={cn(
-              "tabular rounded-lg px-2 py-1 font-semibold",
-              started ? "bg-amber-50 text-amber-900" : "text-muted",
-            )}
-          >
-            {started
-              ? `${d.vehiclesDeployed} of ${d.fleetSize} out · ${remaining} to go`
-              : `${remaining} to deploy`}
-          </span>
-        )}
+        ) : null}
       </div>
-    </>
+    </div>
   );
 
   return (
     <li className="overflow-hidden rounded-2xl border border-line bg-white">
       {canOpenDeals ? (
-        <Link href={`/opportunities/${d.id}`} className="block px-4 pt-3.5">
+        <Link href={`/opportunities/${d.id}`} className="block px-3.5 pt-3.5">
           {head}
         </Link>
       ) : (
-        <div className="px-4 pt-3.5">{head}</div>
+        <div className="px-3.5 pt-3.5">{head}</div>
       )}
       <button
         onClick={onRecord}
@@ -326,6 +439,30 @@ function Row({
         {complete ? "Change deployed count" : "Record deployment"}
       </button>
     </li>
+  );
+}
+
+function ViewTab({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "h-10 flex-1 rounded-[10px] px-2 text-[13px] font-semibold transition",
+        active ? "bg-white text-ink shadow-sm" : "text-muted",
+      )}
+    >
+      {label}
+    </button>
   );
 }
 

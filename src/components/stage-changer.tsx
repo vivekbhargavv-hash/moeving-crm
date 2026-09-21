@@ -7,7 +7,7 @@ import * as React from "react";
 import { Button, Field, Input, Select, Sheet, Textarea } from "@/components/ui";
 import { COST_FIELDS, STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
-import { cn, inr, inrCompact, monthLabelShort, upcomingMonths } from "@/lib/utils";
+import { cn, inr, inrCompact } from "@/lib/utils";
 import { changeStage } from "@/server/actions";
 
 export type StageTarget = {
@@ -41,8 +41,8 @@ export function StageChanger({
   const [costs, setCosts] = React.useState<Record<string, string>>({});
   // Ops plans against this. It is asked here because winning the deal is the
   // moment anyone actually knows it.
-  const [deployMonth, setDeployMonth] = React.useState("");
-  const months = React.useMemo(() => upcomingMonths(6), []);
+  const [deployDate, setDeployDate] = React.useState("");
+  const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [revenue, setRevenue] = React.useState("");
 
   React.useEffect(() => {
@@ -50,7 +50,7 @@ export function StageChanger({
       setMode("pick");
       setError(null);
       setCosts({});
-      setDeployMonth("");
+      setDeployDate("");
       setRevenue(target.price ? String(target.price) : "");
     }
   }, [target]);
@@ -141,34 +141,19 @@ export function StageChanger({
             </p>
           </div>
 
-          <div>
-            <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
-              Expected deployment month
-            </p>
-            <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-              {months.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={deployMonth === m}
-                  onClick={() => setDeployMonth(m)}
-                  className={cn(
-                    "h-11 shrink-0 rounded-xl border px-4 text-sm font-medium transition",
-                    deployMonth === m
-                      ? "border-brand bg-brand-soft text-brand-ink"
-                      : "border-line bg-white text-muted",
-                  )}
-                >
-                  {monthLabelShort(m)}
-                </button>
-              ))}
-            </div>
-            <input type="hidden" name="deploymentMonth" value={deployMonth} />
-            <p className="mt-1.5 text-[12px] text-muted">
-              When the vehicles are due on the road. This is what the operations
-              team works from.
-            </p>
-          </div>
+          <Field
+            label="Expected deployment date"
+            hint="The day the vehicles are due on the road. Ops schedules drivers and charging against this, so give them the date you promised — not the end of the month."
+          >
+            <Input
+              type="date"
+              name="deploymentDate"
+              required
+              min={today}
+              value={deployDate}
+              onChange={(e) => setDeployDate(e.target.value)}
+            />
+          </Field>
 
           <Field
             label="Revenue per vehicle / month"
@@ -239,7 +224,7 @@ export function StageChanger({
             <Button
               variant="brand"
               className="flex-1"
-              disabled={pending || !deployMonth}
+              disabled={pending || !deployDate}
             >
               {pending ? "Saving…" : "Mark Won"}
             </Button>

@@ -55,12 +55,14 @@ Change these only deliberately — a lot of code assumes them.
 | **Wins count on `closed_at`**, not `expected_close_date`. | The expected date is a forecast and usually wrong by the time a deal lands. |
 | **Everyone's Pipeline opens on their own deals, admins included**, with a My deals / All deals toggle in plain sight. | Your own deals are what you came to look at. It is a default view, not a permission — the whole team is one tap away and never hidden. |
 | **`deployment_date` is not `expected_close_date`.** It is asked for on the Closed Won sheet and enforced by `opps_won_requires_deployment_date`. | The expected close date is a sales forecast made months earlier about a different question. Ops cannot plan trucks against it, and reusing the field would have let a sales edit silently move an ops commitment. |
+| **The Closed Won sheet asks for a DAY, not a month.** A full `date`, validated as a real calendar day (`2026-02-31` is refused, not rolled over to 3 March). | Ops schedules drivers and charging against a date. Storing a month as its last day made every deal in a month look due on the 30th — wrong, and for most of them late. Rows won before 21 Sep 2026 still carry month-end dates; nothing migrates them, because nobody now knows what day was meant. |
+| **The Deployments queue opens By date and toggles to By city**, remembered per person in `localStorage`. | Overdue-and-next is the question someone opens the screen with; a hub loading trucks asks the other one. The grouping maths live in `lib/deployment-groups.ts`, free of React, so the boundaries are tested. |
 | **Deployment progress is a count (`vehicles_deployed`), not a flag.** | Ops routinely sends part of a fleet first. A boolean would force somebody to choose between lying and waiting, so "8 of 12 out" is the state. |
 | **Three roles: admin, sales, ops.** Ops sees Deployments and Settings, nothing else. | They put trucks on the road; they have no business seeing what a customer pays. `requireSales()` refuses at each page, and `listDeployments()` selects no money column at all, so a slip in the page cannot leak one. |
 | **The Pipeline opens on the table, sorted by most recently updated.** | What moved since you last looked is the reason to open the screen. The board is one tap away and the choice is remembered per person. |
 | **Repeat business is a NEW deal linked to the won one** (`parent_opportunity_id`), never an edit to the won row. | A won deal that grows would move a recorded win out of the month it happened in and silently restate Wins-by-month. |
-| **An expansion asks only city, fleet and deployment month.** Everything else is copied off the parent BY THE SERVER, not by the form. | The unit economics came with that contract. Copying server-side means the lock is real: posting `price` or `stage` into that action changes nothing. |
-| **An expansion lands as `closed_won` with `closed_at` = the deployment month.** | Nothing is being sold, so it is not a pipeline stage; and the revenue belongs to the month the trucks go out, not the day the paperwork was raised. Its cost sheet is the parent's, so margin_pct and total_cost compute themselves. |
+| **An expansion asks only city, fleet and deployment date.** Everything else is copied off the parent BY THE SERVER, not by the form. | The unit economics came with that contract. Copying server-side means the lock is real: posting `price` or `stage` into that action changes nothing. |
+| **An expansion lands as `closed_won` dated TODAY**: `closed_at` and `expected_close_date` are the day it was raised, `deployment_date` is the day the trucks are due. | Nothing is being sold, so it is not a pipeline stage. The two dates are separate on purpose: reporting counts the expansion when it was agreed, so a delivery that slips cannot restate a month that has already been reported, while ops still plans against the real date. Its cost sheet is the parent's, so margin_pct and total_cost compute themselves. |
 | **Deleting a `closed_won` deal is admin-only**; anything open is the owner's to delete. | A win is a month in the wins report and a slice of reported margin. Deleting one restates both. |
 | **Suspending, not deleting, is how someone leaves.** `owner_user_id` is `ON DELETE RESTRICT`. | Their name is part of the history of every deal they closed. Delete is offered only for a row that owns nothing — a wrong address typed in. |
 | **Auth checks sit next to the data**, not in middleware path matching. | Clerk deprecated `createRouteMatcher` for exactly this reason: path matching drifts from how Next routes requests. |
@@ -98,9 +100,13 @@ src/
     stage-change.ts   the stage-move decision, free of Next/Clerk/db so it tests
     invites.ts        asks Clerk to email a new joiner a sign-up link
     invite-url.ts     that link's landing URL — absolute, or not at all
+  lib/
+    deployment-groups.ts  how the ops queue is cut into sections (by due
+                      date, or by city) — no React, so it tests
 tests/
   stage-change.test.ts          planStageChange, runs anywhere
   invite-url.test.ts            the absolute-redirect rule, runs anywhere
+  deployment-groups.test.ts     the ops queue's two groupings, runs anywhere
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
   0000_*.sql          initial schema
@@ -127,10 +133,11 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. Forty-one
+`node --test` with `tsx` — no test framework, no new dependencies. Forty-nine
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
-decision), six on the invitation redirect URL, and twenty-five on what Postgres
-itself refuses — the two check
+decision), six on the invitation redirect URL, eight on the Deployments
+groupings (where "this week" stops, and which city leads), and twenty-five on
+what Postgres itself refuses — the two check
 constraints, the generated margin columns, the stage order, and the expansion
 link surviving the deletion of its parent.
 
@@ -363,11 +370,6 @@ Roughly in order of value to adoption:
 - **The invitation email has never been seen to arrive**, and on the
   development instance it probably does not — see § 7. Copy invite link is the
   path that works today.
-- **An expansion dated in a future month is invisible on the Wins tab** until
-  that month arrives, because Wins shows `pastMonths(6)`. It is a Closed Won
-  deal immediately, so it does show in the Pipeline. That is the direct
-  consequence of dating the win by deployment month, and it is intended, but it
-  surprises people who expect to see it straight away.
 - **An expansion can be moved to a different city while the costs stay the
   parent's.** The sheet warns when the city differs, but nothing stops it; if
   driver or parking rates differ materially by city, that margin is optimistic.
@@ -377,6 +379,11 @@ Roughly in order of value to adoption:
   shape for it.
 - Only vehicle types are reorderable in Admin. Cities and lost reasons have the
   same `sort_order` column; it is one `orderable` prop each to switch on.
+- **Expansions raised before 21 Sep 2026 are dated the old way** — `closed_at`
+  and `deployment_date` both set to their deployment month's last day. So an
+  old expansion still counts its revenue in the month the trucks went out, and
+  still looks due on the 30th, while every new one counts from the day it was
+  raised. Nothing migrates them; it would move recorded wins between months.
 - **The deployment date cannot be edited after the deal is won.** It is set on
   the Closed Won sheet and by the expansion sheet, and nothing on the
   Deployments page changes it. When ops slips a delivery they can only record

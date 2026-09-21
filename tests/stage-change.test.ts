@@ -7,7 +7,7 @@ const REASON = "3f1c0a6e-8f1d-4d2b-9a3e-0b7c5d2e1f44";
 
 /** A full Closed Won sheet, as the form posts it: strings. */
 const wonSheet = {
-  deploymentMonth: "2026-11",
+  deploymentDate: "2026-11-18",
   revenue: "48000",
   leaseCost: "18000",
   driverCost: "16000",
@@ -45,9 +45,11 @@ describe("planStageChange", () => {
       {},
       { ...wonSheet, miscCost: null }, // one field short
       { ...wonSheet, revenue: "" },
-      { ...wonSheet, deploymentMonth: null }, // ops would have no date
-      { ...wonSheet, deploymentMonth: "November" },
-      { ...wonSheet, deploymentMonth: "2026-11-30" },
+      { ...wonSheet, deploymentDate: null }, // ops would have no date
+      { ...wonSheet, deploymentDate: "November" },
+      { ...wonSheet, deploymentDate: "2026-11" }, // a month is no longer enough
+      { ...wonSheet, deploymentDate: "2026-02-31" }, // not a real day
+      { ...wonSheet, deploymentDate: "2026-13-01" },
       { ...wonSheet, driverCost: "-1" }, // costs are never negative
       { ...wonSheet, leaseCost: "1800.5" }, // whole rupees only
     ]) {
@@ -75,9 +77,9 @@ describe("planStageChange", () => {
     // Coerced to whole-rupee integers, not left as form strings.
     assert.equal(plan.patch.revenue, 48000);
     assert.equal(plan.patch.miscCost, 300);
-    // The month becomes the last day of it, matching every other date here.
-    assert.equal(plan.patch.deploymentDate, "2026-11-30");
-    const { deploymentMonth: _, ...costs } = wonSheet;
+    // The day the owner picked, kept exactly — not rounded to a month end.
+    assert.equal(plan.patch.deploymentDate, "2026-11-18");
+    const { deploymentDate: _, ...costs } = wonSheet;
     for (const key of Object.keys(costs)) {
       assert.equal(
         typeof plan.patch[key as keyof typeof costs],
@@ -85,8 +87,6 @@ describe("planStageChange", () => {
         `${key} should be a number`,
       );
     }
-    // deploymentMonth is consumed, not written through as a stray column.
-    assert.equal("deploymentMonth" in plan.patch, false);
   });
 
   it("carries no deployment date into any stage but won", () => {

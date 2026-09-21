@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Button, Field, Input, Sheet } from "@/components/ui";
-import { cn, inr, monthLabelShort, upcomingMonths } from "@/lib/utils";
+import { cn, inr } from "@/lib/utils";
 import { createExpansion } from "@/server/actions";
 
 /**
@@ -44,18 +44,18 @@ export function ExpandDeal({
   const [open, setOpen] = React.useState(false);
   const [cityId, setCityId] = React.useState(source.cityId ?? "");
   const [fleet, setFleet] = React.useState("");
-  const [month, setMonth] = React.useState("");
+  const [deployDate, setDeployDate] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
 
-  const months = React.useMemo(() => upcomingMonths(6), []);
+  const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const fleetCount = Number(fleet || 0);
 
   React.useEffect(() => {
     if (!open) return;
     setCityId(source.cityId ?? "");
     setFleet("");
-    setMonth("");
+    setDeployDate("");
     setError(null);
   }, [open, source.cityId]);
 
@@ -155,33 +155,19 @@ export function ExpandDeal({
             />
           </Field>
 
-          <div>
-            <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
-              Expected deployment month
-            </p>
-            <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-              {months.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={month === m}
-                  onClick={() => setMonth(m)}
-                  className={cn(
-                    "h-11 shrink-0 rounded-xl border px-4 text-sm font-medium transition",
-                    month === m
-                      ? "border-brand bg-brand-soft text-brand-ink"
-                      : "border-line bg-white text-muted",
-                  )}
-                >
-                  {monthLabelShort(m)}
-                </button>
-              ))}
-            </div>
-            <input type="hidden" name="deploymentMonth" value={month} />
-            <p className="mt-1.5 text-[12px] text-muted">
-              This is the month the added revenue counts in.
-            </p>
-          </div>
+          <Field
+            label="Expected deployment date"
+            hint="The day the added vehicles are due on the road — what the Deployments queue works from. The revenue counts from today, when this is recorded, not from this date."
+          >
+            <Input
+              type="date"
+              name="deploymentDate"
+              required
+              min={today}
+              value={deployDate}
+              onChange={(e) => setDeployDate(e.target.value)}
+            />
+          </Field>
 
           {/* Locked: it came with the contract, so it is shown, not asked. */}
           <div className="rounded-xl border border-line bg-canvas/60 p-4">

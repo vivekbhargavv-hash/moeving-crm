@@ -25,11 +25,30 @@ const money = z
   // A non-numeric string becomes NaN here, which `z.number()` rejects.
   .pipe(z.number().int().min(0).max(2_000_000_000));
 
-/** "2026-10" -> "2026-10-31". The team thinks in months, the database in dates. */
+/**
+ * "2026-10" -> "2026-10-31". Still how an expansion dates its deployment: it
+ * is raised months ahead against a contract, not scheduled to a day.
+ */
 export function monthToLastDay(month: string) {
   const [y, m] = month.split("-").map(Number);
   return new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
 }
+
+/**
+ * A real calendar day, `YYYY-MM-DD`. Shared by the Closed Won sheet and the
+ * expansion sheet, so both refuse the same things.
+ *
+ * The regex alone would pass "2026-02-31", which `new Date` silently rolls
+ * over to 3 March — a date ops never agreed to. Round-tripping it catches
+ * that, and the month-only string the sheets used to post.
+ */
+export const calendarDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick an expected deployment date")
+  .refine((v) => {
+    const d = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+  }, "That is not a real date");
 
 /**
  * What a won deal must carry: its full cost sheet, and the month the trucks
@@ -39,15 +58,17 @@ export function monthToLastDay(month: string) {
  */
 export const closeWonSchema = z.object({
   /**
-   * When the trucks are due on the road.
+   * The day the trucks are due on the road.
    *
    * Asked here, at the moment of winning, because this is the only point where
    * anyone actually knows it. `expected_close_date` is a forecast made much
    * earlier about a different thing, and ops cannot plan against it.
+   *
+   * A day, not a month: ops schedules drivers and charging for a date, and a
+   * month posted as its last day made every deal in a month look due on the
+   * 30th — which is both wrong and, for most of them, late.
    */
-  deploymentMonth: z
-    .string()
-    .regex(/^\d{4}-\d{2}$/, "Pick an expected deployment month"),
+  deploymentDate: calendarDate,
   revenue: money,
   leaseCost: money,
   driverCost: money,
@@ -69,7 +90,7 @@ export type StagePatch = {
   closedAt: Date | null;
   /** Set only on the way into closed_won. */
   deploymentDate?: string;
-} & Partial<Omit<z.infer<typeof closeWonSchema>, "deploymentMonth">>;
+} & Partial<Omit<z.infer<typeof closeWonSchema>, "deploymentDate">>;
 
 export type StagePlan =
   /** Already in that stage — nothing to write. */
@@ -112,9 +133,9 @@ export function planStageChange({
   if (to === "closed_won") {
     const parsed = closeWonSchema.safeParse(fields ?? {});
     if (!parsed.success) return { type: "needs", needs: "won" };
-    const { deploymentMonth, ...costs } = parsed.data;
+    const { deploymentDate, ...costs } = parsed.data;
     Object.assign(patch, costs);
-    patch.deploymentDate = monthToLastDay(deploymentMonth);
+    patch.deploymentDate = deploymentDate;
     return { type: "move", patch, lostReason: null };
   }
 

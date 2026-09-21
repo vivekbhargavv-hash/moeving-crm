@@ -11,10 +11,7 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-0. **Run `drizzle/0005_ops_role.sql`, then `drizzle/0006_deployments.sql`**
-   against production, as separate statements and in that order. 0005 adds an
-   enum value and must stand alone; 0006 backfills deployment dates and adds
-   two check constraints. Both are safe to re-run. (0000–0004 are applied.)
+**Migrations 0000–0006 are all applied to production.** Nothing to run.
 
 1. **Rotate the Clerk secret key.** `sk_live_…` was pasted into a chat
    transcript. Clerk → API Keys → regenerate. A live secret can read and

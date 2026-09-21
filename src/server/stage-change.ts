@@ -1,0 +1,114 @@
+import { z } from "zod";
+
+import type { SalesStage } from "@/db/schema";
+
+/**
+ * The decision half of `changeStage`, kept free of Next, Clerk and the
+ * database so it can be tested directly.
+ *
+ * Everything here is per vehicle per month, matching `price` — see
+ * `db/schema.ts`. The action layer adds the org scoping and writes the rows.
+ */
+
+/**
+ * A figure the cost sheet must actually carry.
+ *
+ * `z.coerce.number()` alone reads both `null` and `""` as 0, and
+ * `formToObject()` turns every blank field into `null` — so a sheet submitted
+ * with Revenue empty would have been stored as a won deal earning ₹0, which
+ * the Postgres check cannot catch either (0 is not null). The field has to be
+ * present before it is coerced.
+ */
+const money = z
+  .union([z.string().trim().min(1), z.number()])
+  .transform(Number)
+  // A non-numeric string becomes NaN here, which `z.number()` rejects.
+  .pipe(z.number().int().min(0).max(2_000_000_000));
+
+/**
+ * A won deal carries its full cost sheet. The same rule is a check constraint
+ * in Postgres (`opps_won_requires_costs`); this is the copy that produces a
+ * friendly "fill the sheet" prompt instead of a constraint violation.
+ */
+export const closeWonSchema = z.object({
+  revenue: money,
+  leaseCost: money,
+  driverCost: money,
+  chargingCost: money,
+  parkingCost: money,
+  maintenanceCost: money,
+  supervisorCost: money,
+  miscCost: money,
+});
+
+export const closeLostSchema = z.object({
+  lostReasonId: z.string().uuid("Pick a reason"),
+  lostReasonNote: z.string().trim().max(1000).nullable().optional(),
+});
+
+export type StagePatch = {
+  stage: SalesStage;
+  updatedAt: Date;
+  closedAt: Date | null;
+} & Partial<z.infer<typeof closeWonSchema>>;
+
+export type StagePlan =
+  /** Already in that stage — nothing to write. */
+  | { type: "noop" }
+  /** The caller must collect the Closed Won sheet or the Closed Lost reason. */
+  | { type: "needs"; needs: "won" | "lost" }
+  | {
+      type: "move";
+      patch: StagePatch;
+      /** Set only for closed_lost; the action still verifies the reason's org. */
+      lostReason: { id: string; note: string | null } | null;
+    };
+
+/** The two stages that end a deal, and so need their extra block. */
+export function isClosing(stage: SalesStage) {
+  return stage === "closed_won" || stage === "closed_lost";
+}
+
+export function planStageChange({
+  from,
+  to,
+  fields,
+  now = new Date(),
+}: {
+  from: SalesStage;
+  to: SalesStage;
+  fields?: Record<string, unknown>;
+  now?: Date;
+}): StagePlan {
+  if (from === to) return { type: "noop" };
+
+  const patch: StagePatch = {
+    stage: to,
+    updatedAt: now,
+    // Reopening a closed deal clears the close date, so Wins-by-month never
+    // counts a deal that has gone back into the pipeline.
+    closedAt: isClosing(to) ? now : null,
+  };
+
+  if (to === "closed_won") {
+    const parsed = closeWonSchema.safeParse(fields ?? {});
+    if (!parsed.success) return { type: "needs", needs: "won" };
+    Object.assign(patch, parsed.data);
+    return { type: "move", patch, lostReason: null };
+  }
+
+  if (to === "closed_lost") {
+    const parsed = closeLostSchema.safeParse(fields ?? {});
+    if (!parsed.success) return { type: "needs", needs: "lost" };
+    return {
+      type: "move",
+      patch,
+      lostReason: {
+        id: parsed.data.lostReasonId,
+        note: parsed.data.lostReasonNote ?? null,
+      },
+    };
+  }
+
+  return { type: "move", patch, lostReason: null };
+}

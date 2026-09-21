@@ -1,6 +1,7 @@
 import "server-only";
 
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { cache } from "react";
 
 import { db } from "@/db";
@@ -33,6 +34,13 @@ export type OpportunityCard = {
   driverType: string | null;
   chargingScope: string | null;
   totalCost: number | null;
+  /** Deal-level, computed by Postgres: per-vehicle figure x fleet. */
+  totalRevenue: number | null;
+  grossMargin: number | null;
+  /** Identical per vehicle and per deal — the fleet cancels out. */
+  marginPct: number | null;
+  /** Set when this deal grew out of an earlier one for the same customer. */
+  parentOpportunityId: string | null;
   expectedCloseDate: string | null;
   updatedAt: Date;
   ownerName: string;
@@ -79,6 +87,10 @@ const cardColumns = {
   driverType: opportunities.driverType,
   chargingScope: opportunities.chargingScope,
   totalCost: opportunities.totalCost,
+  totalRevenue: opportunities.totalRevenue,
+  grossMargin: opportunities.grossMargin,
+  marginPct: opportunities.marginPct,
+  parentOpportunityId: opportunities.parentOpportunityId,
   expectedCloseDate: opportunities.expectedCloseDate,
   updatedAt: opportunities.updatedAt,
   ownerName: users.name,
@@ -99,10 +111,18 @@ export async function listOpportunities(
     .where(and(...filterConditions(session.organizationId, session.userId, filters)))
     .orderBy(asc(opportunities.expectedCloseDate), desc(opportunities.updatedAt));
 
-  return rows.map((r) => ({
+  return rows.map(toCard);
+}
+
+/** numeric(7,2) arrives as a string; every screen wants a number. */
+function toCard<T extends Omit<OpportunityCard, "value" | "marginPct"> & {
+  marginPct: string | number | null;
+}>(r: T) {
+  return {
     ...r,
+    marginPct: r.marginPct === null ? null : Number(r.marginPct),
     value: (r.price ?? 0) * r.fleetSize,
-  }));
+  };
 }
 
 export async function getOpportunity(id: string) {
@@ -146,7 +166,46 @@ export async function getOpportunity(id: string) {
     .orderBy(desc(opportunityEvents.createdAt))
     .limit(50);
 
-  return { ...row, events };
+  // The repeat-business chain, both directions: what this deal grew out of,
+  // and what has grown out of it.
+  const parentAlias = alias(opportunities, "parent");
+  const [parent] = row.opp.parentOpportunityId
+    ? await db
+        .select({
+          id: parentAlias.id,
+          name: parentAlias.name,
+          stage: parentAlias.stage,
+          fleetSize: parentAlias.fleetSize,
+          closedAt: parentAlias.closedAt,
+        })
+        .from(parentAlias)
+        .where(
+          and(
+            eq(parentAlias.id, row.opp.parentOpportunityId),
+            eq(parentAlias.organizationId, session.organizationId),
+          ),
+        )
+    : [];
+
+  const expansions = await db
+    .select({
+      id: opportunities.id,
+      name: opportunities.name,
+      stage: opportunities.stage,
+      fleetSize: opportunities.fleetSize,
+      price: opportunities.price,
+      expectedCloseDate: opportunities.expectedCloseDate,
+    })
+    .from(opportunities)
+    .where(
+      and(
+        eq(opportunities.parentOpportunityId, id),
+        eq(opportunities.organizationId, session.organizationId),
+      ),
+    )
+    .orderBy(desc(opportunities.createdAt));
+
+  return { ...row, events, parent: parent ?? null, expansions };
 }
 
 /* ------------------------------------------------------------- master data */
@@ -278,22 +337,12 @@ export async function getDashboard(filters: OpportunityFilters = {}) {
   };
 }
 
-type RawOpp = OpportunityCard & {
-  /** Deal-level: per-vehicle revenue x fleet, computed by Postgres. */
-  totalRevenue: number | null;
-  grossMargin: number | null;
-};
-
 async function listOpportunitiesRaw(
   filters: OpportunityFilters,
-): Promise<RawOpp[]> {
+): Promise<OpportunityCard[]> {
   const session = await requireSession();
   const rows = await db
-    .select({
-      ...cardColumns,
-      totalRevenue: opportunities.totalRevenue,
-      grossMargin: opportunities.grossMargin,
-    })
+    .select(cardColumns)
     .from(opportunities)
     .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
     .innerJoin(users, eq(users.id, opportunities.ownerUserId))
@@ -301,7 +350,7 @@ async function listOpportunitiesRaw(
     .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
     .where(and(...filterConditions(session.organizationId, session.userId, filters)));
 
-  return rows.map((r) => ({ ...r, value: (r.price ?? 0) * r.fleetSize }));
+  return rows.map(toCard);
 }
 
 /* ---------------------------------------------------------------- forecast */

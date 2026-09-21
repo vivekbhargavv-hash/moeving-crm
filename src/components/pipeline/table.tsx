@@ -25,6 +25,7 @@ type SortKey =
   | "price"
   | "value"
   | "totalCost"
+  | "marginPct"
   | "ownerName"
   | "expectedCloseDate"
   | "updatedAt";
@@ -44,17 +45,46 @@ const COLUMNS: {
   { key: "price", label: "Price / veh", align: "right" },
   { key: "value", label: "Value / mo", align: "right" },
   { key: "totalCost", label: "Total cost", align: "right", wide: true },
+  { key: "marginPct", label: "Margin %", align: "right", wide: true },
   { key: "ownerName", label: "Deal Owner", wide: true },
   { key: "expectedCloseDate", label: "Expected close", align: "right" },
   { key: "updatedAt", label: "Updated", align: "right", wide: true },
 ];
 
+// The same sorts the desktop table offers by clicking a header, as chips.
+// Updated leads because it is the default and the reason to open this screen.
 const MOBILE_SORTS: { key: SortKey; label: string }[] = [
+  { key: "updatedAt", label: "Updated" },
   { key: "expectedCloseDate", label: "Closing" },
   { key: "value", label: "Value" },
   { key: "fleetSize", label: "Fleet" },
   { key: "accountName", label: "Customer" },
   { key: "stage", label: "Stage" },
+];
+
+/**
+ * A deal that grew out of an earlier one for the same customer. Worth a mark
+ * in the list: repeat business reads as a duplicate row otherwise.
+ */
+function RepeatMark() {
+  return (
+    <span
+      title="Follow-on deployment for an existing customer"
+      className="shrink-0 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-700"
+    >
+      Repeat
+    </span>
+  );
+}
+
+/** Dates and money read best largest-first; names read best A-Z. */
+const DESC_FIRST: SortKey[] = [
+  "updatedAt",
+  "value",
+  "fleetSize",
+  "price",
+  "totalCost",
+  "marginPct",
 ];
 
 /**
@@ -73,9 +103,11 @@ export function PipelineList({
   onStageTap: (t: StageTarget) => void;
 }) {
   const router = useRouter();
+  // Most recently touched first: what moved since you last looked is the
+  // reason to open the pipeline. Descending, so newest is at the top.
   const [sort, setSort] = React.useState<{ key: SortKey; desc: boolean }>({
-    key: "expectedCloseDate",
-    desc: false,
+    key: "updatedAt",
+    desc: true,
   });
 
   const rows = React.useMemo(() => {
@@ -92,6 +124,10 @@ export function PipelineList({
         case "value":
         case "totalCost":
           return o[sort.key] ?? 0;
+        case "marginPct":
+          // Only a won deal has a margin. Undefined sorts to the bottom either
+          // way rather than pretending to be 0%, which would read as break-even.
+          return o.marginPct ?? -Infinity;
         case "updatedAt":
           return new Date(o.updatedAt).getTime();
         case "expectedCloseDate":
@@ -113,16 +149,26 @@ export function PipelineList({
   }, [opportunities, sort]);
 
   function toggle(key: SortKey) {
-    setSort((s) => (s.key === key ? { key, desc: !s.desc } : { key, desc: false }));
+    setSort((s) =>
+      s.key === key ? { key, desc: !s.desc } : { key, desc: DESC_FIRST.includes(key) },
+    );
   }
 
   const totals = rows.reduce(
     (acc, o) => ({
       fleet: acc.fleet + o.fleetSize,
       value: acc.value + o.value,
+      // Blended margin is margin over revenue across the won deals, not the
+      // average of their percentages — a 60% margin on one truck must not
+      // outweigh a 5% margin on forty.
+      wonRevenue: acc.wonRevenue + (o.totalRevenue ?? 0),
+      wonMargin: acc.wonMargin + (o.grossMargin ?? 0),
     }),
-    { fleet: 0, value: 0 },
+    { fleet: 0, value: 0, wonRevenue: 0, wonMargin: 0 },
   );
+  const blendedMarginPct = totals.wonRevenue
+    ? (totals.wonMargin / totals.wonRevenue) * 100
+    : null;
 
   if (!rows.length) {
     return (
@@ -187,8 +233,9 @@ export function PipelineList({
                 <span className={cn("absolute inset-y-0 left-0 w-1", stage.dot)} />
                 <Link href={`/opportunities/${o.id}`} className="block py-3 pl-4 pr-3">
                   <div className="flex items-baseline justify-between gap-3">
-                    <p className="truncate text-[15px] font-semibold">
-                      {o.accountName}
+                    <p className="flex min-w-0 items-baseline gap-1.5 text-[15px] font-semibold">
+                      <span className="truncate">{o.accountName}</span>
+                      {o.parentOpportunityId ? <RepeatMark /> : null}
                     </p>
                     <p className="tabular shrink-0 text-[15px] font-bold">
                       {o.value ? inrCompact(o.value) : "—"}
@@ -198,8 +245,13 @@ export function PipelineList({
                     <span className="truncate">
                       {o.city ?? "No city"} · {o.fleetSize} × {o.vehicleType ?? "—"}
                     </span>
+                    {/* Show the field being sorted on, or the ordering is
+                        invisible: a list by Updated that displays close dates
+                        just looks shuffled. */}
                     <span className="tabular ml-auto shrink-0">
-                      {formatDate(o.expectedCloseDate)}
+                      {sort.key === "updatedAt"
+                        ? `Updated ${formatDate(o.updatedAt)}`
+                        : formatDate(o.expectedCloseDate)}
                     </span>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
@@ -281,7 +333,10 @@ export function PipelineList({
                 className="cursor-pointer border-b border-line last:border-0 hover:bg-canvas/70"
               >
                 <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-2.5 font-medium">
-                  <span className="block max-w-44 truncate">{o.accountName}</span>
+                  <span className="flex max-w-44 items-baseline gap-1.5">
+                    <span className="truncate">{o.accountName}</span>
+                    {o.parentOpportunityId ? <RepeatMark /> : null}
+                  </span>
                   {o.name !== o.accountName ? (
                     <span className="block max-w-44 truncate text-[12px] text-muted">
                       {o.name}
@@ -334,6 +389,18 @@ export function PipelineList({
                     ? inrCompact(o.totalCost)
                     : "—"}
                 </td>
+                <td
+                  className={cn(
+                    "tabular hidden px-3 py-2.5 text-right font-medium lg:table-cell",
+                    o.marginPct === null
+                      ? "text-muted"
+                      : o.marginPct >= 0
+                        ? "text-emerald-700"
+                        : "text-rose-700",
+                  )}
+                >
+                  {o.marginPct === null ? "—" : `${o.marginPct.toFixed(1)}%`}
+                </td>
                 <td className="hidden whitespace-nowrap px-3 py-2.5 lg:table-cell">{o.ownerName}</td>
                 <td className="tabular whitespace-nowrap px-3 py-2.5 text-right">
                   {formatDate(o.expectedCloseDate)}
@@ -357,6 +424,9 @@ export function PipelineList({
               {inrCompact(totals.value)}
             </td>
             <td className="hidden lg:table-cell" colSpan={2} />
+            <td className="tabular hidden px-3 py-2.5 text-right lg:table-cell">
+              {blendedMarginPct === null ? "" : `${blendedMarginPct.toFixed(1)}%`}
+            </td>
             <td />
             <td className="hidden lg:table-cell" />
           </tr>

@@ -23,7 +23,10 @@ export default async function PipelinePage() {
         opportunities={opportunities}
         lostReasons={master.lostReasons}
         owners={master.users}
+        cities={master.cities}
+        vehicleTypes={master.vehicleTypes}
         currentUserId={session.userId}
+        isAdmin={session.role === "admin"}
       />
     </>
   );

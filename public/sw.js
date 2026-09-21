@@ -5,7 +5,10 @@
  * cache API responses or queue offline writes — a CRM that shows a salesperson
  * stale pipeline numbers is worse than one that says "you're offline".
  */
-const SHELL = "moeving-shell-v1";
+// Bump this whenever a cached asset changes identity without changing its URL
+// — the icons did when the logo changed, and an installed phone would
+// otherwise keep serving the old one from this cache forever.
+const SHELL = "moeving-shell-v2";
 const SHELL_URLS = ["/offline"];
 
 self.addEventListener("install", (event) => {

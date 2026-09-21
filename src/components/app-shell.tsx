@@ -10,6 +10,7 @@ import {
   Shield,
   Truck,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
@@ -108,8 +109,15 @@ export function AppShell({
       {/* Desktop rail */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-white px-3 py-5 md:flex">
         <div className="px-3 pb-6">
-          <p className="text-[17px] font-semibold tracking-tight">Good Deal</p>
-          <p className="text-xs text-muted">MoEVing sales</p>
+          <Image
+            src="/logo-wordmark.png"
+            alt="Good Deal"
+            width={524}
+            height={192}
+            priority
+            className="h-8 w-auto"
+          />
+          <p className="mt-1.5 text-xs text-muted">MoEVing sales</p>
         </div>
         <nav className="flex flex-col gap-1">
           {nav.map((item) => {

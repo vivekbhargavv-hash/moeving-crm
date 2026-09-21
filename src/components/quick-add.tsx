@@ -33,24 +33,13 @@ export type MasterData = {
   accounts: { id: string; name: string }[];
 };
 
-const PREFS_KEY = "moeving:last-used";
-
-type Prefs = {
-  cityIds?: string[];
-  vehicleTypeId?: string;
-  driverType?: string;
-  chargingScope?: string;
-};
-
-function readPrefs(): Prefs {
-  if (typeof window === "undefined") return {};
-  try {
-    return JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") as Prefs;
-  } catch {
-    return {};
-  }
-}
-
+/**
+ * The sheet opens empty. It used to remember the last city, vehicle type,
+ * driver type and charging scope this person used, and to pre-tick a fleet of
+ * 5 and the current month — which meant a deal saved with whatever was already
+ * highlighted if nobody looked. Every field is now a deliberate choice, and the
+ * only pre-filled sheet is an expansion, which copies the deal it grew from.
+ */
 
 /**
  * Repeat business: the same customer asking for more trucks.
@@ -90,30 +79,32 @@ export function QuickAdd({
   const [vehicleTypeId, setVehicleTypeId] = React.useState("");
   const [driverType, setDriverType] = React.useState<string | null>(null);
   const [chargingScope, setChargingScope] = React.useState<string | null>(null);
-  const [fleet, setFleet] = React.useState(5);
+  // Fleet is a string, not a number, so the field can genuinely be blank
+  // rather than showing a 1 nobody chose.
+  const [fleet, setFleet] = React.useState("");
   const [price, setPrice] = React.useState("");
-  const [month, setMonth] = React.useState(() => upcomingMonths(1)[0]!);
+  const [month, setMonth] = React.useState("");
   const [showMore, setShowMore] = React.useState(false);
 
   const months = React.useMemo(() => upcomingMonths(6), []);
 
   React.useEffect(() => {
     if (!open) return;
-    // An expansion starts from the deal it grew out of; anything else starts
-    // from what this person last used.
-    const prefs = prefill ?? readPrefs();
+    // An expansion starts from the deal it grew out of. Everything else starts
+    // blank — nothing is carried over from the last deal this person created.
     setError(null);
-    setCityIds(prefs.cityIds ?? []);
-    setVehicleTypeId(prefs.vehicleTypeId ?? "");
-    setDriverType(prefs.driverType ?? null);
-    setChargingScope(prefs.chargingScope ?? null);
-    setFleet(5);
+    setCityIds(prefill?.cityIds ?? []);
+    setVehicleTypeId(prefill?.vehicleTypeId ?? "");
+    setDriverType(prefill?.driverType ?? null);
+    setChargingScope(prefill?.chargingScope ?? null);
+    setFleet("");
     setPrice(prefill?.price ?? "");
-    setMonth(upcomingMonths(1)[0]!);
+    setMonth("");
     setShowMore(false);
   }, [open, prefill]);
 
-  const perDeal = Number(price || 0) * fleet;
+  const fleetCount = Number(fleet || 0);
+  const perDeal = Number(price || 0) * fleetCount;
   const dealCount = Math.max(1, cityIds.length);
 
   function submit(formData: FormData) {
@@ -124,18 +115,6 @@ export function QuickAdd({
         if (!result.ok) {
           setError(result.error);
           return;
-        }
-        try {
-          // An expansion copies one customer's existing setup; it is not this
-          // person's new habit, so it does not become their default.
-          if (!prefill) {
-            localStorage.setItem(
-              PREFS_KEY,
-              JSON.stringify({ cityIds, vehicleTypeId, driverType, chargingScope }),
-            );
-          }
-        } catch {
-          /* private mode — defaults just won't stick */
         }
         const { id, count } = result.data!;
         onClose();
@@ -272,7 +251,7 @@ export function QuickAdd({
             <div className="flex h-12 items-center rounded-xl border border-line bg-white">
               <button
                 type="button"
-                onClick={() => setFleet((f) => Math.max(1, f - 1))}
+                onClick={() => setFleet(String(Math.max(1, fleetCount - 1)))}
                 className="h-full w-12 rounded-l-xl text-xl text-muted active:bg-canvas"
                 aria-label="Decrease fleet size"
               >
@@ -281,18 +260,16 @@ export function QuickAdd({
               <input
                 name="fleetSize"
                 inputMode="numeric"
+                required
+                placeholder="—"
                 aria-label="Fleet size"
                 value={fleet}
-                onChange={(e) =>
-                  setFleet(
-                    Math.max(1, Number(e.target.value.replace(/\D/g, "")) || 1),
-                  )
-                }
-                className="tabular w-full border-0 bg-transparent text-center text-lg font-semibold focus:outline-none"
+                onChange={(e) => setFleet(e.target.value.replace(/\D/g, ""))}
+                className="tabular w-full border-0 bg-transparent text-center text-lg font-semibold placeholder:font-normal placeholder:text-muted/60 focus:outline-none"
               />
               <button
                 type="button"
-                onClick={() => setFleet((f) => f + 1)}
+                onClick={() => setFleet(String(fleetCount + 1))}
                 className="h-full w-12 rounded-r-xl text-xl text-muted active:bg-canvas"
                 aria-label="Increase fleet size"
               >
@@ -399,11 +376,22 @@ export function QuickAdd({
           </button>
         )}
 
-        <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
-          <Truck size={13} />
-          Saved as <span className="font-medium">First Contact</span>, owned by{" "}
-          <span className="font-medium">{session.name}</span>, closing end of{" "}
-          <span className="font-medium">{monthLabelLong(month)}</span>.
+        {/* The sentence is one flex child, not several: a gap between them put
+            a space in front of the full stop. */}
+        <p className="flex items-start gap-1.5 text-xs text-muted">
+          <Truck size={13} className="mt-0.5 shrink-0" />
+          <span>
+            Saved as <span className="font-medium">First Contact</span>, owned by{" "}
+            <span className="font-medium">{session.name}</span>
+            {month ? (
+              <>
+                , closing end of{" "}
+                <span className="font-medium">{monthLabelLong(month)}</span>.
+              </>
+            ) : (
+              ". No closing month picked, so it stays off the Forecast."
+            )}
+          </span>
         </p>
 
         {error ? (

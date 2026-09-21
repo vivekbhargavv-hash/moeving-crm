@@ -41,7 +41,16 @@ type Props = {
   cities: { id: string; name: string }[];
   vehicleTypes: { id: string; name: string }[];
   currentUserId: string;
+  /** What the server already narrowed to, read back out of the URL. */
+  filters: Filters;
+  search: string;
+  showingMine: boolean;
+  /** True when the row cap was reached, so the screen can say so. */
+  capped: boolean;
 };
+
+/** Cards drawn per stage column before "Show more". */
+const CARD_PAGE = 30;
 
 export function PipelineBoard({
   opportunities,
@@ -50,17 +59,18 @@ export function PipelineBoard({
   cities,
   vehicleTypes,
   currentUserId,
+  filters,
+  search,
+  showingMine,
+  capped,
 }: Props) {
-  // EVERYONE opens on their own deals, admins included. Your own deals are
-  // what you came to look at; the whole team is one tap away and never hidden.
-  const defaultFilters = React.useMemo<Filters>(
-    () => ({ ...EMPTY_FILTERS, ownerIds: [currentUserId] }),
-    [currentUserId],
-  );
   const [stageIndex, setStageIndex] = React.useState(0);
-  const [query, setQuery] = React.useState("");
-  const [filters, setFilters] = React.useState<Filters>(defaultFilters);
+  // A stage column is drawn a screenful at a time: 200 cards in Negotiation
+  // is 200 cards the phone builds before you have scrolled to the third.
+  const [cardsShown, setCardsShown] = React.useState(CARD_PAGE);
+  const [query, setQuery] = React.useState(search);
   const [filtering, setFiltering] = React.useState(false);
+  const [pending, startTransition] = React.useTransition();
   const [target, setTarget] = React.useState<StageTarget | null>(null);
   // The table is the default: it opens on what changed most recently, which is
   // what someone checking the pipeline came to see. The board is a click away.
@@ -88,24 +98,10 @@ export function PipelineBoard({
     }
   }
 
-  const filtered = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
-    // An empty group means "all of them", so a filter only ever narrows.
-    const has = (group: string[], v: string | null) =>
-      group.length === 0 || (v !== null && group.includes(v));
-    return opportunities.filter((o) => {
-      if (!has(filters.ownerIds, o.ownerId)) return false;
-      if (!has(filters.stages, o.stage)) return false;
-      if (!has(filters.cityIds, o.cityId)) return false;
-      if (!has(filters.vehicleTypeIds, o.vehicleTypeId)) return false;
-      if (!q) return true;
-      return (
-        o.accountName.toLowerCase().includes(q) ||
-        o.name.toLowerCase().includes(q) ||
-        (o.city ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [opportunities, query, filters]);
+  // Narrowing all happened in SQL before these rows were sent, search
+  // included — so what arrives IS the result, and a row cap can never hide a
+  // deal from the one feature whose job is to find it.
+  const filtered = opportunities;
 
   const byStage = React.useMemo(() => {
     const map = new Map<SalesStage, OpportunityCard[]>();
@@ -124,18 +120,54 @@ export function PipelineBoard({
     setStageIndex((i) => Math.min(i, visibleStages.length - 1));
   }, [visibleStages.length]);
 
+  React.useEffect(() => setCardsShown(CARD_PAGE), [stageIndex, opportunities]);
+
   const activeStage = visibleStages[Math.min(stageIndex, visibleStages.length - 1)]!;
   const activeList = byStage.get(activeStage.value) ?? [];
   // The badge counts what the SHEET holds. "My deals" is an owner filter
   // underneath, but it now has a switch of its own in plain sight, so counting
   // it here put a "1" on the badge before anyone had filtered anything.
   const filterCount = activeFilterCount({ ...filters, ownerIds: [] });
-  // "Mine" and "All" are the two ends of the owner filter. Picking a specific
-  // colleague in the sheet is neither, and the toggle shows nothing selected.
-  const showingMine =
-    filters.ownerIds.length === 1 && filters.ownerIds[0] === currentUserId;
   const filtersChanged =
-    JSON.stringify(filters) !== JSON.stringify(defaultFilters);
+    filterCount > 0 || filters.ownerIds.length > 0 || !showingMine;
+
+  /**
+   * Filters live in the URL, so changing one is a navigation.
+   *
+   * `scroll: false` keeps your place in the list, and the transition means the
+   * control stays live while the server answers instead of freezing.
+   */
+  function apply(next: Filters, scope?: "mine" | "all", q = query) {
+    const p = new URLSearchParams();
+    if (q.trim()) p.set("q", q.trim());
+    if (next.stages.length) p.set("stage", next.stages.join(","));
+    if (next.cityIds.length) p.set("city", next.cityIds.join(","));
+    if (next.vehicleTypeIds.length) p.set("vehicle", next.vehicleTypeIds.join(","));
+    if (next.ownerIds.length) p.set("owner", next.ownerIds.join(","));
+    const wantAll = scope ? scope === "all" : !showingMine;
+    if (wantAll && !next.ownerIds.length) p.set("scope", "all");
+    const qs = p.toString();
+    startTransition(() => {
+      router.push(qs ? `/pipeline?${qs}` : "/pipeline", { scroll: false });
+    });
+  }
+
+  const setFilters = (next: Filters) => apply(next);
+
+  /**
+   * Typing waits for a pause before it asks the server.
+   *
+   * 300ms is long enough that a five-letter customer name is one query
+   * instead of five, and short enough that it still feels like the list is
+   * following you.
+   */
+  React.useEffect(() => {
+    if (query === search) return;
+    const t = setTimeout(() => apply(filters, undefined, query), 300);
+    return () => clearTimeout(t);
+    // `apply` closes over the current filters, which is what we want here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, search]);
 
   /** Horizontal swipe between stages on phones. */
   const touch = React.useRef<{ x: number; y: number } | null>(null);
@@ -195,12 +227,7 @@ export function PipelineBoard({
             label="Whose deals"
             className="min-w-0 flex-1"
             value={showingMine ? "mine" : "all"}
-            onChange={(v) =>
-              setFilters({
-                ...filters,
-                ownerIds: v === "mine" ? [currentUserId] : [],
-              })
-            }
+            onChange={(v) => apply({ ...filters, ownerIds: [] }, v)}
             options={[
               { value: "mine", label: "My deals" },
               { value: "all", label: "All deals" },
@@ -250,10 +277,10 @@ export function PipelineBoard({
             ]}
           />
           <p className="tabular min-w-0 flex-1 truncate text-right text-[12.5px] text-muted">
-            {filtered.length} {filtered.length === 1 ? "deal" : "deals"}
+            {pending ? "…" : `${filtered.length} ${filtered.length === 1 ? "deal" : "deals"}`}
             {filtersChanged ? (
               <button
-                onClick={() => setFilters(defaultFilters)}
+                onClick={() => apply(EMPTY_FILTERS, "mine")}
                 className="ml-2 font-semibold text-brand-ink underline-offset-2"
               >
                 Reset
@@ -262,6 +289,12 @@ export function PipelineBoard({
           </p>
         </div>
 
+        {capped ? (
+          <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+            Showing the first 250. Search covers every deal, so anything past
+            this is one search away.
+          </p>
+        ) : null}
       </div>
 
       {/* ----------------------------------------------- desktop controls */}
@@ -303,12 +336,7 @@ export function PipelineBoard({
           label="Whose deals"
           className="w-[210px] shrink-0"
           value={showingMine ? "mine" : "all"}
-          onChange={(v) =>
-            setFilters({
-              ...filters,
-              ownerIds: v === "mine" ? [currentUserId] : [],
-            })
-          }
+          onChange={(v) => apply({ ...filters, ownerIds: [] }, v)}
           options={[
             { value: "mine", label: "My deals" },
             { value: "all", label: "All deals" },
@@ -391,9 +419,22 @@ export function PipelineBoard({
               body="Swipe left or right for another stage, or tap Add deal."
             />
           ) : (
-            activeList.map((o) => (
-              <DealCard key={o.id} opp={o} onStageTap={setTarget} />
-            ))
+            <>
+              {activeList.slice(0, cardsShown).map((o) => (
+                <DealCard key={o.id} opp={o} onStageTap={setTarget} />
+              ))}
+              {activeList.length > cardsShown ? (
+                <button
+                  onClick={() => setCardsShown((n) => n + CARD_PAGE)}
+                  className="h-12 w-full rounded-2xl border border-line bg-white text-[14px] font-semibold text-brand-ink active:bg-canvas"
+                >
+                  Show more
+                  <span className="ml-1 font-normal text-muted">
+                    ({activeList.length - cardsShown} left)
+                  </span>
+                </button>
+              ) : null}
+            </>
           )}
         </div>
       </div>
@@ -445,9 +486,21 @@ export function PipelineBoard({
                   {value ? inrCompact(value) + " / mo" : "—"}
                 </p>
                 <div className="flex flex-col gap-2">
-                  {list.map((o) => (
+                  {/* Bounded like the phone column. This whole desktop board
+                      is in the HTML on a phone too — it is hidden with CSS,
+                      not skipped — so an unbounded column here was hundreds of
+                      cards every phone downloaded and hydrated to never see. */}
+                  {list.slice(0, cardsShown).map((o) => (
                     <DealCard key={o.id} opp={o} onStageTap={setTarget} draggable />
                   ))}
+                  {list.length > cardsShown ? (
+                    <button
+                      onClick={() => setCardsShown((n) => n + CARD_PAGE)}
+                      className="h-10 rounded-xl border border-line bg-white text-[13px] font-semibold text-brand-ink hover:bg-canvas"
+                    >
+                      Show {list.length - cardsShown} more
+                    </button>
+                  ) : null}
                 </div>
               </div>
             );

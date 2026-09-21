@@ -37,6 +37,9 @@ type View = "date" | "city";
 
 const VIEW_KEY = "moeving.deployments.view";
 
+/** Sections drawn before "Show more". */
+const SECTION_PAGE = 4;
+
 export function DeploymentsBoard({
   deployments,
   cities,
@@ -55,6 +58,10 @@ export function DeploymentsBoard({
   const [filtering, setFiltering] = React.useState(false);
   const [target, setTarget] = React.useState<Deployment | null>(null);
   const [view, setView] = React.useState<View>("date");
+  // Sections are drawn a few at a time. Ops reads this top-down — what is
+  // late, then this week — and 200 cards built at once is a second and a half
+  // of a phone doing work nobody has scrolled to.
+  const [sectionsShown, setSectionsShown] = React.useState(SECTION_PAGE);
 
   // Which grouping someone works in is a per-person habit, so it survives a
   // reload — the same rule the Pipeline's board/list choice follows.
@@ -107,6 +114,11 @@ export function DeploymentsBoard({
         ? groupByCity(outstanding)
         : groupByDueDate(outstanding, today),
     [outstanding, view, today],
+  );
+
+  React.useEffect(
+    () => setSectionsShown(SECTION_PAGE),
+    [view, cityIds, vehicleIds],
   );
 
   const filterCount = cityIds.length + vehicleIds.length;
@@ -168,7 +180,7 @@ export function DeploymentsBoard({
         </div>
       ) : null}
 
-      {groups.map((g) => (
+      {groups.slice(0, sectionsShown).map((g) => (
         <section key={g.key} className="mb-5">
           <div className="mb-2 flex items-baseline gap-2 px-1">
             <h2
@@ -213,6 +225,19 @@ export function DeploymentsBoard({
           </ul>
         </section>
       ))}
+
+      {groups.length > sectionsShown ? (
+        <button
+          onClick={() => setSectionsShown((n) => n + SECTION_PAGE)}
+          className="mb-5 h-12 w-full rounded-2xl border border-line bg-white text-[14px] font-semibold text-brand-ink active:bg-canvas"
+        >
+          Show more
+          <span className="ml-1 font-normal text-muted">
+            ({groups.length - sectionsShown} more{" "}
+            {view === "city" ? "cities" : "periods"})
+          </span>
+        </button>
+      ) : null}
 
       {done.length ? (
         <section className="mb-5">

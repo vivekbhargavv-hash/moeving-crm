@@ -1,12 +1,11 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 12 September 2026
+**Last updated:** 21 September 2026
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
 
-Read this, then `README.md` for setup mechanics. Everything below is current as
-of commit `43bac3e`.
+Read this, then `README.md` for setup mechanics.
 
 ---
 
@@ -51,6 +50,7 @@ Change these only deliberately — a lot of code assumes them.
 | **Two check constraints enforce the workflow.** `closed_won` requires revenue + all seven costs; `closed_lost` requires a reason. | No code path, present or future, can write a half-closed deal. |
 | **`organization_id` on every table; `requireSession()` is the only place it is produced**, always from the Clerk session — never a form field, query string or header. | Multi-tenant from day one. Adding a second organization is a row, not a migration. |
 | **Wins count on `closed_at`**, not `expected_close_date`. | The expected date is a forecast and usually wrong by the time a deal lands. |
+| **A deal owner's Pipeline opens on their own deals; only admins get All owners.** | A rep scrolling past thirty other people's deals stops opening the app. It is a default view, not a permission — the server still sends the whole org and any owner can be picked by name. |
 | **Auth checks sit next to the data**, not in middleware path matching. | Clerk deprecated `createRouteMatcher` for exactly this reason: path matching drifts from how Next routes requests. |
 | **Vercel functions are pinned to `sin1`** in `vercel.json`. | Neon is in `ap-southeast-1`. They were in Washington DC; every query crossed the Pacific twice. |
 
@@ -78,6 +78,10 @@ src/
     auth.ts           requireSession / requireAdmin — the only door to a tenant
     queries.ts        every read, org-scoped at the source, React-cached
     actions.ts        every write, zod-validated
+    stage-change.ts   the stage-move decision, free of Next/Clerk/db so it tests
+tests/
+  stage-change.test.ts          planStageChange, runs anywhere
+  closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
   0000_*.sql          initial schema
   0001_*.sql          per-vehicle economics migration
@@ -87,7 +91,30 @@ drizzle/
 
 ---
 
-## 4. How to verify a change from a sandboxed session
+## 4. Tests
+
+```bash
+npm test          # logic tests only — no setup, runs anywhere
+
+# with a throwaway Postgres, the database tests run too (see § 5 for how to
+# start one). The schema is applied automatically if the database is empty,
+# and every test rolls back, so the same scratch database is reusable.
+TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
+```
+
+`node --test` with `tsx` — no test framework, no new dependencies. Twenty-one
+tests: nine on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
+decision) and twelve on what Postgres itself refuses.
+
+Writing them found a real hole: `z.coerce.number()` reads both `null` and `""`
+as 0, and `formToObject()` turns every blank field into `null` — so a Closed Won
+sheet posted with Revenue empty would have been stored as a won deal earning ₹0.
+The check constraint cannot catch that either, because 0 is not null. The cost
+sheet's fields are now required *before* they are coerced.
+
+---
+
+## 5. How to verify a change from a sandboxed session
 
 The egress policy in Claude Code web blocks Neon's host, `api.clerk.com` and
 `api.vercel.com`. Neon is reachable through the **Neon MCP connector**, and
@@ -142,7 +169,7 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
 
 ---
 
-## 5. Bugs already found, so you don't re-find them
+## 6. Bugs already found, so you don't re-find them
 
 - **`requestSubmit()` does not exist on iOS Safari < 16.** A submit button
   outside its form calling `formRef.current.requestSubmit()` threw, nothing was
@@ -165,7 +192,7 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
 
 ---
 
-## 6. Environment
+## 7. Environment
 
 Set in Vercel (Production + Preview + Development). Values are in the Vercel
 dashboard and `.env.local`; they are not in this repo.
@@ -189,7 +216,7 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
 
 ---
 
-## 7. Master data (admin-editable, seeded)
+## 8. Master data (admin-editable, seeded)
 
 - **Cities**, in review order: Delhi NCR, Bangalore, Hyderabad, Mumbai, Pune,
   Kolkata. Chennai and Ahmedabad exist but are switched off.
@@ -207,24 +234,22 @@ never "Sales User", never "SPOC".
 
 ---
 
-## 8. Candidate next upgrades
+## 9. Candidate next upgrades
 
 Roughly in order of value to adoption:
 
 1. **Stale-deal nudges.** `opportunity_events` already records every stage
    change, so "nothing has moved in 14 days" is one query. This is what
    actually drives CRM usage — everything else is reporting.
-2. **A "my deals" default** for deal owners on the Pipeline, with All owners
-   reserved for admins.
-3. **Offline write queue.** The service worker deliberately caches no pipeline
+2. **Offline write queue.** The service worker deliberately caches no pipeline
    data today. Field reps in basements will want a queued "move stage".
-4. **Push notifications** for deals closing this week (the PWA manifest and
+3. **Push notifications** for deals closing this week (the PWA manifest and
    service worker are already in place).
-5. **Attachments** on a deal — quotes, signed LOIs. Needs blob storage.
-6. **Won-deal handover** to ops: the moment a deal is won, someone has to
+4. **Attachments** on a deal — quotes, signed LOIs. Needs blob storage.
+5. **Won-deal handover** to ops: the moment a deal is won, someone has to
    actually deliver the trucks.
 
-## 9. Known rough edges
+## 10. Known rough edges
 
 - The top header is translucent glass; the bottom tab bar is solid. Vivek asked
   for the tab bar to be solid specifically. If the mismatch ever annoys him, the
@@ -233,6 +258,7 @@ Roughly in order of value to adoption:
   it will need pagination in the thousands.
 - Desktop drag-and-drop between kanban columns has no touch equivalent — phones
   use the Move stage button instead, which is deliberate.
-- No tests. Verification so far has been typecheck, build, real-Postgres
-  constraint checks, and screenshots at 390px. A few integration tests around
-  `changeStage` and the Closed Won constraints would be the cheapest insurance.
+- Test coverage is the stage-change path only (§ 4). Quick Add, the forecast
+  maths and the CSV export have none; the same two-file pattern extends to them.
+- Nothing runs the tests automatically — there is no CI workflow, so `npm test`
+  is a thing a person remembers to type.

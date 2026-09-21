@@ -30,6 +30,7 @@ type Props = {
   lostReasons: { id: string; label: string }[];
   owners: { id: string; name: string }[];
   currentUserId: string;
+  isAdmin: boolean;
 };
 
 export function PipelineBoard({
@@ -37,10 +38,16 @@ export function PipelineBoard({
   lostReasons,
   owners,
   currentUserId,
+  isAdmin,
 }: Props) {
+  // A deal owner opens the Pipeline on their own deals; only an admin gets the
+  // whole team at once. This is a default view, not a permission — every deal
+  // in the organization is still reachable by picking that owner by name, and
+  // the server has always sent the full org-scoped list.
+  const defaultOwner = isAdmin ? "all" : "mine";
   const [stageIndex, setStageIndex] = React.useState(0);
   const [query, setQuery] = React.useState("");
-  const [owner, setOwner] = React.useState("all");
+  const [owner, setOwner] = React.useState(defaultOwner);
   const [target, setTarget] = React.useState<StageTarget | null>(null);
   const [view, setView] = React.useState<"board" | "list">("board");
   const [searching, setSearching] = React.useState(false);
@@ -116,7 +123,7 @@ export function PipelineBoard({
       ? "All owners"
       : owner === "mine"
         ? "My deals"
-        : (owners.find((o) => o.id === owner)?.name ?? "All owners");
+        : (owners.find((o) => o.id === owner)?.name ?? "My deals");
 
   return (
     <div>
@@ -190,7 +197,7 @@ export function PipelineBoard({
           <div
             className={cn(
               "relative h-12 w-12 shrink-0 rounded-2xl border",
-              owner === "all"
+              owner === defaultOwner
                 ? "border-line bg-white text-muted"
                 : "border-brand bg-brand-soft text-brand-ink",
             )}
@@ -205,7 +212,7 @@ export function PipelineBoard({
               aria-label="Filter by deal owner"
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             >
-              <option value="all">All owners</option>
+              {isAdmin ? <option value="all">All owners</option> : null}
               <option value="mine">My deals</option>
               {owners.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -263,7 +270,7 @@ export function PipelineBoard({
           onChange={(e) => setOwner(e.target.value)}
           className="h-11 w-36 shrink-0"
         >
-          <option value="all">All owners</option>
+          {isAdmin ? <option value="all">All owners</option> : null}
           <option value="mine">My deals</option>
           {owners.map((o) => (
             <option key={o.id} value={o.id}>

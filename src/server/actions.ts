@@ -16,6 +16,7 @@ import {
 } from "@/db/schema";
 import type { SalesStage } from "@/db/schema";
 import { requireAdmin, requireSession } from "@/server/auth";
+import { planStageChange } from "@/server/stage-change";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data?: T }
@@ -260,25 +261,12 @@ export async function updateOpportunity(
 
 /* ------------------------------------------------------------ stage change */
 
-const closeWonSchema = z.object({
-  revenue: money,
-  leaseCost: money,
-  driverCost: money,
-  chargingCost: money,
-  parkingCost: money,
-  maintenanceCost: money,
-  supervisorCost: money,
-  miscCost: money,
-});
-
-const closeLostSchema = z.object({
-  lostReasonId: z.string().uuid("Pick a reason"),
-  lostReasonNote: z.string().trim().max(1000).nullable().optional(),
-});
-
 /**
  * The one-tap path from the pipeline. Won and Lost need their extra block;
  * every other stage moves with no questions asked.
+ *
+ * The decision — noop, ask for the block, or here is the patch — lives in
+ * `stage-change.ts` so it can be tested without Next, Clerk or a database.
  */
 export async function changeStage(
   id: string,
@@ -288,37 +276,29 @@ export async function changeStage(
   const session = await requireSession();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Opportunity not found" };
-  if (existing.stage === stage) return { ok: true };
 
-  const patch: Partial<typeof opportunities.$inferInsert> = {
-    stage,
-    updatedAt: new Date(),
-    closedAt:
-      stage === "closed_won" || stage === "closed_lost" ? new Date() : null,
-  };
+  const plan = planStageChange({
+    from: existing.stage,
+    to: stage,
+    fields: formData ? formToObject(formData) : {},
+  });
+  if (plan.type === "noop") return { ok: true };
+  if (plan.type === "needs") return { ok: true, data: { needs: plan.needs } };
 
-  if (stage === "closed_won") {
-    const parsed = closeWonSchema.safeParse(
-      formData ? formToObject(formData) : {},
-    );
-    if (!parsed.success) return { ok: true, data: { needs: "won" } };
-    Object.assign(patch, parsed.data);
-  }
+  const patch: Partial<typeof opportunities.$inferInsert> = { ...plan.patch };
 
-  if (stage === "closed_lost") {
-    const parsed = closeLostSchema.safeParse(
-      formData ? formToObject(formData) : {},
-    );
-    if (!parsed.success) return { ok: true, data: { needs: "lost" } };
+  if (plan.lostReason) {
+    // A reason id is a form field, so it is checked against this org before it
+    // is trusted — the same rule as every other id crossing the wire.
     const reason = await db.query.lostReasons.findFirst({
       where: and(
-        eq(lostReasons.id, parsed.data.lostReasonId),
+        eq(lostReasons.id, plan.lostReason.id),
         eq(lostReasons.organizationId, session.organizationId),
       ),
     });
     if (!reason) return { ok: false, error: "Unknown reason" };
     patch.lostReasonId = reason.id;
-    patch.lostReasonNote = parsed.data.lostReasonNote ?? null;
+    patch.lostReasonNote = plan.lostReason.note;
   }
 
   await db

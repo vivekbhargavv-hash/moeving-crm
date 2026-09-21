@@ -24,6 +24,7 @@ export default async function PipelinePage() {
         lostReasons={master.lostReasons}
         owners={master.users}
         currentUserId={session.userId}
+        isAdmin={session.role === "admin"}
       />
     </>
   );

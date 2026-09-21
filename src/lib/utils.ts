@@ -101,10 +101,11 @@ export function formatDate(value: string | Date | null | undefined) {
   return `${day} ${month} ${year}`;
 }
 
-export function daysUntil(value: string | null | undefined) {
+/** Whole days from today to `value`; negative once it is in the past. */
+export function daysUntil(value: string | null | undefined, from = new Date()) {
   if (!value) return null;
   const target = new Date(value).getTime();
-  const today = new Date();
+  const today = from;
   const start = Date.UTC(
     today.getUTCFullYear(),
     today.getUTCMonth(),

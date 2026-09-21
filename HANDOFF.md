@@ -300,6 +300,35 @@ never "Sales User", never "SPOC".
 
 ---
 
+## 8a. Brand assets
+
+One artwork, two crops, everything derived from them:
+
+```
+public/logo.png            wordmark + "MAKE IT HAPPEN" — sign-in, sign-up
+public/logo-wordmark.png   wordmark without the tagline — desktop rail
+public/logo-mark.png       the G-handshake alone
+public/icons/icon-192.png  PWA, transparent
+public/icons/icon-512.png  PWA, transparent
+public/icons/icon-maskable-512.png  PWA maskable: opaque, mark inside the
+                           circular safe zone (Android crops to the launcher
+                           shape, so a transparent maskable icon loses its edges)
+public/icons/apple-touch-icon.png   180px, opaque — iOS renders transparency
+                           as black
+public/icons/favicon-32.png
+src/app/favicon.ico        16/32/48/64 — Next serves it at /favicon.ico with
+                           no wiring; the rest are declared in layout.tsx
+```
+
+The white studio background is removed with an alpha ramp rather than a
+threshold, so the antialiased edges keep the logo's green instead of a white
+halo. PNGs are quantised to 128 colours — the gradients survive it and the
+files are five to ten times smaller.
+
+**Changing the logo means bumping `SHELL` in `public/sw.js`.** The service
+worker caches `/icons/` by URL forever, so an installed phone keeps serving
+the old icon until the cache name changes.
+
 ## 9. Candidate next upgrades
 
 Roughly in order of value to adoption:

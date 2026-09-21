@@ -73,22 +73,15 @@ export const Input = React.forwardRef<
 ));
 Input.displayName = "Input";
 
-export const Select = React.forwardRef<
-  HTMLSelectElement,
-  React.SelectHTMLAttributes<HTMLSelectElement>
->(({ className, ...props }, ref) => (
-  <select
-    ref={ref}
-    className={cn(fieldStyles, "appearance-none pr-9 bg-no-repeat", className)}
-    style={{
-      backgroundImage:
-        "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%2364748b' stroke-width='2'><path d='M6 8l4 4 4-4'/></svg>\")",
-      backgroundPosition: "right 0.75rem center",
-    }}
-    {...props}
-  />
-));
-Select.displayName = "Select";
+/*
+ * There is deliberately no `Select` here any more.
+ *
+ * A native select hands the choosing to the operating system — on Android a
+ * grey system dialog in the middle of a screen that looks nothing like it —
+ * and sizes itself to its longest option, which is what once pushed a control
+ * row past the edge of the screen. `Picker` is the house control; if one of
+ * these is ever needed again, it should be for a reason worth writing down.
+ */
 
 export const Textarea = React.forwardRef<
   HTMLTextAreaElement,
@@ -152,6 +145,166 @@ export function PickedDate({ value }: { value: string }) {
         timeZone: "UTC",
       })}
     </p>
+  );
+}
+
+/* ------------------------------------------------------------------ picker */
+
+export type PickerOption = { value: string; label: string };
+
+/**
+ * A choice, in the app's own clothes.
+ *
+ * A native `<select>` hands the choosing to the operating system: on Android
+ * that is a grey system dialog with radio buttons, in the middle of a screen
+ * that looks nothing like it, and on iOS a wheel at the bottom. It also sizes
+ * itself to its longest option, which is what once pushed the Pipeline's
+ * controls past the edge of the screen and stretched the layout viewport.
+ *
+ * This is the same list in the app's own sheet: full-width rows you can
+ * actually hit, the current choice marked, and the page's own type and
+ * colour. `name` posts the value in a form exactly as the select did.
+ */
+export function Picker({
+  value,
+  onChange,
+  options,
+  label,
+  name,
+  placeholder = "Select",
+  className,
+  required,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: PickerOption[];
+  /** Names the control for screen readers and titles the sheet. */
+  label: string;
+  /** When set, the value is posted in the surrounding form. */
+  name?: string;
+  placeholder?: string;
+  className?: string;
+  required?: boolean;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-label={`${label}: ${selected?.label ?? placeholder}`}
+        className={cn(
+          fieldStyles,
+          "flex items-center gap-1 text-left disabled:opacity-50",
+          className,
+        )}
+      >
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate",
+            selected ? "text-ink" : "text-muted/70",
+          )}
+        >
+          {selected?.label ?? placeholder}
+        </span>
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="-mr-0.5 shrink-0 text-muted"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      {/* The value still reaches the server the way a select's did. */}
+      {name ? (
+        <input type="hidden" name={name} value={value} required={required} />
+      ) : null}
+
+      <Sheet open={open} onClose={() => setOpen(false)} title={label}>
+        <ul className="-my-1 divide-y divide-line">
+          {options.map((o) => {
+            const on = o.value === value;
+            return (
+              <li key={o.value || "__empty"}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  aria-current={on}
+                  className={cn(
+                    "flex h-[52px] w-full items-center gap-3 text-left text-[15px] transition",
+                    on ? "font-semibold text-brand-ink" : "text-ink",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                  {on ? (
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      className="shrink-0"
+                    >
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </Sheet>
+    </>
+  );
+}
+
+/**
+ * A `Picker` that keeps its own value, the way an uncontrolled `<select>`
+ * with a `defaultValue` did.
+ *
+ * Re-seeds when `defaultValue` changes, so a sheet reopened on a different
+ * deal shows that deal's value rather than the last one's.
+ */
+export function PickerField({
+  defaultValue = "",
+  onValueChange,
+  ...rest
+}: Omit<React.ComponentProps<typeof Picker>, "value" | "onChange"> & {
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+}) {
+  const [value, setValue] = React.useState(defaultValue);
+  React.useEffect(() => setValue(defaultValue), [defaultValue]);
+  return (
+    <Picker
+      {...rest}
+      value={value}
+      onChange={(v) => {
+        setValue(v);
+        onValueChange?.(v);
+      }}
+    />
   );
 }
 
@@ -225,6 +378,15 @@ export function Segmented<T extends string>({
  * calling requestSubmit() — silently does nothing on iOS Safari before 16,
  * which is exactly how a "nothing happens when I tap Create" bug is born.
  */
+/**
+ * How many sheets are open.
+ *
+ * A picker inside a sheet is a sheet inside a sheet, and the inner one
+ * closing would otherwise hand the page back its scrollbar while the outer
+ * one is still covering it.
+ */
+let openSheets = 0;
+
 export function Sheet({
   open,
   onClose,
@@ -244,10 +406,12 @@ export function Sheet({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
+    openSheets += 1;
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      openSheets -= 1;
+      if (openSheets === 0) document.body.style.overflow = "";
     };
   }, [open, onClose]);
 

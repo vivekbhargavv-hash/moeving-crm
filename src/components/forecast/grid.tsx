@@ -2,13 +2,17 @@
 
 import { ChevronRight, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { Badge, Segmented, Select, Sheet } from "@/components/ui";
+import { Badge, Picker, Segmented, Sheet } from "@/components/ui";
+import type { PickerOption } from "@/components/ui";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
 import { cn, formatDate, inrCompact, monthLabel, monthLabelLong, num } from "@/lib/utils";
 import { loadDrilldown } from "@/server/forecast-actions";
+
+const FIELD = "h-11 w-full min-w-0 rounded-xl px-2 text-[12px] font-medium";
 import type { ForecastCell, OpportunityCard, OpportunityFilters } from "@/server/queries";
 
 type Row = {
@@ -354,12 +358,22 @@ function FilterBar({
   metric: "fleet" | "value";
   setMetric: (m: "fleet" | "value") => void;
 }) {
+  const router = useRouter();
+  const [, startTransition] = React.useTransition();
+
   function setParam(key: string, value: string) {
     const url = new URL(window.location.href);
     if (value) url.searchParams.set(key, value);
     else url.searchParams.delete(key);
-    window.location.href = url.toString();
+    // A router navigation, not a full page load: the shell and the tab bar
+    // stay put instead of the whole app being thrown away and rebuilt.
+    startTransition(() => router.push(url.pathname + url.search, { scroll: false }));
   }
+
+  const all = (label: string, rows: { id: string; name: string }[]): PickerOption[] => [
+    { value: "", label },
+    ...rows.map((r) => ({ value: r.id, label: r.name })),
+  ];
 
   return (
     /* Two rows, not one scroller. As a single row these four controls came to
@@ -377,54 +391,40 @@ function FilterBar({
         ]}
       />
       <div className="grid grid-cols-2 gap-2">
-      <Select
-        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
+      <Picker
+        label="City"
+        className={FIELD}
         value={filters.cityId ?? ""}
-        onChange={(e) => setParam("city", e.target.value)}
-      >
-        <option value="">All cities</option>
-        {options.cities.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </Select>
-      <Select
-        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
+        onChange={(v) => setParam("city", v)}
+        options={all("All cities", options.cities)}
+      />
+      <Picker
+        label="Vehicle type"
+        className={FIELD}
         value={filters.vehicleTypeId ?? ""}
-        onChange={(e) => setParam("vehicle", e.target.value)}
-      >
-        <option value="">All vehicles</option>
-        {options.vehicleTypes.map((v) => (
-          <option key={v.id} value={v.id}>
-            {v.name}
-          </option>
-        ))}
-      </Select>
-      <Select
-        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
+        onChange={(v) => setParam("vehicle", v)}
+        options={all("All vehicles", options.vehicleTypes)}
+      />
+      <Picker
+        label="Deal owner"
+        className={FIELD}
         value={filters.ownerUserId ?? ""}
-        onChange={(e) => setParam("spoc", e.target.value)}
-      >
-        <option value="">All owners</option>
-        {options.users.map((u) => (
-          <option key={u.id} value={u.id}>
-            {u.name}
-          </option>
-        ))}
-      </Select>
-      <Select
-        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
+        onChange={(v) => setParam("spoc", v)}
+        options={all("All owners", options.users)}
+      />
+      <Picker
+        label="Stage"
+        className={FIELD}
         value={filters.stage ?? ""}
-        onChange={(e) => setParam("stage", e.target.value)}
-      >
-        <option value="">All open stages</option>
-        {STAGES.filter((s) => s.open).map((s) => (
-          <option key={s.value} value={s.value}>
-            {s.label}
-          </option>
-        ))}
-      </Select>
+        onChange={(v) => setParam("stage", v)}
+        options={[
+          { value: "", label: "All open stages" },
+          ...STAGES.filter((s) => s.open).map((s) => ({
+            value: s.value,
+            label: s.label,
+          })),
+        ]}
+      />
       </div>
     </div>
   );

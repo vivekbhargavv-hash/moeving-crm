@@ -45,16 +45,17 @@ export default async function OpportunityPage({
         <ArrowLeft size={18} /> Pipeline
       </Link>
 
-      <div className={cn("mb-3 rounded-2xl border p-4", stage.chip, "border-transparent")}>
-        <div className="flex items-start justify-between gap-3">
+      <div className="mb-3 overflow-hidden rounded-2xl border border-line bg-white">
+        <span className={cn("block h-1", stage.dot)} aria-hidden="true" />
+        <div className="flex items-start justify-between gap-3 p-4">
           <div className="min-w-0">
-            <Badge className="bg-white/70 px-2.5 py-1 text-[12px]">
+            <Badge className={cn("px-2.5 py-1 text-[12px]", stage.chip)}>
               {stage.label}
             </Badge>
             <h1 className="mt-2 truncate text-[22px] font-bold tracking-[-0.02em]">
               {row.accountName}
             </h1>
-            <p className="mt-0.5 truncate text-[13px] opacity-80">
+            <p className="mt-0.5 truncate text-[13px] text-muted">
               {row.city ?? "No city"} · {row.ownerName}
             </p>
           </div>
@@ -62,7 +63,7 @@ export default async function OpportunityPage({
             <p className="tabular text-[22px] font-bold leading-none">
               {inrCompact(value)}
             </p>
-            <p className="mt-1 text-[11px] opacity-70">per month</p>
+            <p className="mt-1 text-[11px] text-muted">per month</p>
           </div>
         </div>
       </div>
@@ -173,9 +174,9 @@ export default async function OpportunityPage({
         <Card>
           <CardHeader title="Deal" />
           <dl className="px-4 pb-4 text-sm">
-            <Row label="Customer" value={row.accountName} />
-            <Row label="Opportunity" value={opp.name} />
-            <Row label="City" value={row.city ?? "—"} />
+            {opp.name !== row.accountName ? (
+              <Row label="Deal name" value={opp.name} />
+            ) : null}
             <Row label="Deal Owner" value={row.ownerName} />
             <Row
               label="Expected closing"

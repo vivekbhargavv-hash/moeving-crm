@@ -1,5 +1,20 @@
 import type { SalesStage } from "@/db/schema";
 
+/**
+ * The stage palette says what kind of state a deal is in, not just which one.
+ *
+ * It used to be eight unrelated hues — slate, sky, violet, amber, teal,
+ * emerald, rose, orange — so nothing could be read at a glance and a deal in
+ * Negotiation, the healthiest place an open deal can be, was painted the
+ * colour every other screen uses for "late".
+ *
+ * Now there are four meanings, and the ramp inside the first one is progress:
+ *
+ *   open      a cool blue deepening slate → sky → blue → indigo → violet
+ *   won       emerald
+ *   lost      rose
+ *   dormant   slate, drained of colour, because nothing is happening
+ */
 export const STAGES: {
   value: SalesStage;
   label: string;
@@ -29,24 +44,24 @@ export const STAGES: {
     value: "proposal",
     label: "Proposal",
     short: "Proposal",
-    chip: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200",
-    dot: "bg-violet-500",
+    chip: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200",
+    dot: "bg-blue-500",
     open: true,
   },
   {
     value: "negotiation",
     label: "Negotiation",
     short: "Nego",
-    chip: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
-    dot: "bg-amber-500",
+    chip: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200",
+    dot: "bg-indigo-500",
     open: true,
   },
   {
     value: "contracting",
     label: "Contracting",
     short: "Contract",
-    chip: "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200",
-    dot: "bg-teal-500",
+    chip: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200",
+    dot: "bg-violet-500",
     open: true,
   },
   {
@@ -69,8 +84,8 @@ export const STAGES: {
     value: "dormant",
     label: "Dormant",
     short: "Dormant",
-    chip: "bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200",
-    dot: "bg-orange-400",
+    chip: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+    dot: "bg-slate-300",
     open: false,
   },
 ];

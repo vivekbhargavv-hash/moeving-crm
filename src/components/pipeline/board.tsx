@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { PipelineList } from "@/components/pipeline/table";
+import { Segmented } from "@/components/ui";
 import { StageChanger, type StageTarget } from "@/components/stage-changer";
 import {
   activeFilterCount,
@@ -125,7 +126,10 @@ export function PipelineBoard({
 
   const activeStage = visibleStages[Math.min(stageIndex, visibleStages.length - 1)]!;
   const activeList = byStage.get(activeStage.value) ?? [];
-  const filterCount = activeFilterCount(filters);
+  // The badge counts what the SHEET holds. "My deals" is an owner filter
+  // underneath, but it now has a switch of its own in plain sight, so counting
+  // it here put a "1" on the badge before anyone had filtered anything.
+  const filterCount = activeFilterCount({ ...filters, ownerIds: [] });
   // "Mine" and "All" are the two ends of the owner filter. Picking a specific
   // colleague in the sheet is neither, and the toggle shows nothing selected.
   const showingMine =
@@ -153,20 +157,6 @@ export function PipelineBoard({
     const el = tabsRef.current?.children[stageIndex] as HTMLElement | undefined;
     el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [stageIndex]);
-
-  /** What the active filters narrowed to, in words, for the count line. */
-  const filterSummary = [
-    filters.ownerIds.length === 1 && filters.ownerIds[0] === currentUserId
-      ? "My deals"
-      : filters.ownerIds.length
-        ? `${filters.ownerIds.length} owners`
-        : null,
-    filters.stages.length ? `${filters.stages.length} stages` : null,
-    filters.cityIds.length ? `${filters.cityIds.length} cities` : null,
-    filters.vehicleTypeIds.length ? `${filters.vehicleTypeIds.length} vehicles` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
 
   return (
     <div>
@@ -199,37 +189,29 @@ export function PipelineBoard({
         ) : null}
 
         <div className="flex items-center gap-2">
-          {/* Board/List gets the room; the rest are icons. A native select
-              sized to its longest option was 11px wider than the screen, which
-              on mobile stretches the layout viewport — that is what made the
-              fixed tab bar change width between pages. */}
-          <div className="flex h-12 min-w-0 flex-1 rounded-2xl border border-line bg-white p-[3px]">
-            {(
-              [
-                ["board", LayoutGrid, "Board"],
-                ["list", Rows3, "List"],
-              ] as const
-            ).map(([key, Icon, label]) => (
-              <button
-                key={key}
-                onClick={() => chooseView(key)}
-                aria-pressed={view === key}
-                className={cn(
-                  "flex h-full min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl text-[14px] font-semibold transition",
-                  view === key ? "bg-ink text-white" : "text-muted",
-                )}
-              >
-                <Icon size={16} />
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* Whose deals is the control used every time; the view is a habit
+              set once, so it sits on the second row with the count. */}
+          <Segmented
+            label="Whose deals"
+            className="min-w-0 flex-1"
+            value={showingMine ? "mine" : "all"}
+            onChange={(v) =>
+              setFilters({
+                ...filters,
+                ownerIds: v === "mine" ? [currentUserId] : [],
+              })
+            }
+            options={[
+              { value: "mine", label: "My deals" },
+              { value: "all", label: "All deals" },
+            ]}
+          />
 
           {!searching ? (
             <button
               onClick={() => setSearching(true)}
               aria-label="Search deals"
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-line bg-white text-muted active:bg-canvas"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-line bg-white text-muted active:bg-canvas"
             >
               <Search size={19} />
             </button>
@@ -239,9 +221,9 @@ export function PipelineBoard({
               to its longest option and stretches the layout viewport. */}
           <button
             onClick={() => setFiltering(true)}
-            aria-label="Filter deals"
+            aria-label={filterCount ? `Filter — ${filterCount} applied` : "Filter deals"}
             className={cn(
-              "relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border active:bg-canvas",
+              "relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border active:bg-canvas",
               filterCount
                 ? "border-brand bg-brand-soft text-brand-ink"
                 : "border-line bg-white text-muted",
@@ -256,28 +238,30 @@ export function PipelineBoard({
           </button>
         </div>
 
-        <MineToggle
-          mine={showingMine}
-          onMine={() => setFilters({ ...filters, ownerIds: [currentUserId] })}
-          onAll={() => setFilters({ ...filters, ownerIds: [] })}
-          className="mt-2"
-        />
-
-        {filterSummary ? (
-          <p className="mt-2 flex items-center gap-2 px-1 text-[12px] text-muted">
-            <span className="truncate">
-              {filterSummary} · {filtered.length} deals
-            </span>
+        <div className="mt-2 flex items-center gap-3">
+          <Segmented
+            label="Pipeline view"
+            className="w-[164px] shrink-0"
+            value={view}
+            onChange={chooseView}
+            options={[
+              { value: "board", label: "Board" },
+              { value: "list", label: "List" },
+            ]}
+          />
+          <p className="tabular min-w-0 flex-1 truncate text-right text-[12.5px] text-muted">
+            {filtered.length} {filtered.length === 1 ? "deal" : "deals"}
             {filtersChanged ? (
               <button
                 onClick={() => setFilters(defaultFilters)}
-                className="shrink-0 font-semibold text-brand-ink underline-offset-2 hover:underline"
+                className="ml-2 font-semibold text-brand-ink underline-offset-2"
               >
                 Reset
               </button>
             ) : null}
           </p>
-        ) : null}
+        </div>
+
       </div>
 
       {/* ----------------------------------------------- desktop controls */}
@@ -315,11 +299,20 @@ export function PipelineBoard({
             </button>
           ))}
         </div>
-        <MineToggle
-          mine={showingMine}
-          onMine={() => setFilters({ ...filters, ownerIds: [currentUserId] })}
-          onAll={() => setFilters({ ...filters, ownerIds: [] })}
-          className="h-11 shrink-0"
+        <Segmented
+          label="Whose deals"
+          className="w-[210px] shrink-0"
+          value={showingMine ? "mine" : "all"}
+          onChange={(v) =>
+            setFilters({
+              ...filters,
+              ownerIds: v === "mine" ? [currentUserId] : [],
+            })
+          }
+          options={[
+            { value: "mine", label: "My deals" },
+            { value: "all", label: "All deals" },
+          ]}
         />
         <button
           onClick={() => setFiltering(true)}
@@ -479,53 +472,6 @@ export function PipelineBoard({
         lostReasons={lostReasons}
         onClose={() => setTarget(null)}
       />
-    </div>
-  );
-}
-
-/**
- * My deals / All deals.
- *
- * The owner filter lives in the sheet with everything else, but these two
- * states are the ones used constantly, so they get a control you can see
- * without opening anything.
- */
-function MineToggle({
-  mine,
-  onMine,
-  onAll,
-  className,
-}: {
-  mine: boolean;
-  onMine: () => void;
-  onAll: () => void;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "inline-flex rounded-xl border border-line bg-white p-[3px]",
-        className,
-      )}
-    >
-      {(
-        [
-          ["My deals", mine, onMine],
-          ["All deals", !mine, onAll],
-        ] as const
-      ).map(([label, on, act]) => (
-        <button
-          key={label}
-          onClick={act}
-          aria-pressed={on}
-          className={cn(
-            "h-9 rounded-lg px-3 text-[13px] font-semibold transition",
-            on ? "bg-ink text-white" : "text-muted",
-          )}
-        >
-          {label}
-        </button>
-      ))}
     </div>
   );
 }

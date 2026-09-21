@@ -102,6 +102,24 @@ export function formatDate(value: string | Date | null | undefined) {
 }
 
 /** Whole days from today to `value`; negative once it is in the past. */
+/**
+ * "30 Sep", and "30 Sep 27" only when it is not this year.
+ *
+ * On a list of dates that are nearly all this year, the year on every row is
+ * six characters of noise that pushes the thing beside it into a second line.
+ */
+export function formatDateCompact(
+  value: string | Date | null | undefined,
+  from = new Date(),
+) {
+  if (!value) return "—";
+  const d = typeof value === "string" ? new Date(value) : value;
+  const full = formatDate(d);
+  return d.getUTCFullYear() === from.getUTCFullYear()
+    ? full.replace(/ \d{2}$/, "")
+    : full;
+}
+
 export function daysUntil(value: string | null | undefined, from = new Date()) {
   if (!value) return null;
   const target = new Date(value).getTime();

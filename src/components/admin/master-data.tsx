@@ -72,7 +72,7 @@ export function MasterDataEditor({
         action={
           <button
             onClick={() => setEditing("new")}
-            className="inline-flex items-center gap-1 text-sm font-medium text-brand-ink"
+            className="-mr-1.5 inline-flex h-11 items-center gap-1 rounded-lg px-2.5 text-sm font-semibold text-brand-ink active:bg-brand-soft"
           >
             <Plus size={15} /> Add
           </button>
@@ -91,7 +91,7 @@ export function MasterDataEditor({
                 </span>
                 <button
                   onClick={() => setEditing(item)}
-                  className="flex min-w-0 flex-1 items-center gap-2 py-3 text-left text-sm"
+                  className="flex min-w-0 flex-1 items-center gap-2 py-3.5 text-left text-sm"
                 >
                   <span className="truncate">{item.label}</span>
                   {!item.isActive ? (
@@ -128,7 +128,7 @@ export function MasterDataEditor({
             <button
               key={item.id}
               onClick={() => setEditing(item)}
-              className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1.5 text-sm hover:bg-canvas"
+              className="inline-flex h-11 items-center gap-2 rounded-full border border-line bg-white px-4 text-sm hover:bg-canvas"
             >
               {item.label}
               {!item.isActive ? (

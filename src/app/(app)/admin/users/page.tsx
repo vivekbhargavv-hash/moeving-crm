@@ -36,7 +36,7 @@ export default async function AdminUsersPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4">
-        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Users</h1>
+        <h1 className="hidden text-xl font-semibold tracking-tight md:block md:text-2xl">Users</h1>
         <p className="text-sm text-muted">
           Adding someone here emails them a sign-up link, and keeps a copy of
           that link in case the email does not arrive. They are linked to this

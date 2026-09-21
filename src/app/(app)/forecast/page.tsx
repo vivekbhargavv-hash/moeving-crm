@@ -57,7 +57,9 @@ export default async function ForecastPage({
 
       <ForecastTabs active={tab} />
 
-      <p className="mb-3 text-[13px] text-muted md:text-sm">
+      {/* Desktop only. On a phone this pushed the grid itself below the fold,
+          and the note under the grid already says what the numbers are. */}
+      <p className="mb-3 hidden text-[13px] text-muted md:block md:text-sm">
         {tab === "wins"
           ? "Accounts closed won, by owner and month. Tap a number for the accounts."
           : "Expected vehicles by city and closing month. Tap a city for its clients, or a number to drill in."}

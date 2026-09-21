@@ -4,7 +4,7 @@ import { ChevronRight, Loader2 } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
-import { Badge, Select, Sheet } from "@/components/ui";
+import { Badge, Segmented, Select, Sheet } from "@/components/ui";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
 import { cn, formatDate, inrCompact, monthLabel, monthLabelLong, num } from "@/lib/utils";
@@ -104,7 +104,12 @@ export function ForecastGrid({
     <div>
       <FilterBar filters={filters} options={options} metric={metric} setMetric={setMetric} />
 
-      <div className="overflow-x-auto rounded-[14px] border border-line bg-white">
+      <div className="relative">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 z-20 w-10 rounded-r-[14px] bg-gradient-to-l from-white to-transparent sm:hidden"
+        />
+        <div className="no-scrollbar overflow-x-auto rounded-[14px] border border-line bg-white">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-line">
@@ -131,7 +136,7 @@ export function ForecastGrid({
                 <th className="sticky left-0 z-10 bg-white py-2 pl-3 pr-1 text-left text-[13px] font-semibold">
                   <button
                     onClick={() => setExpanded(expanded === r.key ? null : r.key)}
-                    className="flex items-center gap-1 py-1 text-left active:opacity-70"
+                    className="flex h-11 items-center gap-1 text-left active:opacity-70"
                     aria-expanded={expanded === r.key}
                   >
                     <ChevronRight
@@ -256,7 +261,11 @@ export function ForecastGrid({
             )}
           </tbody>
         </table>
+        </div>
       </div>
+      <p className="mt-1.5 px-1 text-[11.5px] text-muted sm:hidden">
+        Swipe the grid sideways for later months.
+      </p>
 
       <p className="mt-3 px-1 text-xs text-muted">
         Open deals only, placed in the month of their expected closing date.
@@ -353,23 +362,23 @@ function FilterBar({
   }
 
   return (
-    <div className="no-scrollbar mb-4 flex gap-2 overflow-x-auto pb-1">
-      <div className="flex h-12 shrink-0 rounded-2xl border border-line bg-white p-[3px]">
-        {(["fleet", "value"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMetric(m)}
-            className={cn(
-              "h-full rounded-xl px-3.5 text-[13px] font-semibold transition",
-              metric === m ? "bg-ink text-white" : "text-muted",
-            )}
-          >
-            {m === "fleet" ? "Vehicles" : "Value"}
-          </button>
-        ))}
-      </div>
+    /* Two rows, not one scroller. As a single row these four controls came to
+       528px on a 390px screen: the last one sat half off the edge looking
+       broken, and a row wider than the screen stretches the layout viewport,
+       which is what makes the fixed tab bar change width between pages. */
+    <div className="mb-4 space-y-2">
+      <Segmented
+        label="Measure"
+        value={metric}
+        onChange={setMetric}
+        options={[
+          { value: "fleet", label: "Vehicles" },
+          { value: "value", label: "Value" },
+        ]}
+      />
+      <div className="grid grid-cols-2 gap-2">
       <Select
-        className="h-12 w-[7.5rem] shrink-0 rounded-2xl text-[13px] font-medium"
+        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
         value={filters.cityId ?? ""}
         onChange={(e) => setParam("city", e.target.value)}
       >
@@ -381,7 +390,7 @@ function FilterBar({
         ))}
       </Select>
       <Select
-        className="h-12 w-[7.5rem] shrink-0 rounded-2xl text-[13px] font-medium"
+        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
         value={filters.vehicleTypeId ?? ""}
         onChange={(e) => setParam("vehicle", e.target.value)}
       >
@@ -393,7 +402,7 @@ function FilterBar({
         ))}
       </Select>
       <Select
-        className="h-12 w-[7.5rem] shrink-0 rounded-2xl text-[13px] font-medium"
+        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
         value={filters.ownerUserId ?? ""}
         onChange={(e) => setParam("spoc", e.target.value)}
       >
@@ -405,7 +414,7 @@ function FilterBar({
         ))}
       </Select>
       <Select
-        className="h-12 w-[7.5rem] shrink-0 rounded-2xl text-[13px] font-medium"
+        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
         value={filters.stage ?? ""}
         onChange={(e) => setParam("stage", e.target.value)}
       >
@@ -416,6 +425,7 @@ function FilterBar({
           </option>
         ))}
       </Select>
+      </div>
     </div>
   );
 }

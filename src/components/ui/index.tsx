@@ -128,6 +128,92 @@ export function Field({
   );
 }
 
+/* ---------------------------------------------------------- picked date */
+
+/**
+ * The chosen date, spelled out under a native date field.
+ *
+ * A date input shows whatever format the BROWSER's own language uses, not the
+ * page's — so the same field reads dd/mm/yyyy on one phone and mm/dd/yyyy on
+ * the next, and 05/09 means two different days. Nothing in the app can change
+ * that, so the app says the date in words instead and the ambiguity is gone.
+ */
+export function PickedDate({ value }: { value: string }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const d = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  return (
+    <p className="mt-1.5 text-[12.5px] font-semibold text-brand-ink">
+      {d.toLocaleDateString("en-IN", {
+        weekday: "short",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      })}
+    </p>
+  );
+}
+
+/* ------------------------------------------------------- segmented control */
+
+/**
+ * One switch, used everywhere something has two or three views.
+ *
+ * There were five of these built by hand — Board/List, My deals/All deals,
+ * Forecast/Wins, Vehicles/Value, Users/Master data — in three different
+ * visual treatments, and the Admin one had no active state at all, so you
+ * could not tell which page you were on. They are all this now.
+ *
+ * The selected option is a white card lifted off a grey track, not a slab of
+ * ink: on a phone the darkest thing on screen should be a primary action, not
+ * a view switch. Options share the width evenly so the control never grows
+ * with its labels and pushes the row past the screen.
+ */
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  className,
+}: {
+  options: { value: T; label: string; icon?: React.ReactNode }[];
+  value: T;
+  onChange: (value: T) => void;
+  /** Named for screen readers, since the control itself is just buttons. */
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className={cn("flex rounded-xl bg-canvas p-1", className)}
+    >
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            aria-pressed={active}
+            className={cn(
+              "flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[10px] px-2 text-[13.5px] font-semibold transition",
+              active
+                ? "bg-white text-ink shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
+                : "text-muted active:bg-white/60",
+            )}
+          >
+            {o.icon}
+            <span className="truncate">{o.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------- sheet */
 
 /**

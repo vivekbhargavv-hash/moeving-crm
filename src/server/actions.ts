@@ -24,10 +24,20 @@ export type ActionResult<T = undefined> =
   | { ok: true; data?: T }
   | { ok: false; error: string };
 
-const money = z.coerce.number().int().min(0).max(2_000_000_000);
-// formToObject() already turns empty strings into null.
+/**
+ * An amount that may genuinely be absent.
+ *
+ * The field has to be PRESENT before it is coerced. `z.coerce.number()` reads
+ * null as 0, so a union of `[coerced, null]` matches the coerced branch first
+ * and a blank price was stored as ₹0 — indistinguishable from a deal actually
+ * quoted at nothing. formToObject() turns empty strings into null, so null is
+ * the only "not stated" value that reaches here.
+ */
 const optionalMoney = z
-  .union([money, z.null()])
+  .union([z.string().trim().min(1), z.number()])
+  .transform(Number)
+  .pipe(z.number().int().min(0).max(2_000_000_000))
+  .nullable()
   .optional()
   .transform((v) => v ?? null);
 

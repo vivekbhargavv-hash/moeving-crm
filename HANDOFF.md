@@ -92,8 +92,10 @@ src/
     actions.ts        every write, zod-validated
     stage-change.ts   the stage-move decision, free of Next/Clerk/db so it tests
     invites.ts        asks Clerk to email a new joiner a sign-up link
+    invite-url.ts     that link's landing URL — absolute, or not at all
 tests/
   stage-change.test.ts          planStageChange, runs anywhere
+  invite-url.test.ts            the absolute-redirect rule, runs anywhere
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
   0000_*.sql          initial schema
@@ -118,9 +120,10 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. Twenty-six
+`node --test` with `tsx` — no test framework, no new dependencies. Thirty-two
 tests: nine on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
-decision) and seventeen on what Postgres itself refuses — the two check
+decision), six on the invitation redirect URL, and seventeen on what Postgres
+itself refuses — the two check
 constraints, the generated margin columns, the stage order, and the expansion
 link surviving the deletion of its parent.
 
@@ -208,6 +211,12 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   cannot be altered in place — migration 0001 drops and rebuilds them.
 - **Underscore-prefixed app folders are private in Next**, so a `__preview`
   route 404s. Name scratch routes `zpreview`.
+- **A Clerk invitation `redirectUrl` must be ABSOLUTE.** A path is accepted by
+  the API, stored in the ticket as `rurl`, and then resolved against Clerk's
+  own Frontend API domain when the link is clicked — so `/sign-up` became
+  `https://<instance>.clerk.accounts.dev/sign-up`, a 404. Nothing reports it:
+  the invitation is created, the email sends, the link is simply dead.
+  `invite-url.ts` builds it and `tests/invite-url.test.ts` holds the rule.
 - **Drizzle renders a column inside a `sql` template UNQUALIFIED.** A correlated
   subquery written as ``sql`(select count(*) from ${opportunities} where
   ${opportunities.ownerUserId} = ${users.id})` `` becomes
@@ -240,6 +249,8 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
   request after an idle spell pays a ~500ms cold start.
 - **Vercel project:** `good-deal-crm` (`prj_Rpb213Y0l7kkPtDKZ7V9in4VXgH3`),
   team `vivek-5ea1b3e5`, region `sin1`, auto-deploys on push to `main`.
+- **Invitation links generated before 21 Sep are dead** — they carried a
+  relative redirect (see § 6). Press the mail button in Admin to reissue one.
 - **Invitation emails do not reliably arrive.** Clerk accepts
   `createInvitation` and reports success — `invited_at` gets set — but the
   development instance sends from a shared Clerk domain that corporate mail

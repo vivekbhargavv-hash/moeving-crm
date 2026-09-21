@@ -7,11 +7,23 @@ import * as React from "react";
 import { Badge, Button, Card, Field, Input, Select, Sheet } from "@/components/ui";
 import { deleteUser, resendInvite, setUserActive, upsertUser } from "@/server/actions";
 
+const ROLE_LABEL: Record<Row["role"], string> = {
+  admin: "Admin",
+  sales: "Deal Owner",
+  ops: "Operations",
+};
+
+const ROLE_STYLE: Record<Row["role"], string> = {
+  admin: "bg-violet-100 text-violet-800",
+  sales: "bg-slate-100 text-slate-700",
+  ops: "bg-teal-100 text-teal-800",
+};
+
 type Row = {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "sales";
+  role: "admin" | "sales" | "ops";
   isActive: boolean;
   linked: boolean;
   invitedAt: Date | null;
@@ -131,15 +143,7 @@ export function AdminUsers({
                       {u.invitedAt ? "Invited" : "Not invited"}
                     </Badge>
                   ) : null}
-                  <Badge
-                    className={
-                      u.role === "admin"
-                        ? "bg-violet-100 text-violet-800"
-                        : "bg-slate-100 text-slate-700"
-                    }
-                  >
-                    {u.role === "admin" ? "Admin" : "Deal Owner"}
-                  </Badge>
+                  <Badge className={ROLE_STYLE[u.role]}>{ROLE_LABEL[u.role]}</Badge>
                 </div>
               </button>
 
@@ -235,9 +239,13 @@ export function AdminUsers({
               defaultValue={current?.email ?? ""}
             />
           </Field>
-          <Field label="Role">
+          <Field
+            label="Role"
+            hint="Operations sees only the Deployments page — no pipeline, no pricing."
+          >
             <Select name="role" defaultValue={current?.role ?? "sales"}>
               <option value="sales">Deal Owner</option>
+              <option value="ops">Operations</option>
               <option value="admin">Admin</option>
             </Select>
           </Field>

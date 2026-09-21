@@ -50,7 +50,7 @@ export function DetailActions({
 }: {
   opp: Editable;
   master: MasterData;
-  role: "admin" | "sales";
+  role: "admin" | "sales" | "ops";
   /** False when this is a recorded win and the viewer is not an admin. */
   canDelete: boolean;
   /** Follow-on deployments, which survive but lose their link. */

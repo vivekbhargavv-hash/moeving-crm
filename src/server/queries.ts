@@ -353,6 +353,72 @@ async function listOpportunitiesRaw(
   return rows.map(toCard);
 }
 
+/* ------------------------------------------------------------- deployments */
+
+export type Deployment = {
+  id: string;
+  accountName: string;
+  dealName: string;
+  city: string | null;
+  cityId: string | null;
+  vehicleType: string | null;
+  vehicleTypeId: string | null;
+  fleetSize: number;
+  vehiclesDeployed: number;
+  /** Null only for a won deal that predates the deployment date column. */
+  deploymentDate: string | null;
+  ownerName: string;
+  isRepeat: boolean;
+};
+
+/**
+ * The operations queue: won deals and what is still owed on them.
+ *
+ * Only `closed_won`, which covers repeat deployments too — an expansion is a
+ * won deal, so it needs no special case here.
+ *
+ * Deliberately carries no money. Ops plan trucks, and the role is not allowed
+ * near a margin; leaving the columns out of the query means a mistake in the
+ * page cannot leak one.
+ */
+export async function listDeployments(): Promise<Deployment[]> {
+  const session = await requireSession();
+  const rows = await db
+    .select({
+      id: opportunities.id,
+      accountName: accounts.name,
+      dealName: opportunities.name,
+      city: cities.name,
+      cityId: opportunities.cityId,
+      vehicleType: vehicleTypes.name,
+      vehicleTypeId: opportunities.vehicleTypeId,
+      fleetSize: opportunities.fleetSize,
+      vehiclesDeployed: opportunities.vehiclesDeployed,
+      deploymentDate: opportunities.deploymentDate,
+      ownerName: users.name,
+      parentOpportunityId: opportunities.parentOpportunityId,
+    })
+    .from(opportunities)
+    .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
+    .innerJoin(users, eq(users.id, opportunities.ownerUserId))
+    .leftJoin(cities, eq(cities.id, opportunities.cityId))
+    .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
+    .where(
+      and(
+        eq(opportunities.organizationId, session.organizationId),
+        eq(opportunities.stage, "closed_won"),
+      ),
+    )
+    // Soonest first; a won deal with no date yet sorts last rather than
+    // pretending to be urgent.
+    .orderBy(asc(opportunities.deploymentDate), asc(accounts.name));
+
+  return rows.map(({ parentOpportunityId, ...r }) => ({
+    ...r,
+    isRepeat: parentOpportunityId !== null,
+  }));
+}
+
 /* ---------------------------------------------------------------- forecast */
 
 export type ForecastCell = { fleet: number; value: number; count: number };

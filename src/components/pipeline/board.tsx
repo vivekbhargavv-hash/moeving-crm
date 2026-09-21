@@ -40,7 +40,6 @@ type Props = {
   cities: { id: string; name: string }[];
   vehicleTypes: { id: string; name: string }[];
   currentUserId: string;
-  isAdmin: boolean;
 };
 
 export function PipelineBoard({
@@ -50,15 +49,12 @@ export function PipelineBoard({
   cities,
   vehicleTypes,
   currentUserId,
-  isAdmin,
 }: Props) {
-  // A deal owner opens the Pipeline on their own deals; only an admin gets the
-  // whole team at once. This is a default view, not a permission — every deal
-  // in the organization is still reachable by picking that owner by name, and
-  // the server has always sent the full org-scoped list.
+  // EVERYONE opens on their own deals, admins included. Your own deals are
+  // what you came to look at; the whole team is one tap away and never hidden.
   const defaultFilters = React.useMemo<Filters>(
-    () => (isAdmin ? EMPTY_FILTERS : { ...EMPTY_FILTERS, ownerIds: [currentUserId] }),
-    [isAdmin, currentUserId],
+    () => ({ ...EMPTY_FILTERS, ownerIds: [currentUserId] }),
+    [currentUserId],
   );
   const [stageIndex, setStageIndex] = React.useState(0);
   const [query, setQuery] = React.useState("");
@@ -130,6 +126,10 @@ export function PipelineBoard({
   const activeStage = visibleStages[Math.min(stageIndex, visibleStages.length - 1)]!;
   const activeList = byStage.get(activeStage.value) ?? [];
   const filterCount = activeFilterCount(filters);
+  // "Mine" and "All" are the two ends of the owner filter. Picking a specific
+  // colleague in the sheet is neither, and the toggle shows nothing selected.
+  const showingMine =
+    filters.ownerIds.length === 1 && filters.ownerIds[0] === currentUserId;
   const filtersChanged =
     JSON.stringify(filters) !== JSON.stringify(defaultFilters);
 
@@ -256,6 +256,13 @@ export function PipelineBoard({
           </button>
         </div>
 
+        <MineToggle
+          mine={showingMine}
+          onMine={() => setFilters({ ...filters, ownerIds: [currentUserId] })}
+          onAll={() => setFilters({ ...filters, ownerIds: [] })}
+          className="mt-2"
+        />
+
         {filterSummary ? (
           <p className="mt-2 flex items-center gap-2 px-1 text-[12px] text-muted">
             <span className="truncate">
@@ -308,6 +315,12 @@ export function PipelineBoard({
             </button>
           ))}
         </div>
+        <MineToggle
+          mine={showingMine}
+          onMine={() => setFilters({ ...filters, ownerIds: [currentUserId] })}
+          onAll={() => setFilters({ ...filters, ownerIds: [] })}
+          className="h-11 shrink-0"
+        />
         <button
           onClick={() => setFiltering(true)}
           className={cn(
@@ -458,7 +471,6 @@ export function PipelineBoard({
         owners={owners.map((o) => ({ id: o.id, label: o.name }))}
         vehicleTypes={vehicleTypes.map((v) => ({ id: v.id, label: v.name }))}
         currentUserId={currentUserId}
-        isAdmin={isAdmin}
         matchCount={filtered.length}
       />
 
@@ -467,6 +479,53 @@ export function PipelineBoard({
         lostReasons={lostReasons}
         onClose={() => setTarget(null)}
       />
+    </div>
+  );
+}
+
+/**
+ * My deals / All deals.
+ *
+ * The owner filter lives in the sheet with everything else, but these two
+ * states are the ones used constantly, so they get a control you can see
+ * without opening anything.
+ */
+function MineToggle({
+  mine,
+  onMine,
+  onAll,
+  className,
+}: {
+  mine: boolean;
+  onMine: () => void;
+  onAll: () => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "inline-flex rounded-xl border border-line bg-white p-[3px]",
+        className,
+      )}
+    >
+      {(
+        [
+          ["My deals", mine, onMine],
+          ["All deals", !mine, onAll],
+        ] as const
+      ).map(([label, on, act]) => (
+        <button
+          key={label}
+          onClick={act}
+          aria-pressed={on}
+          className={cn(
+            "h-9 rounded-lg px-3 text-[13px] font-semibold transition",
+            on ? "bg-ink text-white" : "text-muted",
+          )}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

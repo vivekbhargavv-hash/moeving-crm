@@ -5,8 +5,9 @@ import { planStageChange } from "@/server/stage-change";
 
 const REASON = "3f1c0a6e-8f1d-4d2b-9a3e-0b7c5d2e1f44";
 
-/** A full Closed Won cost sheet, as the form posts it: strings. */
+/** A full Closed Won sheet, as the form posts it: strings. */
 const wonSheet = {
+  deploymentMonth: "2026-11",
   revenue: "48000",
   leaseCost: "18000",
   driverCost: "16000",
@@ -44,6 +45,9 @@ describe("planStageChange", () => {
       {},
       { ...wonSheet, miscCost: null }, // one field short
       { ...wonSheet, revenue: "" },
+      { ...wonSheet, deploymentMonth: null }, // ops would have no date
+      { ...wonSheet, deploymentMonth: "November" },
+      { ...wonSheet, deploymentMonth: "2026-11-30" },
       { ...wonSheet, driverCost: "-1" }, // costs are never negative
       { ...wonSheet, leaseCost: "1800.5" }, // whole rupees only
     ]) {
@@ -71,12 +75,29 @@ describe("planStageChange", () => {
     // Coerced to whole-rupee integers, not left as form strings.
     assert.equal(plan.patch.revenue, 48000);
     assert.equal(plan.patch.miscCost, 300);
-    for (const key of Object.keys(wonSheet)) {
+    // The month becomes the last day of it, matching every other date here.
+    assert.equal(plan.patch.deploymentDate, "2026-11-30");
+    const { deploymentMonth: _, ...costs } = wonSheet;
+    for (const key of Object.keys(costs)) {
       assert.equal(
-        typeof plan.patch[key as keyof typeof wonSheet],
+        typeof plan.patch[key as keyof typeof costs],
         "number",
         `${key} should be a number`,
       );
+    }
+    // deploymentMonth is consumed, not written through as a stray column.
+    assert.equal("deploymentMonth" in plan.patch, false);
+  });
+
+  it("carries no deployment date into any stage but won", () => {
+    for (const to of ["negotiation", "dormant", "closed_lost"] as const) {
+      const plan = planStageChange({
+        from: "proposal",
+        to,
+        fields: to === "closed_lost" ? { lostReasonId: REASON } : wonSheet,
+      });
+      if (plan.type !== "move") continue;
+      assert.equal(plan.patch.deploymentDate, undefined);
     }
   });
 

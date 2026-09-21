@@ -13,8 +13,10 @@ export type Session = {
   organizationId: string;
   name: string;
   email: string;
-  role: "admin" | "sales";
+  role: UserRole;
 };
+
+export type UserRole = (typeof users.role.enumValues)[number];
 
 export class NotProvisionedError extends Error {
   constructor(readonly email: string) {
@@ -65,9 +67,34 @@ export const requireSession = cache(async (): Promise<Session> => {
   return toSession(linked!);
 });
 
+/** Where someone lands when they reach for a page that is not theirs. */
+export function homeFor(role: UserRole) {
+  return role === "ops" ? "/deployments" : "/dashboard";
+}
+
 export async function requireAdmin(): Promise<Session> {
   const session = await requireSession();
-  if (session.role !== "admin") throw new Error("FORBIDDEN");
+  // Sending them home beats a 500. Reaching Admin without the role is a
+  // stale link or a guessed URL, not an incident.
+  if (session.role !== "admin") redirect(homeFor(session.role));
+  return session;
+}
+
+/**
+ * The door to everything commercial: the pipeline, the forecast, a deal and
+ * its margins, the CSV export.
+ *
+ * Ops are in this organization to put trucks on the road, not to see what a
+ * customer pays. They get Deployments and Settings; everything else sends
+ * them back there rather than 403-ing at a screen they never asked for.
+ *
+ * This is a call at the top of each such page, not a middleware path match —
+ * the same reason `requireSession()` is: a pattern list drifts from how Next
+ * actually routes, and a miss there is silent.
+ */
+export async function requireSales(): Promise<Session> {
+  const session = await requireSession();
+  if (session.role === "ops") redirect(homeFor(session.role));
   return session;
 }
 

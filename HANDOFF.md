@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 21 September 2026 (third session)
+**Last updated:** 21 September 2026 (fourth session)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -11,7 +11,10 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-**Migrations 0000–0004 are all applied to production.** Nothing to run.
+0. **Run `drizzle/0005_ops_role.sql`, then `drizzle/0006_deployments.sql`**
+   against production, as separate statements and in that order. 0005 adds an
+   enum value and must stand alone; 0006 backfills deployment dates and adds
+   two check constraints. Both are safe to re-run. (0000–0004 are applied.)
 
 1. **Rotate the Clerk secret key.** `sk_live_…` was pasted into a chat
    transcript. Clerk → API Keys → regenerate. A live secret can read and
@@ -36,7 +39,8 @@ Next.js 15 (App Router) · TypeScript · Tailwind v4 · Neon Postgres · Drizzle
 Clerk · installable PWA · Vercel.
 
 **Screens:** Dashboard · Pipeline (board + list) · Forecast (forecast + wins) ·
-Deal detail · Quick Add · Settings (install) · Admin (users, master data).
+Deal detail · Quick Add · Deployments (the ops queue) · Settings (install) ·
+Admin (users, master data).
 
 ---
 
@@ -52,7 +56,10 @@ Change these only deliberately — a lot of code assumes them.
 | **Two check constraints enforce the workflow.** `closed_won` requires revenue + all seven costs; `closed_lost` requires a reason. | No code path, present or future, can write a half-closed deal. |
 | **`organization_id` on every table; `requireSession()` is the only place it is produced**, always from the Clerk session — never a form field, query string or header. | Multi-tenant from day one. Adding a second organization is a row, not a migration. |
 | **Wins count on `closed_at`**, not `expected_close_date`. | The expected date is a forecast and usually wrong by the time a deal lands. |
-| **A deal owner's Pipeline opens on their own deals; only admins get All owners.** | A rep scrolling past thirty other people's deals stops opening the app. It is a default view, not a permission — the server still sends the whole org and any owner can be picked by name. |
+| **Everyone's Pipeline opens on their own deals, admins included**, with a My deals / All deals toggle in plain sight. | Your own deals are what you came to look at. It is a default view, not a permission — the whole team is one tap away and never hidden. |
+| **`deployment_date` is not `expected_close_date`.** It is asked for on the Closed Won sheet and enforced by `opps_won_requires_deployment_date`. | The expected close date is a sales forecast made months earlier about a different question. Ops cannot plan trucks against it, and reusing the field would have let a sales edit silently move an ops commitment. |
+| **Deployment progress is a count (`vehicles_deployed`), not a flag.** | Ops routinely sends part of a fleet first. A boolean would force somebody to choose between lying and waiting, so "8 of 12 out" is the state. |
+| **Three roles: admin, sales, ops.** Ops sees Deployments and Settings, nothing else. | They put trucks on the road; they have no business seeing what a customer pays. `requireSales()` refuses at each page, and `listDeployments()` selects no money column at all, so a slip in the page cannot leak one. |
 | **The Pipeline opens on the table, sorted by most recently updated.** | What moved since you last looked is the reason to open the screen. The board is one tap away and the choice is remembered per person. |
 | **Repeat business is a NEW deal linked to the won one** (`parent_opportunity_id`), never an edit to the won row. | A won deal that grows would move a recorded win out of the month it happened in and silently restate Wins-by-month. |
 | **An expansion asks only city, fleet and deployment month.** Everything else is copied off the parent BY THE SERVER, not by the form. | The unit economics came with that contract. Copying server-side means the lock is real: posting `price` or `stage` into that action changes nothing. |
@@ -70,7 +77,8 @@ Change these only deliberately — a lot of code assumes them.
 src/
   app/
     (app)/            dashboard · pipeline · forecast · opportunities/[id]
-                      settings (everyone) · admin (admins)
+                      deployments (everyone) · settings (everyone)
+                      admin (admins)
     api/export/deals  CSV export (org-scoped, UTF-8 BOM for Excel)
     sign-in, sign-up, no-access, offline
   components/
@@ -80,12 +88,14 @@ src/
     pipeline/         board.tsx (kanban) · table.tsx (list + table) · filters.tsx
     forecast/         grid.tsx (city × month) · wins.tsx (owner × month) · tabs.tsx
     opportunity/      detail-actions.tsx · note-box.tsx · expand-deal.tsx
+    deployments/      board.tsx — the ops queue, partial counts and all
     install-app.tsx   PWA install: a real button on Android, steps on iOS
     ui/               Button, Input, Select, Sheet, Field, ChoiceGroup
     ui-server.tsx     Card, Badge, Avatar, EmptyState (no "use client")
   db/schema.ts        the whole data model in one file
   server/
-    auth.ts           requireSession / requireAdmin — the only door to a tenant
+    auth.ts           requireSession / requireAdmin / requireSales — the only
+                      door to a tenant, and the one that keeps ops out
     queries.ts        every read, org-scoped at the source, React-cached
     actions.ts        every write, zod-validated
     stage-change.ts   the stage-move decision, free of Next/Clerk/db so it tests
@@ -101,6 +111,8 @@ drizzle/
   0002_*.sql          the Contracting stage — ALTER TYPE alone, see § 5
   0003_*.sql          expansion links, invited_at, Contracting's probability
   0004_*.sql          users.invite_url — the accept link, see § 7
+  0005_*.sql          the ops role — ALTER TYPE alone, see § 6
+  0006_*.sql          deployment_date, vehicles_deployed, their constraints
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
 ```
@@ -118,9 +130,9 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. Thirty-two
-tests: nine on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
-decision), six on the invitation redirect URL, and seventeen on what Postgres
+`node --test` with `tsx` — no test framework, no new dependencies. Forty-one
+tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
+decision), six on the invitation redirect URL, and twenty-five on what Postgres
 itself refuses — the two check
 constraints, the generated margin columns, the stage order, and the expansion
 link surviving the deletion of its parent.
@@ -209,6 +221,12 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   cannot be altered in place — migration 0001 drops and rebuilds them.
 - **Underscore-prefixed app folders are private in Next**, so a `__preview`
   route 404s. Name scratch routes `zpreview`.
+- **`ALTER TYPE ... ADD VALUE` needs its own migration** — twice now, for
+  `contracting` (0002) and `ops` (0005). The value cannot be used in the
+  transaction that adds it, so anything referencing it waits for the next file.
+- **A new `closed_won` constraint breaks `demo-data.sql`** until the seed sets
+  the column too. 0006 added `opps_won_requires_deployment_date`, and the demo
+  seed had to start supplying a deployment date and a partial deployed count.
 - **A Clerk invitation `redirectUrl` must be ABSOLUTE.** A path is accepted by
   the API, stored in the ticket as `rurl`, and then resolved against Clerk's
   own Frontend API domain when the link is clicked — so `/sign-up` became
@@ -265,6 +283,8 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
 
 ## 8. Master data (admin-editable, seeded)
 
+- **Roles:** Admin (everything), Deal Owner (sales), Operations (Deployments
+  and Settings only — no pipeline, no pricing).
 - **Cities**, in review order: Delhi NCR, Bangalore, Hyderabad, Mumbai, Pune,
   Kolkata. Chennai and Ahmedabad exist but are switched off.
 - **Vehicle types:** 1 Tonne, 1.7 Tonne, Ultra E7, Ultra E9. The order is
@@ -331,5 +351,16 @@ Roughly in order of value to adoption:
   shape for it.
 - Only vehicle types are reorderable in Admin. Cities and lost reasons have the
   same `sort_order` column; it is one `orderable` prop each to switch on.
+- **The deployment date cannot be edited after the deal is won.** It is set on
+  the Closed Won sheet and by the expansion sheet, and nothing on the
+  Deployments page changes it. When ops slips a delivery they can only record
+  fewer vehicles, not move the date — an editable date on that page is the
+  obvious next addition.
+- **Nothing records WHEN a deployment completed**, only how many are out. The
+  count is in `opportunity_events` as a note, so "what did we deploy in
+  October" needs parsing text. A `deployed_at` column would fix it properly.
+- Ops users are kept out of commercial pages by a `requireSales()` call at the
+  top of each one. That is four call sites plus the CSV route, and a new page
+  has to remember to add it — greppable, but not automatic.
 - Nothing runs the tests automatically — there is no CI workflow, so `npm test`
   is a thing a person remembers to type.

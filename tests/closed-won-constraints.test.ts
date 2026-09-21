@@ -26,7 +26,13 @@ const migrations = [
   "drizzle/0001_per_vehicle_economics.sql",
   "drizzle/0002_contracting_stage.sql",
   "drizzle/0003_expansions_and_invites.sql",
+  "drizzle/0004_invite_link.sql",
+  "drizzle/0005_ops_role.sql",
+  "drizzle/0006_deployments.sql",
 ];
+
+/** A won deal must also carry a deployment date; see 0006. */
+const DEPLOY_ON = "2026-11-30";
 
 /** A full cost sheet, per vehicle per month. */
 const SHEET = {
@@ -111,6 +117,9 @@ describe(
         stage: "first_contact",
         fleet_size: 10,
         price: 48_000,
+        // A won deal needs one, and every won fixture here is testing
+        // something else; a test that cares passes its own.
+        ...(extra.stage === "closed_won" ? { deployment_date: DEPLOY_ON } : {}),
         ...extra,
       };
       const keys = Object.keys(values);
@@ -241,6 +250,87 @@ describe(
 
     it("refuses a deal with no vehicles in it", async () => {
       await rejects(() => insertOpp({ fleet_size: 0 }), "opps_fleet_positive");
+    });
+
+    it("refuses a won deal ops cannot schedule", async () => {
+      await rejects(
+        () => insertOpp({ stage: "closed_won", ...SHEET, deployment_date: null }),
+        "opps_won_requires_deployment_date",
+      );
+    });
+
+    it("keeps the deployment date apart from the sales forecast", async () => {
+      const opp = await insertOpp({
+        stage: "closed_won",
+        ...SHEET,
+        expected_close_date: "2026-09-30",
+        deployment_date: DEPLOY_ON,
+      });
+      // Two different questions, two different answers. Ops reads the second.
+      assert.equal(opp.expected_close_date.toISOString().slice(0, 10), "2026-09-30");
+      assert.equal(opp.deployment_date.toISOString().slice(0, 10), DEPLOY_ON);
+    });
+
+    it("starts a won deal with nothing deployed", async () => {
+      const opp = await insertOpp({ stage: "closed_won", ...SHEET });
+      assert.equal(opp.vehicles_deployed, 0);
+    });
+
+    it("records a partial deployment", async () => {
+      const opp = await insertOpp({ stage: "closed_won", fleet_size: 12, ...SHEET });
+      const { rows } = await client.query(
+        "update opportunities set vehicles_deployed = 8 where id = $1 returning vehicles_deployed, fleet_size",
+        [opp.id],
+      );
+      assert.equal(rows[0].vehicles_deployed, 8);
+      assert.equal(rows[0].fleet_size, 12);
+    });
+
+    it("refuses more vehicles deployed than the deal is for", async () => {
+      const opp = await insertOpp({ stage: "closed_won", fleet_size: 12, ...SHEET });
+      await rejects(
+        () =>
+          client.query(
+            "update opportunities set vehicles_deployed = 13 where id = $1",
+            [opp.id],
+          ),
+        "opps_deployed_within_fleet",
+      );
+    });
+
+    it("refuses a negative deployed count", async () => {
+      await rejects(
+        () => insertOpp({ stage: "closed_won", ...SHEET, vehicles_deployed: -1 }),
+        "opps_deployed_within_fleet",
+      );
+    });
+
+    it("refuses shrinking a fleet below what is already deployed", async () => {
+      // The app clamps instead (see updateOpportunity); this pins the rule the
+      // clamp exists to respect.
+      const opp = await insertOpp({
+        stage: "closed_won",
+        fleet_size: 12,
+        vehicles_deployed: 10,
+        ...SHEET,
+      });
+      await rejects(
+        () =>
+          client.query("update opportunities set fleet_size = 5 where id = $1", [
+            opp.id,
+          ]),
+        "opps_deployed_within_fleet",
+      );
+    });
+
+    it("has an ops role", async () => {
+      const { rows } = await client.query(
+        "select unnest(enum_range(null::user_role))::text as role",
+      );
+      assert.deepEqual(
+        rows.map((r) => r.role).sort(),
+        ["admin", "ops", "sales"],
+      );
     });
 
     it("puts Contracting between Negotiation and Closed Won", async () => {

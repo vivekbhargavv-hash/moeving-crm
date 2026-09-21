@@ -2,7 +2,7 @@ CREATE TYPE "public"."charging_scope" AS ENUM('client', 'moeving');
 CREATE TYPE "public"."driver_type" AS ENUM('driver_only', 'driver_plus_helper', 'driver_cum_helper');
 CREATE TYPE "public"."event_kind" AS ENUM('created', 'stage_changed', 'updated', 'note');
 CREATE TYPE "public"."sales_stage" AS ENUM('first_contact', 'solutioning', 'proposal', 'negotiation', 'contracting', 'closed_won', 'closed_lost', 'dormant');
-CREATE TYPE "public"."user_role" AS ENUM('admin', 'sales');
+CREATE TYPE "public"."user_role" AS ENUM('admin', 'sales', 'ops');
 CREATE TABLE "accounts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
@@ -40,6 +40,8 @@ CREATE TABLE "opportunities" (
 	"fleet_size" integer DEFAULT 1 NOT NULL,
 	"price" integer,
 	"expected_close_date" date,
+	"deployment_date" date,
+	"vehicles_deployed" integer DEFAULT 0 NOT NULL,
 	"owner_user_id" uuid NOT NULL,
 	"notes" text,
 	"parent_opportunity_id" uuid,
@@ -138,6 +140,9 @@ ALTER TABLE "vehicle_types" ADD CONSTRAINT "vehicle_types_organization_id_organi
 CREATE UNIQUE INDEX "accounts_org_name_idx" ON "accounts" USING btree ("organization_id","name");
 CREATE UNIQUE INDEX "cities_org_name_idx" ON "cities" USING btree ("organization_id","name");
 CREATE UNIQUE INDEX "lost_reasons_org_label_idx" ON "lost_reasons" USING btree ("organization_id","label");
+ALTER TABLE "opportunities" ADD CONSTRAINT "opps_won_requires_deployment_date" CHECK ("stage" <> 'closed_won' OR "deployment_date" IS NOT NULL);
+ALTER TABLE "opportunities" ADD CONSTRAINT "opps_deployed_within_fleet" CHECK ("vehicles_deployed" >= 0 AND "vehicles_deployed" <= "fleet_size");
+CREATE INDEX "opps_org_deployment_idx" ON "opportunities" USING btree ("organization_id","deployment_date");
 CREATE INDEX "opps_org_stage_idx" ON "opportunities" USING btree ("organization_id","stage");
 CREATE INDEX "opps_org_owner_idx" ON "opportunities" USING btree ("organization_id","owner_user_id");
 CREATE INDEX "opps_parent_idx" ON "opportunities" USING btree ("parent_opportunity_id");

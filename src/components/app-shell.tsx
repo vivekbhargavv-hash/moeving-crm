@@ -8,6 +8,7 @@ import {
   Plus,
   Settings,
   Shield,
+  Truck,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -18,11 +19,22 @@ import type { MasterData } from "@/components/quick-add";
 import type { Session } from "@/server/auth";
 import { cn } from "@/lib/utils";
 
-const NAV = [
+/**
+ * What each role can reach.
+ *
+ * Ops are here to put trucks on the road: Deployments, and Settings behind
+ * the gear so they can install the app. Everything commercial is refused at
+ * the page itself by `requireSales()` — this list only decides what is worth
+ * offering, it is not the guard.
+ */
+const SALES_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
   { href: "/forecast", label: "Forecast", icon: CalendarRange },
+  { href: "/deployments", label: "Deploy", icon: Truck },
 ];
+
+const OPS_NAV = [{ href: "/deployments", label: "Deployments", icon: Truck }];
 
 /** Page titles for the mobile header, so it never says "MoEVing" vaguely. */
 const TITLES: Record<string, string> = {
@@ -33,6 +45,7 @@ const TITLES: Record<string, string> = {
   "/admin/users": "Users",
   "/admin/master-data": "Master data",
   "/settings": "Settings",
+  "/deployments": "Deployments",
 };
 
 export function AppShell({
@@ -71,10 +84,13 @@ export function AppShell({
     return () => clearTimeout(t);
   }, [toast]);
 
+  const isOps = session.role === "ops";
+  const tabs = isOps ? OPS_NAV : SALES_NAV;
+
   // Settings is everyone's — it is where the install button lives, and the
   // people who most need to install this are the ones who are not admins.
   const nav = [
-    ...NAV,
+    ...tabs,
     ...(session.role === "admin"
       ? [{ href: "/admin/users", label: "Admin", icon: Shield }]
       : []),
@@ -155,22 +171,29 @@ export function AppShell({
         </main>
       </div>
 
-      {/* Mobile tab bar: Dashboard, Pipeline, Forecast, Add. */}
+      {/* Mobile tab bar. Ops get one tab and no Add deal — they do not sell. */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
-        <div className="mx-auto grid max-w-md grid-cols-4">
-          {NAV.map((item) => (
+        <div
+          className={cn(
+            "mx-auto grid max-w-md",
+            isOps ? "grid-cols-1" : "grid-cols-5",
+          )}
+        >
+          {tabs.map((item) => (
             <NavTab key={item.href} {...item} pathname={pathname} />
           ))}
-          <button
-            onClick={() => setAddOpen(true)}
-            aria-label="Add deal"
-            className="flex flex-col items-center gap-1 py-2 text-[11px] font-semibold text-brand-ink active:scale-95"
-          >
-            <span className="-mt-6 mb-0.5 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg shadow-brand/40 ring-4 ring-white">
-              <Plus size={28} strokeWidth={2.8} />
-            </span>
-            Add deal
-          </button>
+          {isOps ? null : (
+            <button
+              onClick={() => setAddOpen(true)}
+              aria-label="Add deal"
+              className="flex flex-col items-center gap-1 py-2 text-[11px] font-semibold text-brand-ink active:scale-95"
+            >
+              <span className="-mt-6 mb-0.5 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg shadow-brand/40 ring-4 ring-white">
+                <Plus size={28} strokeWidth={2.8} />
+              </span>
+              Add deal
+            </button>
+          )}
         </div>
       </nav>
 

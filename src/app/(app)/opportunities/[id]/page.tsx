@@ -13,7 +13,7 @@ import {
   STAGE_MAP,
 } from "@/lib/constants";
 import { cn, formatDate, inr, inrCompact, num } from "@/lib/utils";
-import { requireSession } from "@/server/auth";
+import { requireSales } from "@/server/auth";
 import { getMasterData, getOpportunity } from "@/server/queries";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export default async function OpportunityPage({
 }) {
   const { id } = await params;
   const [session, row, master] = await Promise.all([
-    requireSession(),
+    requireSales(),
     getOpportunity(id),
     getMasterData(),
   ]);

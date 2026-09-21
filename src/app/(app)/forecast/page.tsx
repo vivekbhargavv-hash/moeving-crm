@@ -3,6 +3,7 @@ import { ForecastTabs } from "@/components/forecast/tabs";
 import { WinsGrid } from "@/components/forecast/wins";
 import type { SalesStage } from "@/db/schema";
 import { pastMonths, upcomingMonths } from "@/lib/utils";
+import { requireSales } from "@/server/auth";
 import {
   getForecast,
   getMasterData,
@@ -38,7 +39,9 @@ export default async function ForecastPage({
   const tab = one("tab") === "wins" ? "wins" : "forecast";
   const winMonths = pastMonths(6);
 
-  const [forecast, wins, master] = await Promise.all([
+  const [, forecast, wins, master] = await Promise.all([
+    // Ops has no business on the forecast; it is revenue and margin.
+    requireSales(),
     getForecast(months, filters),
     // Both are cheap grouped queries; fetching them together keeps switching
     // tabs instant instead of a round trip to Singapore each time.

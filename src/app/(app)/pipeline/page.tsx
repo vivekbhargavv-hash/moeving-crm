@@ -1,12 +1,12 @@
 import { PipelineBoard } from "@/components/pipeline/board";
-import { requireSession } from "@/server/auth";
+import { requireSales } from "@/server/auth";
 import { getMasterData, listOpportunities } from "@/server/queries";
 
 export const dynamic = "force-dynamic";
 
 export default async function PipelinePage() {
   const [session, opportunities, master] = await Promise.all([
-    requireSession(),
+    requireSales(),
     listOpportunities(),
     getMasterData(),
   ]);
@@ -26,7 +26,6 @@ export default async function PipelinePage() {
         cities={master.cities}
         vehicleTypes={master.vehicleTypes}
         currentUserId={session.userId}
-        isAdmin={session.role === "admin"}
       />
     </>
   );

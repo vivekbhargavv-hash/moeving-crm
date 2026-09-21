@@ -18,7 +18,7 @@ import {
 import type { SalesStage } from "@/db/schema";
 import { requireAdmin, requireSession } from "@/server/auth";
 import { sendInvitation } from "@/server/invites";
-import { planStageChange } from "@/server/stage-change";
+import { monthToLastDay, planStageChange } from "@/server/stage-change";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data?: T }
@@ -52,12 +52,6 @@ const uuidish = z
 // Derived from the database enum rather than retyped, so adding a stage is one
 // edit in schema.ts and a migration — never a list that silently drifts.
 const stageEnum = z.enum(salesStage.enumValues);
-
-/** "2026-10" -> "2026-10-31". The team thinks in months, the database in dates. */
-function monthToLastDay(month: string) {
-  const [y, m] = month.split("-").map(Number);
-  return new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
-}
 
 const closeMonth = z
   .string()
@@ -228,10 +222,16 @@ export async function updateOpportunity(
       ? await assertOrgUser(session.organizationId, input.ownerUserId)
       : existing.ownerUserId;
 
+  // A customer cutting their order below what is already on the road would
+  // otherwise trip `opps_deployed_within_fleet`. The trucks that went out did
+  // go out, so the count follows the fleet down rather than the edit failing.
+  const vehiclesDeployed = Math.min(existing.vehiclesDeployed, input.fleetSize);
+
   await db
     .update(opportunities)
     .set({
       accountId,
+      vehiclesDeployed,
       name: input.name?.trim() || input.accountName.trim(),
       cityId: input.cityId,
       vehicleTypeId: input.vehicleTypeId,
@@ -344,6 +344,7 @@ export async function createExpansion(
       // --- the three things this sheet asks for ---
       cityId,
       fleetSize: input.fleetSize,
+      deploymentDate: deployOn,
       expectedCloseDate: deployOn,
       // Wins count on closed_at, so the deployment month is the month it lands.
       closedAt: new Date(`${deployOn}T00:00:00Z`),
@@ -388,6 +389,69 @@ export async function createExpansion(
   revalidatePath("/forecast");
   revalidatePath(`/opportunities/${parent.id}`);
   return { ok: true, data: { id: created!.id } };
+}
+
+/* -------------------------------------------------------------- deployments */
+
+/**
+ * Ops recording how many vehicles are actually out.
+ *
+ * A count, not a tick: part of a fleet going first is normal, and a flag would
+ * force somebody to choose between lying and waiting. Writing the same number
+ * again is a no-op rather than an error, because two people looking at the
+ * same van should not produce a conflict.
+ */
+export async function recordDeployment(
+  id: string,
+  vehiclesDeployed: number,
+): Promise<ActionResult> {
+  const session = await requireSession();
+  const existing = await loadOwned(session.organizationId, id);
+  if (!existing) return { ok: false, error: "Deal not found" };
+  if (existing.stage !== "closed_won") {
+    return { ok: false, error: "Only a won deal has vehicles to deploy" };
+  }
+
+  const parsed = z
+    .number()
+    .int()
+    .min(0)
+    .max(existing.fleetSize)
+    .safeParse(vehiclesDeployed);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: `This deal is for ${existing.fleetSize} vehicles, so that number has to be between 0 and ${existing.fleetSize}.`,
+    };
+  }
+  const next = parsed.data;
+  if (next === existing.vehiclesDeployed) return { ok: true };
+
+  await db
+    .update(opportunities)
+    .set({ vehiclesDeployed: next, updatedAt: new Date() })
+    .where(
+      and(
+        eq(opportunities.id, id),
+        eq(opportunities.organizationId, session.organizationId),
+      ),
+    );
+
+  // The deal's own timeline is where sales looks to answer "is it out yet".
+  await db.insert(opportunityEvents).values({
+    organizationId: session.organizationId,
+    opportunityId: id,
+    userId: session.userId,
+    kind: "note",
+    body:
+      next >= existing.fleetSize
+        ? `All ${existing.fleetSize} vehicles deployed.`
+        : `${next} of ${existing.fleetSize} vehicles deployed.`,
+  });
+
+  revalidatePath("/deployments");
+  revalidatePath(`/opportunities/${id}`);
+  return { ok: true };
 }
 
 /* ------------------------------------------------------------ stage change */
@@ -528,7 +592,8 @@ export async function upsertUser(
       id: uuidish,
       name: z.string().trim().min(1).max(120),
       email: z.string().trim().email().toLowerCase(),
-      role: z.enum(["admin", "sales"]),
+      // Derived from the database enum, so a new role is one edit, not three.
+      role: z.enum(users.role.enumValues),
       isActive: z
         .union([z.literal("on"), z.literal("true"), z.null()])
         .optional()

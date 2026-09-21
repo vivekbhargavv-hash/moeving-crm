@@ -2,6 +2,7 @@ import { BarList, Funnel } from "@/components/charts/bars";
 import { Card, CardHeader } from "@/components/ui-server";
 import { STAGE_MAP } from "@/lib/constants";
 import { cn, inrCompact, num } from "@/lib/utils";
+import { requireSales } from "@/server/auth";
 import { getDashboard, getMasterData, type OpportunityFilters } from "@/server/queries";
 import { DashboardFilters } from "@/components/dashboard-filters";
 
@@ -24,7 +25,12 @@ export default async function DashboardPage({
     vehicleTypeId: one("vehicle"),
   };
 
-  const [data, master] = await Promise.all([getDashboard(filters), getMasterData()]);
+  const [, data, master] = await Promise.all([
+    // Ops has no business on the dashboard; it is revenue and margin.
+    requireSales(),
+    getDashboard(filters),
+    getMasterData(),
+  ]);
   const { kpis } = data;
 
   return (

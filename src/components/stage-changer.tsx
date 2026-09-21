@@ -4,7 +4,15 @@ import { Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { Button, Field, Input, Select, Sheet, Textarea } from "@/components/ui";
+import {
+  Button,
+  Field,
+  Input,
+  PickedDate,
+  Select,
+  Sheet,
+  Textarea,
+} from "@/components/ui";
 import { COST_FIELDS, STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
 import { cn, inr, inrCompact } from "@/lib/utils";
@@ -143,7 +151,7 @@ export function StageChanger({
 
           <Field
             label="Expected deployment date"
-            hint="The day the vehicles are due on the road. Ops schedules drivers and charging against this, so give them the date you promised — not the end of the month."
+            hint="The day the vehicles are due on the road."
           >
             <Input
               type="date"
@@ -153,11 +161,12 @@ export function StageChanger({
               value={deployDate}
               onChange={(e) => setDeployDate(e.target.value)}
             />
+            <PickedDate value={deployDate} />
           </Field>
 
           <Field
             label="Revenue per vehicle / month"
-            hint="Pre-filled from the quoted price. Change it if the closing rate differs."
+            hint="From the quoted price — change it if the rate differs."
           >
             <Input
               name="revenue"

@@ -22,9 +22,12 @@ export function DashboardFilters({
   }
 
   return (
-    <div className="no-scrollbar mb-4 flex gap-2 overflow-x-auto pb-1">
+    /* Three equal columns rather than a scroller: as a row of fixed-width
+       controls the third one sat half off the screen, reading as broken
+       rather than as something you could swipe. */
+    <div className="mb-4 grid grid-cols-3 gap-2">
       <Select
-        className="h-12 w-[7rem] shrink-0 rounded-2xl text-[13px] font-medium"
+        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
         value={filters.ownerUserId ?? ""}
         onChange={(e) => setParam("spoc", e.target.value)}
       >
@@ -36,7 +39,7 @@ export function DashboardFilters({
         ))}
       </Select>
       <Select
-        className="h-12 w-[7rem] shrink-0 rounded-2xl text-[13px] font-medium"
+        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
         value={filters.cityId ?? ""}
         onChange={(e) => setParam("city", e.target.value)}
       >
@@ -48,7 +51,7 @@ export function DashboardFilters({
         ))}
       </Select>
       <Select
-        className="h-12 w-[7rem] shrink-0 rounded-2xl text-[13px] font-medium"
+        className="h-11 w-full min-w-0 rounded-xl px-2.5 text-[12.5px] font-medium"
         value={filters.vehicleTypeId ?? ""}
         onChange={(e) => setParam("vehicle", e.target.value)}
       >

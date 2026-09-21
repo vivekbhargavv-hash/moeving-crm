@@ -56,20 +56,17 @@ export default async function DashboardPage({
           label="Pipeline value"
           value={inrCompact(kpis.pipelineValue)}
           sub={`${kpis.openCount} open deals`}
-          tone="blue"
           wide
         />
         <Tile
           label="Weighted"
           value={inrCompact(kpis.weightedPipeline)}
           sub="By stage odds"
-          tone="violet"
         />
         <Tile
           label="Fleet in pipeline"
           value={num(kpis.fleetInPipeline)}
           sub="Vehicles, open"
-          tone="slate"
         />
         <Tile
           label="Closed won"
@@ -81,7 +78,7 @@ export default async function DashboardPage({
           label="Win rate"
           value={kpis.winRate === null ? "—" : `${kpis.winRate}%`}
           sub="Won ÷ decided"
-          tone="amber"
+          tone={kpis.winRate !== null && kpis.winRate < 40 ? "rose" : "plain"}
         />
         <Tile
           label="Gross margin"
@@ -145,20 +142,26 @@ export default async function DashboardPage({
   );
 }
 
+/**
+ * Three tones, not six.
+ *
+ * Six tinted tiles in five hues — sky, violet, slate, emerald, amber — made
+ * every number shout equally, which is the same as none of them shouting.
+ * Colour now marks the two that are money IN THE BANK (green) and anything
+ * actually wrong (rose); everything still being chased is a plain white card,
+ * and the numbers carry the hierarchy themselves.
+ */
 const TONES = {
-  blue: "bg-sky-50 text-sky-900 border-sky-100",
-  violet: "bg-violet-50 text-violet-900 border-violet-100",
-  green: "bg-emerald-50 text-emerald-900 border-emerald-100",
-  amber: "bg-amber-50 text-amber-900 border-amber-100",
+  plain: "bg-white text-ink border-line",
+  green: "bg-brand-soft text-brand-ink border-brand/20",
   rose: "bg-rose-50 text-rose-900 border-rose-100",
-  slate: "bg-slate-50 text-slate-900 border-slate-200",
 } as const;
 
 function Tile({
   label,
   value,
   sub,
-  tone = "slate",
+  tone = "plain",
   wide,
 }: {
   label: string;
@@ -171,18 +174,18 @@ function Tile({
   return (
     <div
       className={cn(
-        "rounded-2xl border px-4 py-3.5",
+        "flex min-h-[104px] flex-col rounded-2xl border px-4 py-3.5",
         TONES[tone],
         wide && "col-span-2 lg:col-span-1",
       )}
     >
-      <p className="text-[12px] font-semibold uppercase tracking-wide opacity-70">
+      <p className="truncate text-[11.5px] font-semibold uppercase tracking-wide opacity-65">
         {label}
       </p>
-      <p className="tabular mt-1 text-[26px] font-bold leading-none tracking-[-0.02em]">
+      <p className="tabular mt-auto pt-2 text-[26px] font-bold leading-none tracking-[-0.02em]">
         {value}
       </p>
-      <p className="mt-1.5 truncate text-[12px] opacity-70">{sub}</p>
+      <p className="mt-1.5 truncate text-[12px] opacity-65">{sub}</p>
     </div>
   );
 }

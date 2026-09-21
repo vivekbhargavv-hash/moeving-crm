@@ -19,7 +19,7 @@ export default async function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4">
-        <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
+        <h1 className="hidden text-xl font-semibold tracking-tight md:block md:text-2xl">
           Settings
         </h1>
         <p className="text-sm text-muted">

@@ -4,7 +4,7 @@ import { CopyPlus, Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { Button, Field, Input, Sheet } from "@/components/ui";
+import { Button, Field, Input, PickedDate, Sheet } from "@/components/ui";
 import { cn, inr } from "@/lib/utils";
 import { createExpansion } from "@/server/actions";
 
@@ -157,7 +157,7 @@ export function ExpandDeal({
 
           <Field
             label="Expected deployment date"
-            hint="The day the added vehicles are due on the road — what the Deployments queue works from. The revenue counts from today, when this is recorded, not from this date."
+            hint="When the added vehicles are due on the road. The revenue counts from today."
           >
             <Input
               type="date"
@@ -167,6 +167,7 @@ export function ExpandDeal({
               value={deployDate}
               onChange={(e) => setDeployDate(e.target.value)}
             />
+            <PickedDate value={deployDate} />
           </Field>
 
           {/* Locked: it came with the contract, so it is shown, not asked. */}

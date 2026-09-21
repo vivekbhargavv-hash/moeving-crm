@@ -66,6 +66,9 @@ Change these only deliberately — a lot of code assumes them.
 | **Deleting a `closed_won` deal is admin-only**; anything open is the owner's to delete. | A win is a month in the wins report and a slice of reported margin. Deleting one restates both. |
 | **Suspending, not deleting, is how someone leaves.** `owner_user_id` is `ON DELETE RESTRICT`. | Their name is part of the history of every deal they closed. Delete is offered only for a row that owns nothing — a wrong address typed in. |
 | **Auth checks sit next to the data**, not in middleware path matching. | Clerk deprecated `createRouteMatcher` for exactly this reason: path matching drifts from how Next routes requests. |
+| **One `Segmented` control in `components/ui`, used by every view switch.** | There were five built by hand in three treatments — and the Admin one had no active state at all, so both tabs looked identical and the screen never said which page you were on. |
+| **Colour means a state, never decoration.** Stage chips run a cool ramp while a deal is open (slate → sky → blue → indigo → violet), emerald won, rose lost, slate dormant; Dashboard tiles are white unless the number is money banked (green) or actually bad (rose). | Six tinted tiles in five hues made every number shout equally, and Negotiation — the healthiest an open deal gets — was painted the amber every other screen uses for "late". |
+| **A picked date is echoed in words** under every `input[type=date]` (`PickedDate`). | The native picker uses the BROWSER's language, not the page's, so the same field reads dd/mm/yyyy on one phone and mm/dd/yyyy on the next and 05/09 means two different days. Nothing in the app can change that, so it says the date in words instead. |
 | **Vercel functions are pinned to `sin1`** in `vercel.json`. | Neon is in `ap-southeast-1`. They were in Washington DC; every query crossed the Pacific twice. |
 
 ---
@@ -188,6 +191,12 @@ LOCAL_E2E_USER_EMAIL="vivekbhargav.v@gmail.com" npx next dev -p 3020
 
 Before committing: `grep -rn "LOCAL_E2E\|zpreview" src/` must print nothing,
 and `grep -c ClerkProvider src/app/layout.tsx` must be 3.
+
+`scratchpad/shot.js` in a session like this one walks every screen at 390×844
+and reports, per page, the nav width, every tap target under 40px and anything
+sticking out past the right edge. That is how the pass on 21 Sep found the
+Forecast filter row hanging off the screen and nineteen sub-40px targets in
+Admin.
 
 **Two checks worth running on every mobile change:**
 

@@ -1,14 +1,14 @@
 "use client";
 
-import { Check, ListFilter, MapPin } from "lucide-react";
+import { Check, ChevronRight, ListFilter, MapPin } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { Badge, Button, Sheet } from "@/components/ui";
+import { Badge, Button, Segmented, Sheet } from "@/components/ui";
 import { groupByCity, groupByDueDate } from "@/lib/deployment-groups";
 import type { Group } from "@/lib/deployment-groups";
-import { cn, daysUntil, formatDate, num } from "@/lib/utils";
+import { cn, daysUntil, formatDateCompact, num } from "@/lib/utils";
 import { recordDeployment } from "@/server/actions";
 import type { Deployment } from "@/server/queries";
 
@@ -114,8 +114,8 @@ export function DeploymentsBoard({
   return (
     <div>
       <div className="mb-3 grid grid-cols-3 gap-2">
-        <Tile label="Vehicles to deploy" value={num(totals.vehicles)} />
-        <Tile label="Due this month" value={num(totals.thisMonth)} />
+        <Tile label="To deploy" value={num(totals.vehicles)} />
+        <Tile label="This month" value={num(totals.thisMonth)} />
         <Tile
           label="Overdue"
           value={num(totals.overdue)}
@@ -126,22 +126,16 @@ export function DeploymentsBoard({
       {/* One row, and no text that grows: a control row wider than the screen
           stretches the layout viewport and takes the fixed tab bar with it. */}
       <div className="mb-3 flex items-center gap-2">
-        <div
-          role="group"
-          aria-label="Group deployments by"
-          className="flex min-w-0 flex-1 rounded-xl bg-canvas p-0.5"
-        >
-          <ViewTab
-            active={view === "date"}
-            onClick={() => chooseView("date")}
-            label="By date"
-          />
-          <ViewTab
-            active={view === "city"}
-            onClick={() => chooseView("city")}
-            label="By city"
-          />
-        </div>
+        <Segmented
+          label="Group deployments by"
+          className="min-w-0 flex-1"
+          value={view}
+          onChange={chooseView}
+          options={[
+            { value: "date", label: "By date" },
+            { value: "city", label: "By city" },
+          ]}
+        />
         <button
           onClick={() => setFiltering(true)}
           aria-label={
@@ -305,14 +299,19 @@ export function DeploymentsBoard({
 
 const remaining = (d: Deployment) => d.fleetSize - d.vehiclesDeployed;
 
-/** "in 3 days" / "6 days late" — the bit a date alone makes you work out. */
+/**
+ * "in 3 days" / "6 days late" — the bit a date alone makes you work out.
+ *
+ * Only while it is worth working out: past a month the section heading has
+ * already said which month, and "in 70 days" is a number nobody acts on.
+ */
 function dueNote(date: string | null) {
   const days = daysUntil(date);
   if (days === null) return null;
   if (days < 0) return `${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"} late`;
   if (days === 0) return "today";
   if (days === 1) return "tomorrow";
-  return `in ${days} days`;
+  return days <= 30 ? `in ${days} days` : null;
 }
 
 function Row({
@@ -378,18 +377,18 @@ function Row({
         {started ? (
           <div className="mt-1.5 flex items-center gap-2">
             <span
-              className="block h-1.5 w-[74px] overflow-hidden rounded-full bg-line"
+              className="block h-1.5 w-[56px] shrink-0 overflow-hidden rounded-full bg-line"
               aria-hidden="true"
             >
               <span
                 className="block h-1.5 rounded-full bg-amber-500"
                 style={{
-                  width: `${Math.round((d.vehiclesDeployed / d.fleetSize) * 74)}px`,
+                  width: `${Math.round((d.vehiclesDeployed / d.fleetSize) * 56)}px`,
                 }}
               />
             </span>
-            <span className="tabular text-[11.5px] font-semibold text-amber-800">
-              {d.vehiclesDeployed} of {d.fleetSize} out
+            <span className="tabular shrink-0 text-[11.5px] font-semibold text-amber-800">
+              {d.vehiclesDeployed}/{d.fleetSize} out
             </span>
           </div>
         ) : null}
@@ -402,7 +401,7 @@ function Row({
             overdue ? "text-rose-700" : "text-ink",
           )}
         >
-          {d.deploymentDate ? formatDate(d.deploymentDate) : "No date"}
+          {d.deploymentDate ? formatDateCompact(d.deploymentDate) : "No date"}
         </p>
         {note ? (
           <p
@@ -423,46 +422,29 @@ function Row({
     </div>
   );
 
+  // The card IS the action. It used to carry a full-width "Record
+  // deployment" bar underneath — 56px of identical chrome repeated down the
+  // whole list for the one thing this page exists to do. Tapping the row does
+  // it now, and sales keep a rail on the right for the deal behind it.
   return (
-    <li className="overflow-hidden rounded-2xl border border-line bg-white">
-      {canOpenDeals ? (
-        <Link href={`/opportunities/${d.id}`} className="block px-3.5 pt-3.5">
-          {head}
-        </Link>
-      ) : (
-        <div className="px-3.5 pt-3.5">{head}</div>
-      )}
+    <li className="flex items-stretch overflow-hidden rounded-2xl border border-line bg-white">
       <button
         onClick={onRecord}
-        className="mt-3 w-full border-t border-line py-3 text-[13px] font-semibold text-brand-ink transition active:bg-canvas"
+        aria-label={`Record deployment for ${d.accountName}`}
+        className="min-w-0 flex-1 p-3.5 text-left transition active:bg-canvas"
       >
-        {complete ? "Change deployed count" : "Record deployment"}
+        {head}
       </button>
+      {canOpenDeals ? (
+        <Link
+          href={`/opportunities/${d.id}`}
+          aria-label={`Open the ${d.accountName} deal`}
+          className="flex w-11 shrink-0 items-center justify-center border-l border-line text-muted active:bg-canvas"
+        >
+          <ChevronRight size={18} />
+        </Link>
+      ) : null}
     </li>
-  );
-}
-
-function ViewTab({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "h-10 flex-1 rounded-[10px] px-2 text-[13px] font-semibold transition",
-        active ? "bg-white text-ink shadow-sm" : "text-muted",
-      )}
-    >
-      {label}
-    </button>
   );
 }
 

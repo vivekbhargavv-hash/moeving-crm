@@ -1,6 +1,17 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { cache } from "react";
 
@@ -55,6 +66,27 @@ export type OpportunityFilters = {
   from?: string;
   to?: string;
   mineOnly?: boolean;
+  /**
+   * The Pipeline's own filters, which are multi-select.
+   *
+   * These used to be applied in the browser over every deal the organization
+   * had ever had — 1,476 of them in a two-year book, a megabyte of HTML, on a
+   * phone, to show the thirty that were yours. They are a WHERE clause now.
+   */
+  stages?: SalesStage[];
+  cityIds?: string[];
+  ownerIds?: string[];
+  vehicleTypeIds?: string[];
+  /**
+   * Customer, deal or city, matched in SQL.
+   *
+   * Search has to run over the whole table rather than over whatever the page
+   * happened to load, or the row cap below would quietly hide deals from the
+   * one feature whose job is to find them.
+   */
+  search?: string;
+  /** A backstop, so no single screen can ever be unbounded. */
+  limit?: number;
 };
 
 function filterConditions(
@@ -70,6 +102,29 @@ function filterConditions(
   if (f.mineOnly) where.push(eq(opportunities.ownerUserId, currentUserId));
   if (f.from) where.push(gte(opportunities.expectedCloseDate, f.from));
   if (f.to) where.push(lte(opportunities.expectedCloseDate, f.to));
+  // An empty list means "all of them", so a filter only ever narrows —
+  // the same rule the browser used to apply, moved to where the rows are.
+  if (f.stages?.length) where.push(inArray(opportunities.stage, f.stages));
+  if (f.cityIds?.length) where.push(inArray(opportunities.cityId, f.cityIds));
+  if (f.ownerIds?.length) {
+    where.push(inArray(opportunities.ownerUserId, f.ownerIds));
+  }
+  if (f.vehicleTypeIds?.length) {
+    where.push(inArray(opportunities.vehicleTypeId, f.vehicleTypeIds));
+  }
+  const q = f.search?.trim();
+  if (q) {
+    // `%` and `_` are wildcards in LIKE, so a customer called "50_50" would
+    // otherwise match far more than itself.
+    const term = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    where.push(
+      or(
+        ilike(accounts.name, term),
+        ilike(opportunities.name, term),
+        ilike(cities.name, term),
+      )!,
+    );
+  }
   return where;
 }
 
@@ -109,7 +164,8 @@ export async function listOpportunities(
     .leftJoin(cities, eq(cities.id, opportunities.cityId))
     .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
     .where(and(...filterConditions(session.organizationId, session.userId, filters)))
-    .orderBy(asc(opportunities.expectedCloseDate), desc(opportunities.updatedAt));
+    .orderBy(asc(opportunities.expectedCloseDate), desc(opportunities.updatedAt))
+    .limit(filters.limit ?? 5000);
 
   return rows.map(toCard);
 }
@@ -358,7 +414,6 @@ async function listOpportunitiesRaw(
 export type Deployment = {
   id: string;
   accountName: string;
-  dealName: string;
   city: string | null;
   cityId: string | null;
   vehicleType: string | null;
@@ -387,7 +442,6 @@ export async function listDeployments(): Promise<Deployment[]> {
     .select({
       id: opportunities.id,
       accountName: accounts.name,
-      dealName: opportunities.name,
       city: cities.name,
       cityId: opportunities.cityId,
       vehicleType: vehicleTypes.name,
@@ -407,11 +461,29 @@ export async function listDeployments(): Promise<Deployment[]> {
       and(
         eq(opportunities.organizationId, session.organizationId),
         eq(opportunities.stage, "closed_won"),
+        // Everything still owed, however old, plus recently finished work so
+        // "did we do that one" still has an answer. Without the second half
+        // this grows forever: every deployment the company has ever made was
+        // being sent to a phone, oldest first.
+        or(
+          sql`${opportunities.vehiclesDeployed} < ${opportunities.fleetSize}`,
+          gte(
+            opportunities.deploymentDate,
+            sql`(current_date - interval '90 days')`,
+          ),
+        ),
       ),
     )
     // Soonest first; a won deal with no date yet sorts last rather than
     // pretending to be urgent.
-    .orderBy(asc(opportunities.deploymentDate), asc(accounts.name));
+    // Soonest first; a won deal with no date yet sorts last rather than
+    // pretending to be urgent.
+    .orderBy(asc(opportunities.deploymentDate), asc(accounts.name))
+    // Outstanding work is unbounded only by how much is owed; finished
+    // deployments are unbounded by TIME, and every one of them was being sent
+    // to a phone forever. The page keeps showing recent ones so "did we do
+    // that" still has an answer.
+    .limit(600);
 
   return rows.map(({ parentOpportunityId, ...r }) => ({
     ...r,

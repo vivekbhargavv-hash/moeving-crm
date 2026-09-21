@@ -9,7 +9,8 @@ import {
   ChoiceGroup,
   Field,
   Input,
-  Select,
+  Picker,
+  PickerField,
   Sheet,
   Textarea,
 } from "@/components/ui";
@@ -194,18 +195,16 @@ export function QuickAdd({
         </div>
 
         <Field label="Vehicle">
-          <Select
+          <Picker
+            label="Vehicle"
             name="vehicleTypeId"
             value={vehicleTypeId}
-            onChange={(e) => setVehicleTypeId(e.target.value)}
-          >
-            <option value="">Select</option>
-            {master.vehicleTypes.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
-              </option>
-            ))}
-          </Select>
+            onChange={setVehicleTypeId}
+            options={master.vehicleTypes.map((v) => ({
+              value: v.id,
+              label: v.name,
+            }))}
+          />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
@@ -315,13 +314,15 @@ export function QuickAdd({
             </Field>
             {session.role === "admin" ? (
               <Field label="Deal Owner">
-                <Select name="ownerUserId" defaultValue={session.userId}>
-                  {master.users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </Select>
+                <PickerField
+                  label="Deal owner"
+                  name="ownerUserId"
+                  defaultValue={session.userId}
+                  options={master.users.map((u) => ({
+                    value: u.id,
+                    label: u.name,
+                  }))}
+                />
               </Field>
             ) : null}
             <Field label="Notes">

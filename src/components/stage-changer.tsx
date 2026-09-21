@@ -9,7 +9,7 @@ import {
   Field,
   Input,
   PickedDate,
-  Select,
+  PickerField,
   Sheet,
   Textarea,
 } from "@/components/ui";
@@ -244,16 +244,16 @@ export function StageChanger({
       {mode === "lost" ? (
         <form action={(fd) => commit("closed_lost", fd)} className="space-y-4">
           <Field label="Why did we lose it?">
-            <Select name="lostReasonId" required defaultValue="">
-              <option value="" disabled>
-                Select a reason
-              </option>
-              {lostReasons.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.label}
-                </option>
-              ))}
-            </Select>
+            <PickerField
+              label="Why did we lose it?"
+              name="lostReasonId"
+              required
+              placeholder="Select a reason"
+              options={lostReasons.map((r) => ({
+                value: r.id,
+                label: r.label,
+              }))}
+            />
           </Field>
           <Field label="Anything worth remembering?">
             <Textarea name="lostReasonNote" placeholder="Optional" />

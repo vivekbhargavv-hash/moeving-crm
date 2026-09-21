@@ -12,7 +12,7 @@ import {
   ChoiceGroup,
   Field,
   Input,
-  Select,
+  PickerField,
   Sheet,
   Textarea,
 } from "@/components/ui";
@@ -229,24 +229,26 @@ export function DetailActions({
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="City">
-              <Select name="cityId" defaultValue={opp.cityId ?? ""}>
-                <option value="">Select</option>
-                {master.cities.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
+              <PickerField
+                label="City"
+                name="cityId"
+                defaultValue={opp.cityId ?? ""}
+                options={master.cities.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                }))}
+              />
             </Field>
             <Field label="Vehicle">
-              <Select name="vehicleTypeId" defaultValue={opp.vehicleTypeId ?? ""}>
-                <option value="">Select</option>
-                {master.vehicleTypes.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
-              </Select>
+              <PickerField
+                label="Vehicle"
+                name="vehicleTypeId"
+                defaultValue={opp.vehicleTypeId ?? ""}
+                options={master.vehicleTypes.map((v) => ({
+                  value: v.id,
+                  label: v.name,
+                }))}
+              />
             </Field>
             <Field label="Fleet size">
               <Input
@@ -323,13 +325,15 @@ export function DetailActions({
           </div>
           {role === "admin" ? (
             <Field label="Deal Owner">
-              <Select name="ownerUserId" defaultValue={opp.ownerUserId}>
-                {master.users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </Select>
+              <PickerField
+                label="Deal owner"
+                name="ownerUserId"
+                defaultValue={opp.ownerUserId}
+                options={master.users.map((u) => ({
+                  value: u.id,
+                  label: u.name,
+                }))}
+              />
             </Field>
           ) : null}
           <Field label="Notes">

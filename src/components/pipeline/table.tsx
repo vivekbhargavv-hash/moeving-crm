@@ -95,6 +95,9 @@ const DESC_FIRST: SortKey[] = [
  * deal gets a full-width row instead, so nothing scrolls sideways. The real
  * table appears from md up, where the width exists to justify it.
  */
+/** Rows added per tap of "Show more". */
+const PAGE = 40;
+
 export function PipelineList({
   opportunities,
   onStageTap,
@@ -109,6 +112,18 @@ export function PipelineList({
     key: "updatedAt",
     desc: true,
   });
+  /**
+   * How many rows are actually in the DOM.
+   *
+   * A phone will happily be handed 600 deals and will then spend a second and
+   * a half building 600 cards nobody has scrolled to yet. Sorting and the
+   * totals above still run over every row — only the rendering is windowed,
+   * so nothing is hidden, it just arrives when it is needed.
+   */
+  const [shown, setShown] = React.useState(PAGE);
+
+  // A new sort or a new filter means looking again from the top.
+  React.useEffect(() => setShown(PAGE), [sort, opportunities]);
 
   const rows = React.useMemo(() => {
     const stageOrder = Object.fromEntries(
@@ -223,7 +238,7 @@ export function PipelineList({
         </div>
 
         <ul className="space-y-2">
-          {rows.map((o) => {
+          {rows.slice(0, shown).map((o) => {
             const stage = STAGE_MAP[o.stage];
             return (
               <li
@@ -283,6 +298,17 @@ export function PipelineList({
             );
           })}
         </ul>
+        {rows.length > shown ? (
+          <button
+            onClick={() => setShown((n) => n + PAGE)}
+            className="mt-2 h-12 w-full rounded-2xl border border-line bg-white text-[14px] font-semibold text-brand-ink active:bg-canvas"
+          >
+            Show {Math.min(PAGE, rows.length - shown)} more
+            <span className="ml-1 font-normal text-muted">
+              ({rows.length - shown} left)
+            </span>
+          </button>
+        ) : null}
       </div>
 
       {/* ---------------------------------------------------- desktop table */}
@@ -324,7 +350,7 @@ export function PipelineList({
           </tr>
         </thead>
         <tbody>
-          {rows.map((o) => {
+          {rows.slice(0, shown).map((o) => {
             const stage = STAGE_MAP[o.stage];
             return (
               <tr
@@ -415,7 +441,8 @@ export function PipelineList({
         <tfoot>
           <tr className="border-t border-line bg-canvas/60 font-semibold">
             <td className="sticky left-0 z-10 bg-canvas/60 px-3 py-2.5">
-              {rows.length} deals
+              {rows.length > shown ? `${shown} of ${rows.length}` : rows.length}{" "}
+              deals
             </td>
             <td colSpan={3} />
             <td className="tabular px-3 py-2.5 text-right">{num(totals.fleet)}</td>
@@ -432,6 +459,14 @@ export function PipelineList({
           </tr>
         </tfoot>
       </table>
+      {rows.length > shown ? (
+        <button
+          onClick={() => setShown((n) => n + PAGE)}
+          className="w-full border-t border-line bg-white py-3 text-sm font-semibold text-brand-ink hover:bg-canvas"
+        >
+          Show {Math.min(PAGE, rows.length - shown)} more of {rows.length}
+        </button>
+      ) : null}
       </div>
     </>
   );

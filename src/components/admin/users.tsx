@@ -4,7 +4,15 @@ import { Check, Link2, MailCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { Badge, Button, Card, Field, Input, Select, Sheet } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  Field,
+  Input,
+  PickerField,
+  Sheet,
+} from "@/components/ui";
 import { deleteUser, resendInvite, setUserActive, upsertUser } from "@/server/actions";
 
 const ROLE_LABEL: Record<Row["role"], string> = {
@@ -243,11 +251,16 @@ export function AdminUsers({
             label="Role"
             hint="Operations sees only the Deployments page — no pipeline, no pricing."
           >
-            <Select name="role" defaultValue={current?.role ?? "sales"}>
-              <option value="sales">Deal Owner</option>
-              <option value="ops">Operations</option>
-              <option value="admin">Admin</option>
-            </Select>
+            <PickerField
+              label="Role"
+              name="role"
+              defaultValue={current?.role ?? "sales"}
+              options={[
+                { value: "sales", label: "Deal Owner" },
+                { value: "ops", label: "Operations" },
+                { value: "admin", label: "Admin" },
+              ]}
+            />
           </Field>
           <label className="flex items-center gap-3 text-sm">
             <input

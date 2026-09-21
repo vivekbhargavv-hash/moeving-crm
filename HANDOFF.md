@@ -68,7 +68,10 @@ Change these only deliberately — a lot of code assumes them.
 | **Auth checks sit next to the data**, not in middleware path matching. | Clerk deprecated `createRouteMatcher` for exactly this reason: path matching drifts from how Next routes requests. |
 | **One `Segmented` control in `components/ui`, used by every view switch.** | There were five built by hand in three treatments — and the Admin one had no active state at all, so both tabs looked identical and the screen never said which page you were on. |
 | **Colour means a state, never decoration.** Stage chips run a cool ramp while a deal is open (slate → sky → blue → indigo → violet), emerald won, rose lost, slate dormant; Dashboard tiles are white unless the number is money banked (green) or actually bad (rose). | Six tinted tiles in five hues made every number shout equally, and Negotiation — the healthiest an open deal gets — was painted the amber every other screen uses for "late". |
+| **There is no native `<select>` in the app.** Every choice is `Picker` (or `PickerField` for an uncontrolled one), which opens the app's own sheet; it posts through a hidden input, so a form sees exactly what a select gave it. | A native select hands the choosing to the OS — on Android a grey system dialog in the middle of a screen that looks nothing like it — and sizes itself to its longest option, which is what once pushed a control row past the edge of the screen. `Sheet` ref-counts its scroll lock so a picker inside a sheet is safe. |
 | **A picked date is echoed in words** under every `input[type=date]` (`PickedDate`). | The native picker uses the BROWSER's language, not the page's, so the same field reads dd/mm/yyyy on one phone and mm/dd/yyyy on the next and 05/09 means two different days. Nothing in the app can change that, so it says the date in words instead. |
+| **A screen never loads more than it can show.** Pipeline filters, owner scope and SEARCH are all a WHERE clause (URL-driven, `?scope=&stage=&city=&vehicle=&owner=&q=`), capped at 250 rows; long lists render a window with "Show more". | It used to select every deal the organization had ever had and hide the rest in the browser: 1,476 deals was 1 MB of HTML on a phone to show the thirty that were yours. Search is in SQL specifically so the cap can never hide a deal from the feature whose job is to find one. |
+| **The Deployments query keeps all outstanding work plus 90 days of finished work**, not every deployment ever made. | Outstanding is bounded by what is owed; history is bounded by nothing at all, and all of it was being sent to a phone, oldest first. |
 | **Vercel functions are pinned to `sin1`** in `vercel.json`. | Neon is in `ap-southeast-1`. They were in Washington DC; every query crossed the Pacific twice. |
 
 ---
@@ -197,6 +200,13 @@ and reports, per page, the nav width, every tap target under 40px and anything
 sticking out past the right edge. That is how the pass on 21 Sep found the
 Forecast filter row hanging off the screen and nineteen sub-40px targets in
 Admin.
+
+`scratchpad/perf.js` measures the other half: per route, HTML and JS bytes,
+DOM-ready under a 4x CPU throttle, long tasks and scroll frame times. The
+21 Sep pass used it to find that `/pipeline` was shipping 1,046 KB of HTML
+and `/deployments` 3,903 DOM nodes. **A phone downloads and hydrates the
+desktop markup too** — `hidden md:block` is CSS, not a skip — so an unbounded
+desktop board column costs every phone that never sees it.
 
 **Two checks worth running on every mobile change:**
 

@@ -61,8 +61,8 @@ Change these only deliberately — a lot of code assumes them.
 | **Three roles: admin, sales, ops.** Ops sees Deployments and Settings, nothing else. | They put trucks on the road; they have no business seeing what a customer pays. `requireSales()` refuses at each page, and `listDeployments()` selects no money column at all, so a slip in the page cannot leak one. |
 | **The Pipeline opens on the table, sorted by most recently updated.** | What moved since you last looked is the reason to open the screen. The board is one tap away and the choice is remembered per person. |
 | **Repeat business is a NEW deal linked to the won one** (`parent_opportunity_id`), never an edit to the won row. | A won deal that grows would move a recorded win out of the month it happened in and silently restate Wins-by-month. |
-| **An expansion asks only city, fleet and deployment month.** Everything else is copied off the parent BY THE SERVER, not by the form. | The unit economics came with that contract. Copying server-side means the lock is real: posting `price` or `stage` into that action changes nothing. |
-| **An expansion lands as `closed_won` with `closed_at` = the deployment month.** | Nothing is being sold, so it is not a pipeline stage; and the revenue belongs to the month the trucks go out, not the day the paperwork was raised. Its cost sheet is the parent's, so margin_pct and total_cost compute themselves. |
+| **An expansion asks only city, fleet and deployment date.** Everything else is copied off the parent BY THE SERVER, not by the form. | The unit economics came with that contract. Copying server-side means the lock is real: posting `price` or `stage` into that action changes nothing. |
+| **An expansion lands as `closed_won` dated TODAY**: `closed_at` and `expected_close_date` are the day it was raised, `deployment_date` is the day the trucks are due. | Nothing is being sold, so it is not a pipeline stage. The two dates are separate on purpose: reporting counts the expansion when it was agreed, so a delivery that slips cannot restate a month that has already been reported, while ops still plans against the real date. Its cost sheet is the parent's, so margin_pct and total_cost compute themselves. |
 | **Deleting a `closed_won` deal is admin-only**; anything open is the owner's to delete. | A win is a month in the wins report and a slice of reported margin. Deleting one restates both. |
 | **Suspending, not deleting, is how someone leaves.** `owner_user_id` is `ON DELETE RESTRICT`. | Their name is part of the history of every deal they closed. Delete is offered only for a row that owns nothing — a wrong address typed in. |
 | **Auth checks sit next to the data**, not in middleware path matching. | Clerk deprecated `createRouteMatcher` for exactly this reason: path matching drifts from how Next routes requests. |
@@ -370,11 +370,6 @@ Roughly in order of value to adoption:
 - **The invitation email has never been seen to arrive**, and on the
   development instance it probably does not — see § 7. Copy invite link is the
   path that works today.
-- **An expansion dated in a future month is invisible on the Wins tab** until
-  that month arrives, because Wins shows `pastMonths(6)`. It is a Closed Won
-  deal immediately, so it does show in the Pipeline. That is the direct
-  consequence of dating the win by deployment month, and it is intended, but it
-  surprises people who expect to see it straight away.
 - **An expansion can be moved to a different city while the costs stay the
   parent's.** The sheet warns when the city differs, but nothing stops it; if
   driver or parking rates differ materially by city, that margin is optimistic.
@@ -384,12 +379,11 @@ Roughly in order of value to adoption:
   shape for it.
 - Only vehicle types are reorderable in Admin. Cities and lost reasons have the
   same `sort_order` column; it is one `orderable` prop each to switch on.
-- **The expansion sheet still asks for a deployment MONTH**, not a day, and
-  dates the deployment to that month's last day. The Closed Won sheet moved to
-  a real date on 21 Sep 2026; this one did not, because an expansion's
-  `closed_at` is its deployment month and moving it to a day changes which
-  month a win lands in. The consequence is that on Deployments an expansion
-  always looks due on the 30th. Worth fixing, deliberately.
+- **Expansions raised before 21 Sep 2026 are dated the old way** — `closed_at`
+  and `deployment_date` both set to their deployment month's last day. So an
+  old expansion still counts its revenue in the month the trucks went out, and
+  still looks due on the 30th, while every new one counts from the day it was
+  raised. Nothing migrates them; it would move recorded wins between months.
 - **The deployment date cannot be edited after the deal is won.** It is set on
   the Closed Won sheet and by the expansion sheet, and nothing on the
   Deployments page changes it. When ops slips a delivery they can only record

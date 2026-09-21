@@ -35,13 +35,14 @@ export function monthToLastDay(month: string) {
 }
 
 /**
- * A real calendar day, `YYYY-MM-DD`.
+ * A real calendar day, `YYYY-MM-DD`. Shared by the Closed Won sheet and the
+ * expansion sheet, so both refuse the same things.
  *
  * The regex alone would pass "2026-02-31", which `new Date` silently rolls
  * over to 3 March — a date ops never agreed to. Round-tripping it catches
- * that, and the month-only string the sheet used to post.
+ * that, and the month-only string the sheets used to post.
  */
-const calendarDate = z
+export const calendarDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick an expected deployment date")
   .refine((v) => {

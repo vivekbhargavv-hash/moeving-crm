@@ -18,7 +18,11 @@ import {
 import type { SalesStage } from "@/db/schema";
 import { requireAdmin, requireSession } from "@/server/auth";
 import { sendInvitation } from "@/server/invites";
-import { monthToLastDay, planStageChange } from "@/server/stage-change";
+import {
+  calendarDate,
+  monthToLastDay,
+  planStageChange,
+} from "@/server/stage-change";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data?: T }
@@ -277,16 +281,20 @@ export async function updateOpportunity(
  * the server reading the parent row, so the locked figures are not merely
  * disabled inputs someone could re-enable and post.
  *
- * It lands as Closed Won: nothing about it is being sold. Its `closed_at` is
- * the deployment month, so the revenue counts in Wins-by-month when the trucks
- * actually go out rather than the day the paperwork was raised.
+ * It lands as Closed Won: nothing about it is being sold. Two dates come out
+ * of that, and they are not the same date:
+ *
+ * - `closed_at` and `expected_close_date` are TODAY, the day the expansion was
+ *   raised. That is what Wins-by-month and the forecast count, so a delivery
+ *   that slips by a fortnight cannot quietly restate last month's revenue.
+ * - `deployment_date` is the day the trucks are due out, and drives the
+ *   Deployments queue and nothing else.
  */
 const expansionSchema = z.object({
   cityId: uuidish,
   fleetSize: z.coerce.number().int().min(1).max(100_000),
-  deploymentMonth: z
-    .string()
-    .regex(/^\d{4}-\d{2}$/, "Pick a deployment month"),
+  /** The day the added vehicles are due out — what ops plans against. */
+  deploymentDate: calendarDate,
 });
 
 export async function createExpansion(
@@ -328,7 +336,11 @@ export async function createExpansion(
     ),
   });
 
-  const deployOn = monthToLastDay(input.deploymentMonth);
+  // Two different dates, deliberately: the expansion is recorded now, and the
+  // trucks go out when they go out.
+  const raisedAt = new Date();
+  const raisedOn = raisedAt.toISOString().slice(0, 10);
+  const deployOn = input.deploymentDate;
   const label = `+${input.fleetSize} vehicle${input.fleetSize === 1 ? "" : "s"}`;
   const name = cityName
     ? `${account?.name ?? parent.name} - ${cityName} (${label})`
@@ -344,10 +356,14 @@ export async function createExpansion(
       // --- the three things this sheet asks for ---
       cityId,
       fleetSize: input.fleetSize,
+      // Ops plans against this, and only this.
       deploymentDate: deployOn,
-      expectedCloseDate: deployOn,
-      // Wins count on closed_at, so the deployment month is the month it lands.
-      closedAt: new Date(`${deployOn}T00:00:00Z`),
+      // Reporting counts the expansion when it was raised, not when the trucks
+      // roll: the business committed to the revenue the day the paperwork was
+      // agreed, and a deployment that slips must not move a recorded win into
+      // another month.
+      expectedCloseDate: raisedOn,
+      closedAt: raisedAt,
       // --- locked: the contract this grew out of, not a fresh negotiation ---
       vehicleTypeId: parent.vehicleTypeId,
       driverType: parent.driverType,
@@ -380,7 +396,7 @@ export async function createExpansion(
       opportunityId: parent.id,
       userId: session.userId,
       kind: "note" as const,
-      body: `Follow-on deployment: ${label}${cityName ? ` in ${cityName}` : ""}, deploying ${input.deploymentMonth}.`,
+      body: `Follow-on deployment: ${label}${cityName ? ` in ${cityName}` : ""}, deploying ${deployOn}.`,
     },
   ]);
 

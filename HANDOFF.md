@@ -11,9 +11,7 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-0. **Run `drizzle/0004_invite_link.sql` against production** before or with
-   the next deploy. One additive column; safe to re-run. (0002 and 0003 are
-   already applied.)
+**Migrations 0000–0004 are all applied to production.** Nothing to run.
 
 1. **Rotate the Clerk secret key.** `sk_live_…` was pasted into a chat
    transcript. Clerk → API Keys → regenerate. A live secret can read and

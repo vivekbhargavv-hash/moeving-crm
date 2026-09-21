@@ -1,7 +1,7 @@
 CREATE TYPE "public"."charging_scope" AS ENUM('client', 'moeving');
 CREATE TYPE "public"."driver_type" AS ENUM('driver_only', 'driver_plus_helper', 'driver_cum_helper');
 CREATE TYPE "public"."event_kind" AS ENUM('created', 'stage_changed', 'updated', 'note');
-CREATE TYPE "public"."sales_stage" AS ENUM('first_contact', 'solutioning', 'proposal', 'negotiation', 'closed_won', 'closed_lost', 'dormant');
+CREATE TYPE "public"."sales_stage" AS ENUM('first_contact', 'solutioning', 'proposal', 'negotiation', 'contracting', 'closed_won', 'closed_lost', 'dormant');
 CREATE TYPE "public"."user_role" AS ENUM('admin', 'sales');
 CREATE TABLE "accounts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -42,6 +42,7 @@ CREATE TABLE "opportunities" (
 	"expected_close_date" date,
 	"owner_user_id" uuid NOT NULL,
 	"notes" text,
+	"parent_opportunity_id" uuid,
 	"revenue" integer,
 	"lease_cost" integer,
 	"driver_cost" integer,
@@ -103,6 +104,7 @@ CREATE TABLE "users" (
 	"name" text NOT NULL,
 	"role" "user_role" DEFAULT 'sales' NOT NULL,
 	"is_active" boolean DEFAULT true NOT NULL,
+	"invited_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_clerk_user_id_unique" UNIQUE("clerk_user_id")
 );
@@ -124,6 +126,7 @@ ALTER TABLE "opportunities" ADD CONSTRAINT "opportunities_account_id_accounts_id
 ALTER TABLE "opportunities" ADD CONSTRAINT "opportunities_city_id_cities_id_fk" FOREIGN KEY ("city_id") REFERENCES "public"."cities"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "opportunities" ADD CONSTRAINT "opportunities_vehicle_type_id_vehicle_types_id_fk" FOREIGN KEY ("vehicle_type_id") REFERENCES "public"."vehicle_types"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "opportunities" ADD CONSTRAINT "opportunities_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;
+ALTER TABLE "opportunities" ADD CONSTRAINT "opportunities_parent_opportunity_id_opportunities_id_fk" FOREIGN KEY ("parent_opportunity_id") REFERENCES "public"."opportunities"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "opportunities" ADD CONSTRAINT "opportunities_lost_reason_id_lost_reasons_id_fk" FOREIGN KEY ("lost_reason_id") REFERENCES "public"."lost_reasons"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "opportunity_events" ADD CONSTRAINT "opportunity_events_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "opportunity_events" ADD CONSTRAINT "opportunity_events_opportunity_id_opportunities_id_fk" FOREIGN KEY ("opportunity_id") REFERENCES "public"."opportunities"("id") ON DELETE cascade ON UPDATE no action;
@@ -136,6 +139,7 @@ CREATE UNIQUE INDEX "cities_org_name_idx" ON "cities" USING btree ("organization
 CREATE UNIQUE INDEX "lost_reasons_org_label_idx" ON "lost_reasons" USING btree ("organization_id","label");
 CREATE INDEX "opps_org_stage_idx" ON "opportunities" USING btree ("organization_id","stage");
 CREATE INDEX "opps_org_owner_idx" ON "opportunities" USING btree ("organization_id","owner_user_id");
+CREATE INDEX "opps_parent_idx" ON "opportunities" USING btree ("parent_opportunity_id");
 CREATE INDEX "opps_org_close_idx" ON "opportunities" USING btree ("organization_id","expected_close_date");
 CREATE INDEX "opps_org_city_close_idx" ON "opportunities" USING btree ("organization_id","city_id","expected_close_date");
 CREATE INDEX "opp_events_opp_idx" ON "opportunity_events" USING btree ("opportunity_id","created_at");
@@ -176,5 +180,5 @@ WHERE o.slug = 'moeving' ON CONFLICT DO NOTHING;
 INSERT INTO stage_probabilities (organization_id, stage, probability)
 SELECT o.id, s.stage::sales_stage, s.pct FROM organizations o,
   (VALUES ('first_contact',10),('solutioning',25),('proposal',50),('negotiation',75),
-          ('closed_won',100),('closed_lost',0),('dormant',0)) AS s(stage, pct)
+          ('contracting',90),('closed_won',100),('closed_lost',0),('dormant',0)) AS s(stage, pct)
 WHERE o.slug = 'moeving' ON CONFLICT DO NOTHING;

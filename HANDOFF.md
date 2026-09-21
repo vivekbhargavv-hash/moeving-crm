@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 21 September 2026
+**Last updated:** 21 September 2026 (second session)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -9,7 +9,13 @@ Read this, then `README.md` for setup mechanics.
 
 ---
 
-## 0. START HERE — the three things waiting on a human
+## 0. START HERE — the things waiting on a human
+
+0. **Run the two new migrations against production** before or with the next
+   deploy, in this order and as separate statements:
+   `drizzle/0002_contracting_stage.sql`, then
+   `drizzle/0003_expansions_and_invites.sql`. Until 0002 lands, the app's
+   Contracting stage has no matching database value. Both are safe to re-run.
 
 1. **Rotate the Clerk secret key.** `sk_live_…` was pasted into a chat
    transcript. Clerk → API Keys → regenerate. A live secret can read and
@@ -51,6 +57,9 @@ Change these only deliberately — a lot of code assumes them.
 | **`organization_id` on every table; `requireSession()` is the only place it is produced**, always from the Clerk session — never a form field, query string or header. | Multi-tenant from day one. Adding a second organization is a row, not a migration. |
 | **Wins count on `closed_at`**, not `expected_close_date`. | The expected date is a forecast and usually wrong by the time a deal lands. |
 | **A deal owner's Pipeline opens on their own deals; only admins get All owners.** | A rep scrolling past thirty other people's deals stops opening the app. It is a default view, not a permission — the server still sends the whole org and any owner can be picked by name. |
+| **The Pipeline opens on the table, sorted by most recently updated.** | What moved since you last looked is the reason to open the screen. The board is one tap away and the choice is remembered per person. |
+| **Repeat business is a NEW deal linked to the won one** (`parent_opportunity_id`), never an edit to the won row. | A won deal that grows would move a recorded win out of the month it happened in and silently restate Wins-by-month. Each deployment closes on its own date and carries its own cost sheet. |
+| **Suspending, not deleting, is how someone leaves.** `owner_user_id` is `ON DELETE RESTRICT`. | Their name is part of the history of every deal they closed. Delete is offered only for a row that owns nothing — a wrong address typed in. |
 | **Auth checks sit next to the data**, not in middleware path matching. | Clerk deprecated `createRouteMatcher` for exactly this reason: path matching drifts from how Next routes requests. |
 | **Vercel functions are pinned to `sin1`** in `vercel.json`. | Neon is in `ap-southeast-1`. They were in Washington DC; every query crossed the Pacific twice. |
 
@@ -68,9 +77,9 @@ src/
     app-shell.tsx     mobile header + tab bar + desktop rail + toast
     quick-add.tsx     the 30-second create sheet
     stage-changer.tsx stage picker + Closed Won cost sheet + Closed Lost reason
-    pipeline/         board.tsx (cards, kanban) · table.tsx (mobile list + desktop table)
+    pipeline/         board.tsx (kanban) · table.tsx (list + table) · filters.tsx
     forecast/         grid.tsx (city × month) · wins.tsx (owner × month) · tabs.tsx
-    opportunity/      detail-actions.tsx · note-box.tsx
+    opportunity/      detail-actions.tsx · note-box.tsx · expand-deal.tsx
     ui/               Button, Input, Select, Sheet, Field, ChoiceGroup
     ui-server.tsx     Card, Badge, Avatar, EmptyState (no "use client")
   db/schema.ts        the whole data model in one file
@@ -79,12 +88,15 @@ src/
     queries.ts        every read, org-scoped at the source, React-cached
     actions.ts        every write, zod-validated
     stage-change.ts   the stage-move decision, free of Next/Clerk/db so it tests
+    invites.ts        asks Clerk to email a new joiner a sign-up link
 tests/
   stage-change.test.ts          planStageChange, runs anywhere
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
   0000_*.sql          initial schema
   0001_*.sql          per-vehicle economics migration
+  0002_*.sql          the Contracting stage — ALTER TYPE alone, see § 5
+  0003_*.sql          expansion links, invited_at, Contracting's probability
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
 ```
@@ -102,9 +114,11 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. Twenty-one
+`node --test` with `tsx` — no test framework, no new dependencies. Twenty-six
 tests: nine on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
-decision) and twelve on what Postgres itself refuses.
+decision) and seventeen on what Postgres itself refuses — the two check
+constraints, the generated margin columns, the stage order, and the expansion
+link surviving the deletion of its parent.
 
 Writing them found a real hole: `z.coerce.number()` reads both `null` and `""`
 as 0, and `formToObject()` turns every blank field into `null` — so a Closed Won
@@ -131,9 +145,10 @@ su pgtest -c "PATH=/usr/lib/postgresql/16/bin:\$PATH initdb -D /home/pgtest/data
 su pgtest -c "PATH=/usr/lib/postgresql/16/bin:\$PATH pg_ctl -D /home/pgtest/data \
   -o '-p 5433 -h 127.0.0.1 -k /home/pgtest' -l /home/pgtest/log start"
 psql "postgresql://postgres@127.0.0.1:5433/postgres" -c "create database demo"
-psql "postgresql://postgres@127.0.0.1:5433/demo" -f drizzle/bootstrap.sql
-psql "postgresql://postgres@127.0.0.1:5433/demo" -f drizzle/0001_per_vehicle_economics.sql
-psql "postgresql://postgres@127.0.0.1:5433/demo" -f drizzle/demo-data.sql
+for f in bootstrap 0001_per_vehicle_economics 0002_contracting_stage \
+         0003_expansions_and_invites demo-data; do
+  psql -v ON_ERROR_STOP=1 "postgresql://postgres@127.0.0.1:5433/demo" -f drizzle/$f.sql
+done
 
 # 2. Temporarily stub Clerk so pages render (REVERT BEFORE COMMITTING):
 #    - src/server/auth.ts: return toSession(row) for LOCAL_E2E_USER_EMAIL
@@ -189,6 +204,18 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   cannot be altered in place — migration 0001 drops and rebuilds them.
 - **Underscore-prefixed app folders are private in Next**, so a `__preview`
   route 404s. Name scratch routes `zpreview`.
+- **Drizzle renders a column inside a `sql` template UNQUALIFIED.** A correlated
+  subquery written as ``sql`(select count(*) from ${opportunities} where
+  ${opportunities.ownerUserId} = ${users.id})` `` becomes
+  `where "owner_user_id" = "id"` — and inside the subquery `"id"` resolves to
+  the *inner* table. It compares a row to itself, returns 0 for everyone, and
+  raises no error. Spell the table name out, or use a join and `GROUP BY`.
+- **An untyped parameter in a `VALUES` list defaults to text.** The vehicle-type
+  reorder failed at runtime with "sort_order is of type integer but expression
+  is of type text" until both columns were cast: `(${id}::uuid, ${i}::int)`.
+- **`ALTER TYPE ... ADD VALUE` cannot be used in the same transaction that adds
+  it.** That is why `0002` adds the Contracting stage and nothing else, and
+  `0003` seeds its probability.
 
 ---
 
@@ -220,11 +247,13 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
 
 - **Cities**, in review order: Delhi NCR, Bangalore, Hyderabad, Mumbai, Pune,
   Kolkata. Chennai and Ahmedabad exist but are switched off.
-- **Vehicle types:** 1 Tonne, 1.7 Tonne, Ultra E7, Ultra E9.
-- **Stages:** First Contact → Solutioning → Proposal → Negotiation → Closed Won
-  / Closed Lost / Dormant.
+- **Vehicle types:** 1 Tonne, 1.7 Tonne, Ultra E7, Ultra E9. The order is
+  admin-controlled (Admin → Master data) and is the order Quick Add shows.
+- **Stages:** First Contact → Solutioning → Proposal → Negotiation →
+  Contracting → Closed Won / Closed Lost / Dormant. Contracting means verbally
+  agreed with paperwork in flight.
 - **Stage probabilities** (drive the weighted pipeline): 10 / 25 / 50 / 75 /
-  100 / 0 / 0, editable per organization.
+  90 / 100 / 0 / 0, editable per organization.
 - **Driver types:** Driver Only, Driver + Helper, Driver-cum-Delivery.
   **Charging:** Client, MoEVing. Both are icon tiles, not dropdowns.
 - **Lost reasons:** 8 seeded, admin-editable.
@@ -247,7 +276,11 @@ Roughly in order of value to adoption:
    service worker are already in place).
 4. **Attachments** on a deal — quotes, signed LOIs. Needs blob storage.
 5. **Won-deal handover** to ops: the moment a deal is won, someone has to
-   actually deliver the trucks.
+   actually deliver the trucks. `parent_opportunity_id` already models the
+   chain of deployments for one customer, so a handover view has its spine.
+6. **A customer page.** Repeat business is now linked deal-to-deal, but there
+   is no screen that says "everything we have ever done with Berger Paints".
+   `accounts` plus the expansion chain is most of the query.
 
 ## 10. Known rough edges
 
@@ -258,7 +291,18 @@ Roughly in order of value to adoption:
   it will need pagination in the thousands.
 - Desktop drag-and-drop between kanban columns has no touch equivalent — phones
   use the Move stage button instead, which is deliberate.
-- Test coverage is the stage-change path only (§ 4). Quick Add, the forecast
-  maths and the CSV export have none; the same two-file pattern extends to them.
+- Test coverage is the stage-change path and the database rules (§ 4). Quick
+  Add, the forecast maths and the CSV export have none; the same two-file
+  pattern extends to them.
+- **The invitation email has never been seen to arrive.** The code path is
+  proven — a failure keeps the CRM row and shows the admin a warning, which was
+  tested by running with Clerk unreachable — but this sandbox cannot reach
+  `api.clerk.com`. Add a user in the live app and confirm the email lands.
+- Pipeline filters are applied in the browser over the deals already loaded.
+  Right at the scale where the Pipeline needs pagination, they need to move to
+  the query — the `OpportunityFilters` type in `queries.ts` already has the
+  shape for it.
+- Only vehicle types are reorderable in Admin. Cities and lost reasons have the
+  same `sort_order` column; it is one `orderable` prop each to switch on.
 - Nothing runs the tests automatically — there is no CI workflow, so `npm test`
   is a thing a person remembers to type.

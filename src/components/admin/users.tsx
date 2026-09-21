@@ -1,10 +1,11 @@
 "use client";
 
+import { MailCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Badge, Button, Card, Field, Input, Select, Sheet } from "@/components/ui";
-import { upsertUser } from "@/server/actions";
+import { deleteUser, resendInvite, setUserActive, upsertUser } from "@/server/actions";
 
 type Row = {
   id: string;
@@ -13,12 +14,23 @@ type Row = {
   role: "admin" | "sales";
   isActive: boolean;
   linked: boolean;
+  invitedAt: Date | null;
+  /** Deals they own. A user who owns any cannot be deleted, only suspended. */
+  dealCount: number;
 };
 
-export function AdminUsers({ users }: { users: Row[] }) {
+export function AdminUsers({
+  users,
+  currentUserId,
+}: {
+  users: Row[];
+  currentUserId: string;
+}) {
   const router = useRouter();
   const [editing, setEditing] = React.useState<Row | "new" | null>(null);
+  const [confirmDelete, setConfirmDelete] = React.useState<Row | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
 
   function save(formData: FormData) {
@@ -27,6 +39,22 @@ export function AdminUsers({ users }: { users: Row[] }) {
       const result = await upsertUser(formData);
       if (!result.ok) return setError(result.error);
       setEditing(null);
+      setNotice(
+        result.data?.inviteWarning ??
+          (result.data?.invited ? "Saved. Invitation email sent." : null),
+      );
+      router.refresh();
+    });
+  }
+
+  function run(fn: () => Promise<{ ok: boolean; error?: string }>, done?: string) {
+    setError(null);
+    setNotice(null);
+    startTransition(async () => {
+      const result = await fn();
+      if (!result.ok) return setError(result.error ?? "Something went wrong");
+      setConfirmDelete(null);
+      if (done) setNotice(done);
       router.refresh();
     });
   }
@@ -39,35 +67,103 @@ export function AdminUsers({ users }: { users: Row[] }) {
         Add user
       </Button>
 
+      {notice ? (
+        <p className="mb-3 rounded-xl bg-brand-soft px-4 py-2.5 text-sm text-brand-ink">
+          {notice}
+        </p>
+      ) : null}
+      {error && editing === null && !confirmDelete ? (
+        <p className="mb-3 rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-700">
+          {error}
+        </p>
+      ) : null}
+
       <Card className="divide-y divide-line">
-        {users.map((u) => (
-          <button
-            key={u.id}
-            onClick={() => setEditing(u)}
-            className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-canvas"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{u.name}</p>
-              <p className="truncate text-[13px] text-muted">{u.email}</p>
+        {users.map((u) => {
+          const isSelf = u.id === currentUserId;
+          return (
+            <div key={u.id} className="flex items-center gap-1 px-2 py-1 sm:px-3">
+              <button
+                onClick={() => setEditing(u)}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2.5 text-left hover:bg-canvas"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">
+                    {u.name}
+                    {isSelf ? (
+                      <span className="ml-1.5 text-[12px] font-normal text-muted">
+                        (you)
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="truncate text-[13px] text-muted">{u.email}</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                  {!u.isActive ? (
+                    <Badge className="bg-slate-200 text-slate-700">Suspended</Badge>
+                  ) : !u.linked ? (
+                    <Badge className="bg-amber-100 text-amber-900">
+                      {u.invitedAt ? "Invited" : "Not invited"}
+                    </Badge>
+                  ) : null}
+                  <Badge
+                    className={
+                      u.role === "admin"
+                        ? "bg-violet-100 text-violet-800"
+                        : "bg-slate-100 text-slate-700"
+                    }
+                  >
+                    {u.role === "admin" ? "Admin" : "Deal Owner"}
+                  </Badge>
+                </div>
+              </button>
+
+              {/* Re-send is only meaningful for somebody who has not signed in. */}
+              {!u.linked && u.isActive ? (
+                <button
+                  onClick={() => run(() => resendInvite(u.id), "Invitation email sent.")}
+                  disabled={pending}
+                  title="Send the invitation email again"
+                  aria-label={`Resend invitation to ${u.name}`}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-canvas disabled:opacity-40"
+                >
+                  <MailCheck size={17} />
+                </button>
+              ) : null}
+
+              {/* An admin cannot lock themselves out of their own Admin. */}
+              {!isSelf ? (
+                <button
+                  onClick={() => run(() => setUserActive(u.id, !u.isActive))}
+                  disabled={pending}
+                  className="h-11 shrink-0 rounded-lg px-2.5 text-[13px] font-semibold text-muted hover:bg-canvas disabled:opacity-40"
+                >
+                  {u.isActive ? "Suspend" : "Restore"}
+                </button>
+              ) : null}
+
+              {/* Deleting is for a row that owns nothing; everyone else keeps
+                  their name on the deals they closed. */}
+              {!isSelf && u.dealCount === 0 ? (
+                <button
+                  onClick={() => setConfirmDelete(u)}
+                  disabled={pending}
+                  aria-label={`Delete ${u.name}`}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40"
+                >
+                  <Trash2 size={17} />
+                </button>
+              ) : null}
             </div>
-            {!u.linked ? (
-              <Badge className="bg-amber-100 text-amber-900">Invite pending</Badge>
-            ) : null}
-            {!u.isActive ? (
-              <Badge className="bg-slate-100 text-slate-600">Disabled</Badge>
-            ) : null}
-            <Badge
-              className={
-                u.role === "admin"
-                  ? "bg-violet-100 text-violet-800"
-                  : "bg-slate-100 text-slate-700"
-              }
-            >
-              {u.role === "admin" ? "Admin" : "Deal Owner"}
-            </Badge>
-          </button>
-        ))}
+          );
+        })}
       </Card>
+
+      <p className="mt-3 px-1 text-[13px] text-muted">
+        Suspending blocks sign-in and takes someone out of the Deal Owner
+        dropdowns, while their name stays on the deals they closed. Deleting is
+        only offered for someone who owns no deals.
+      </p>
 
       <Sheet
         open={editing !== null}
@@ -81,7 +177,11 @@ export function AdminUsers({ users }: { users: Row[] }) {
           </Field>
           <Field
             label="Work email"
-            hint="Must match the email they sign in to Clerk with."
+            hint={
+              current?.linked
+                ? "They have already signed in with this address."
+                : "We email them a sign-up link as soon as you save."
+            }
           >
             <Input
               name="email"
@@ -110,6 +210,40 @@ export function AdminUsers({ users }: { users: Row[] }) {
             {pending ? "Saving…" : "Save"}
           </Button>
         </form>
+      </Sheet>
+
+      <Sheet
+        open={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        title="Delete user"
+      >
+        <p className="text-sm">
+          Permanently remove <strong>{confirmDelete?.name}</strong> (
+          {confirmDelete?.email})? They own no deals, so nothing else changes.
+          This cannot be undone.
+        </p>
+        {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
+        <div className="mt-4 flex gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="flex-1"
+            onClick={() => setConfirmDelete(null)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            className="flex-1 bg-rose-600 text-white hover:bg-rose-700"
+            disabled={pending}
+            onClick={() =>
+              confirmDelete &&
+              run(() => deleteUser(confirmDelete.id), `${confirmDelete.name} deleted.`)
+            }
+          >
+            {pending ? "Deleting…" : "Delete"}
+          </Button>
+        </div>
       </Sheet>
     </>
   );

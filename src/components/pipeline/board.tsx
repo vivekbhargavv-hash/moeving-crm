@@ -16,19 +16,29 @@ import * as React from "react";
 
 import { PipelineList } from "@/components/pipeline/table";
 import { StageChanger, type StageTarget } from "@/components/stage-changer";
-import { Avatar, Badge, EmptyState, Select } from "@/components/ui";
+import {
+  activeFilterCount,
+  EMPTY_FILTERS,
+  type Filters,
+  PipelineFilterSheet,
+} from "@/components/pipeline/filters";
+import { Avatar, Badge, EmptyState } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
 import { cn, daysUntil, formatDate, inrCompact, num } from "@/lib/utils";
 import { changeStage } from "@/server/actions";
 import type { OpportunityCard } from "@/server/queries";
 
-const VIEW_KEY = "moeving:pipeline-view";
+// Bumped from "moeving:pipeline-view" when the table became the default, so a
+// board preference saved under the old default does not override it.
+const VIEW_KEY = "moeving:pipeline-view-v2";
 
 type Props = {
   opportunities: OpportunityCard[];
   lostReasons: { id: string; label: string }[];
   owners: { id: string; name: string }[];
+  cities: { id: string; name: string }[];
+  vehicleTypes: { id: string; name: string }[];
   currentUserId: string;
   isAdmin: boolean;
 };
@@ -37,6 +47,8 @@ export function PipelineBoard({
   opportunities,
   lostReasons,
   owners,
+  cities,
+  vehicleTypes,
   currentUserId,
   isAdmin,
 }: Props) {
@@ -44,12 +56,18 @@ export function PipelineBoard({
   // whole team at once. This is a default view, not a permission — every deal
   // in the organization is still reachable by picking that owner by name, and
   // the server has always sent the full org-scoped list.
-  const defaultOwner = isAdmin ? "all" : "mine";
+  const defaultFilters = React.useMemo<Filters>(
+    () => (isAdmin ? EMPTY_FILTERS : { ...EMPTY_FILTERS, ownerIds: [currentUserId] }),
+    [isAdmin, currentUserId],
+  );
   const [stageIndex, setStageIndex] = React.useState(0);
   const [query, setQuery] = React.useState("");
-  const [owner, setOwner] = React.useState(defaultOwner);
+  const [filters, setFilters] = React.useState<Filters>(defaultFilters);
+  const [filtering, setFiltering] = React.useState(false);
   const [target, setTarget] = React.useState<StageTarget | null>(null);
-  const [view, setView] = React.useState<"board" | "list">("board");
+  // The table is the default: it opens on what changed most recently, which is
+  // what someone checking the pipeline came to see. The board is a click away.
+  const [view, setView] = React.useState<"board" | "list">("list");
   const [searching, setSearching] = React.useState(false);
   const router = useRouter();
   const tabsRef = React.useRef<HTMLDivElement>(null);
@@ -75,9 +93,14 @@ export function PipelineBoard({
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
+    // An empty group means "all of them", so a filter only ever narrows.
+    const has = (group: string[], v: string | null) =>
+      group.length === 0 || (v !== null && group.includes(v));
     return opportunities.filter((o) => {
-      if (owner === "mine" && o.ownerId !== currentUserId) return false;
-      if (owner !== "all" && owner !== "mine" && o.ownerId !== owner) return false;
+      if (!has(filters.ownerIds, o.ownerId)) return false;
+      if (!has(filters.stages, o.stage)) return false;
+      if (!has(filters.cityIds, o.cityId)) return false;
+      if (!has(filters.vehicleTypeIds, o.vehicleTypeId)) return false;
       if (!q) return true;
       return (
         o.accountName.toLowerCase().includes(q) ||
@@ -85,7 +108,7 @@ export function PipelineBoard({
         (o.city ?? "").toLowerCase().includes(q)
       );
     });
-  }, [opportunities, query, owner, currentUserId]);
+  }, [opportunities, query, filters]);
 
   const byStage = React.useMemo(() => {
     const map = new Map<SalesStage, OpportunityCard[]>();
@@ -94,8 +117,21 @@ export function PipelineBoard({
     return map;
   }, [filtered]);
 
-  const activeStage = STAGES[stageIndex]!;
+  // Filtering by stage narrows the board to those columns too, rather than
+  // leaving a row of empty ones.
+  const visibleStages = filters.stages.length
+    ? STAGES.filter((s) => filters.stages.includes(s.value))
+    : STAGES;
+
+  React.useEffect(() => {
+    setStageIndex((i) => Math.min(i, visibleStages.length - 1));
+  }, [visibleStages.length]);
+
+  const activeStage = visibleStages[Math.min(stageIndex, visibleStages.length - 1)]!;
   const activeList = byStage.get(activeStage.value) ?? [];
+  const filterCount = activeFilterCount(filters);
+  const filtersChanged =
+    JSON.stringify(filters) !== JSON.stringify(defaultFilters);
 
   /** Horizontal swipe between stages on phones. */
   const touch = React.useRef<{ x: number; y: number } | null>(null);
@@ -109,7 +145,7 @@ export function PipelineBoard({
     touch.current = null;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
     setStageIndex((i) =>
-      dx < 0 ? Math.min(STAGES.length - 1, i + 1) : Math.max(0, i - 1),
+      dx < 0 ? Math.min(visibleStages.length - 1, i + 1) : Math.max(0, i - 1),
     );
   }
 
@@ -118,12 +154,19 @@ export function PipelineBoard({
     el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [stageIndex]);
 
-  const ownerLabel =
-    owner === "all"
-      ? "All owners"
-      : owner === "mine"
-        ? "My deals"
-        : (owners.find((o) => o.id === owner)?.name ?? "My deals");
+  /** What the active filters narrowed to, in words, for the count line. */
+  const filterSummary = [
+    filters.ownerIds.length === 1 && filters.ownerIds[0] === currentUserId
+      ? "My deals"
+      : filters.ownerIds.length
+        ? `${filters.ownerIds.length} owners`
+        : null,
+    filters.stages.length ? `${filters.stages.length} stages` : null,
+    filters.cityIds.length ? `${filters.cityIds.length} cities` : null,
+    filters.vehicleTypeIds.length ? `${filters.vehicleTypeIds.length} vehicles` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div>
@@ -192,40 +235,40 @@ export function PipelineBoard({
             </button>
           ) : null}
 
-          {/* The select is an invisible layer over an icon button: native
-              picker on every platform, fixed 48px footprint. */}
-          <div
+          {/* A fixed 48px button, not a native select: a select sizes itself
+              to its longest option and stretches the layout viewport. */}
+          <button
+            onClick={() => setFiltering(true)}
+            aria-label="Filter deals"
             className={cn(
-              "relative h-12 w-12 shrink-0 rounded-2xl border",
-              owner === defaultOwner
-                ? "border-line bg-white text-muted"
-                : "border-brand bg-brand-soft text-brand-ink",
+              "relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border active:bg-canvas",
+              filterCount
+                ? "border-brand bg-brand-soft text-brand-ink"
+                : "border-line bg-white text-muted",
             )}
           >
-            <ListFilter
-              size={19}
-              className="pointer-events-none absolute inset-0 m-auto"
-            />
-            <select
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
-              aria-label="Filter by deal owner"
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            >
-              {isAdmin ? <option value="all">All owners</option> : null}
-              <option value="mine">My deals</option>
-              {owners.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </div>
+            <ListFilter size={19} />
+            {filterCount ? (
+              <span className="tabular absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[11px] font-bold text-white">
+                {filterCount}
+              </span>
+            ) : null}
+          </button>
         </div>
 
-        {owner !== "all" ? (
-          <p className="mt-2 px-1 text-[12px] text-muted">
-            Showing {ownerLabel} · {filtered.length} deals
+        {filterSummary ? (
+          <p className="mt-2 flex items-center gap-2 px-1 text-[12px] text-muted">
+            <span className="truncate">
+              {filterSummary} · {filtered.length} deals
+            </span>
+            {filtersChanged ? (
+              <button
+                onClick={() => setFilters(defaultFilters)}
+                className="shrink-0 font-semibold text-brand-ink underline-offset-2 hover:underline"
+              >
+                Reset
+              </button>
+            ) : null}
           </p>
         ) : null}
       </div>
@@ -265,19 +308,23 @@ export function PipelineBoard({
             </button>
           ))}
         </div>
-        <Select
-          value={owner}
-          onChange={(e) => setOwner(e.target.value)}
-          className="h-11 w-36 shrink-0"
+        <button
+          onClick={() => setFiltering(true)}
+          className={cn(
+            "flex h-11 shrink-0 items-center gap-2 rounded-xl border px-3.5 text-sm font-medium",
+            filterCount
+              ? "border-brand bg-brand-soft text-brand-ink"
+              : "border-line bg-white text-muted hover:bg-canvas",
+          )}
         >
-          {isAdmin ? <option value="all">All owners</option> : null}
-          <option value="mine">My deals</option>
-          {owners.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </Select>
+          <ListFilter size={16} />
+          Filters
+          {filterCount ? (
+            <span className="tabular flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[11px] font-bold text-white">
+              {filterCount}
+            </span>
+          ) : null}
+        </button>
         <a
           href="/api/export/deals"
           className="flex h-11 shrink-0 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-sm font-medium text-muted hover:bg-canvas"
@@ -296,7 +343,7 @@ export function PipelineBoard({
           ref={tabsRef}
           className="no-scrollbar -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1"
         >
-          {STAGES.map((s, i) => {
+          {visibleStages.map((s, i) => {
             const count = byStage.get(s.value)?.length ?? 0;
             const active = i === stageIndex;
             return (
@@ -348,7 +395,7 @@ export function PipelineBoard({
       {/* --------------------------------------------------- desktop board */}
       <div className={cn("hidden md:block", view === "list" && "md:hidden")}>
         <div className="no-scrollbar flex gap-4 overflow-x-auto pb-4">
-          {STAGES.map((s) => {
+          {visibleStages.map((s) => {
             const list = byStage.get(s.value) ?? [];
             const value = list.reduce((sum, o) => sum + o.value, 0);
             const fleet = list.reduce((sum, o) => sum + o.fleetSize, 0);
@@ -401,6 +448,19 @@ export function PipelineBoard({
           })}
         </div>
       </div>
+
+      <PipelineFilterSheet
+        open={filtering}
+        onClose={() => setFiltering(false)}
+        value={filters}
+        onChange={setFilters}
+        cities={cities.map((c) => ({ id: c.id, label: c.name }))}
+        owners={owners.map((o) => ({ id: o.id, label: o.name }))}
+        vehicleTypes={vehicleTypes.map((v) => ({ id: v.id, label: v.name }))}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+        matchCount={filtered.length}
+      />
 
       <StageChanger
         target={target}

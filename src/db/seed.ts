@@ -141,7 +141,7 @@ async function seedDemo(organizationId: string) {
 
   const stages: SalesStage[] = [
     "first_contact", "solutioning", "proposal", "negotiation",
-    "closed_won", "closed_lost", "dormant",
+    "contracting", "closed_won", "closed_lost", "dormant",
   ];
   const pick = <T,>(arr: T[], i: number) => arr[i % arr.length]!;
 

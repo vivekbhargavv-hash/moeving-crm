@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   check,
   date,
@@ -31,6 +32,9 @@ export const salesStage = pgEnum("sales_stage", [
   "solutioning",
   "proposal",
   "negotiation",
+  // Verbally agreed, paperwork in flight. Sits between Negotiation and Won so
+  // the weighted pipeline can tell "they said yes" from "they signed".
+  "contracting",
   "closed_won",
   "closed_lost",
   "dormant",
@@ -76,6 +80,8 @@ export const users = pgTable(
     name: text("name").notNull(),
     role: userRole("role").notNull().default("sales"),
     isActive: boolean("is_active").notNull().default(true),
+    /** When Clerk was asked to email this person a sign-up invitation. */
+    invitedAt: timestamp("invited_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -194,6 +200,19 @@ export const opportunities = pgTable(
       .references(() => users.id, { onDelete: "restrict" }),
     notes: text("notes"),
 
+    /**
+     * Repeat business. A won customer asking for more trucks is a NEW deal
+     * pointing back at the one it grew out of — never an edit to the won row,
+     * which would move a recorded win out of the month it happened in.
+     *
+     * Self-referencing and nullable: the first deal in a chain has no parent,
+     * and deleting a parent leaves the expansion standing on its own.
+     */
+    parentOpportunityId: uuid("parent_opportunity_id").references(
+      (): AnyPgColumn => opportunities.id,
+      { onDelete: "set null" },
+    ),
+
     /* --- Closed Won block: null until the deal is won.
        Every figure here is PER VEHICLE PER MONTH, matching `price` above. --- */
     revenue: integer("revenue"),
@@ -253,6 +272,7 @@ export const opportunities = pgTable(
       t.cityId,
       t.expectedCloseDate,
     ),
+    index("opps_parent_idx").on(t.parentOpportunityId),
     check("opps_fleet_positive", sql`${t.fleetSize} > 0`),
     // A won deal must carry its full cost sheet. Enforced here so no code path,
     // present or future, can write a half-filled Closed Won row.

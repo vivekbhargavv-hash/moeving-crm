@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { DetailActions } from "@/components/opportunity/detail-actions";
+import { ExpandDeal } from "@/components/opportunity/expand-deal";
 import { NoteBox } from "@/components/opportunity/note-box";
 import { Badge, Card, CardHeader } from "@/components/ui-server";
 import {
@@ -87,6 +88,72 @@ export default async function OpportunityPage({
         master={master}
         role={session.role}
       />
+
+      {/* Repeat business. A won customer coming back for more trucks gets a
+          new deal carrying this one's setup — never an edit to this row, whose
+          close date is the month the wins report counts it in. */}
+      {isWon ? (
+        <div className="mt-3">
+          <ExpandDeal
+            master={master}
+            session={session}
+            prefill={{
+              parentOpportunityId: opp.id,
+              parentLabel: opp.name,
+              accountName: row.accountName,
+              cityIds: opp.cityId ? [opp.cityId] : [],
+              vehicleTypeId: opp.vehicleTypeId ?? "",
+              driverType: opp.driverType,
+              chargingScope: opp.chargingScope,
+              price: opp.revenue ? String(opp.revenue) : String(opp.price ?? ""),
+            }}
+          />
+        </div>
+      ) : null}
+
+      {row.parent || row.expansions.length ? (
+        <Card className="mt-3">
+          <CardHeader title="This customer's deployments" />
+          <ul className="divide-y divide-line px-4 pb-1">
+            {row.parent ? (
+              <li className="py-2.5">
+                <Link
+                  href={`/opportunities/${row.parent.id}`}
+                  className="flex items-center gap-2 text-sm"
+                >
+                  <Badge className="bg-slate-100 text-slate-600">Grew out of</Badge>
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {row.parent.name}
+                  </span>
+                  <span className="tabular shrink-0 text-[13px] text-muted">
+                    {num(row.parent.fleetSize)} veh
+                  </span>
+                </Link>
+              </li>
+            ) : null}
+            {row.expansions.map((e) => (
+              <li key={e.id} className="py-2.5">
+                <Link
+                  href={`/opportunities/${e.id}`}
+                  className="flex items-center gap-2 text-sm"
+                >
+                  <Badge className={cn(STAGE_MAP[e.stage].chip)}>
+                    {STAGE_MAP[e.stage].short}
+                  </Badge>
+                  <span className="min-w-0 flex-1 truncate font-medium">{e.name}</span>
+                  <span className="tabular shrink-0 text-[13px] text-muted">
+                    {num(e.fleetSize)} veh
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="px-4 pb-4 pt-1 text-[13px] text-muted">
+            Each deployment is its own deal, so each one closes in its own month
+            and carries its own cost sheet.
+          </p>
+        </Card>
+      ) : null}
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <Card>

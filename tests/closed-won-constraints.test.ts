@@ -24,6 +24,8 @@ const url = process.env.TEST_DATABASE_URL;
 const migrations = [
   "drizzle/0000_kind_juggernaut.sql",
   "drizzle/0001_per_vehicle_economics.sql",
+  "drizzle/0002_contracting_stage.sql",
+  "drizzle/0003_expansions_and_invites.sql",
 ];
 
 /** A full cost sheet, per vehicle per month. */
@@ -239,6 +241,73 @@ describe(
 
     it("refuses a deal with no vehicles in it", async () => {
       await rejects(() => insertOpp({ fleet_size: 0 }), "opps_fleet_positive");
+    });
+
+    it("puts Contracting between Negotiation and Closed Won", async () => {
+      const { rows } = await client.query(
+        "select unnest(enum_range(null::sales_stage))::text as stage",
+      );
+      const order = rows.map((r) => r.stage);
+      assert.equal(order.indexOf("contracting"), order.indexOf("negotiation") + 1);
+      assert.equal(order.indexOf("closed_won"), order.indexOf("contracting") + 1);
+    });
+
+    it("treats Contracting as an ordinary open stage, needing nothing extra", async () => {
+      const opp = await insertOpp({ stage: "contracting" });
+      assert.equal(opp.stage, "contracting");
+      assert.equal(opp.closed_at, null);
+    });
+
+    it("links a follow-on deployment to the deal it grew out of", async () => {
+      // The month a deal was won is what the wins report counts it in, so the
+      // close date is the thing a follow-on must not disturb.
+      const closedAt = "2026-08-21T10:00:00Z";
+      const won = await insertOpp({
+        stage: "closed_won",
+        fleet_size: 15,
+        closed_at: closedAt,
+        ...SHEET,
+      });
+      const expansion = await insertOpp({
+        name: "Acme Logistics - Pune (phase 2)",
+        fleet_size: 8,
+        parent_opportunity_id: won.id,
+      });
+      assert.equal(expansion.parent_opportunity_id, won.id);
+
+      // The whole point: the won deal is untouched, so the month it closed in
+      // still counts it.
+      const { rows } = await client.query(
+        "select stage, closed_at, fleet_size, gross_margin from opportunities where id = $1",
+        [won.id],
+      );
+      assert.equal(rows[0].stage, "closed_won");
+      assert.equal(rows[0].fleet_size, 15);
+      assert.equal(rows[0].gross_margin, MARGIN_PER_VEHICLE * 15);
+      assert.equal(
+        new Date(rows[0].closed_at).toISOString(),
+        new Date(closedAt).toISOString(),
+      );
+    });
+
+    it("leaves a follow-on standing when its parent is deleted", async () => {
+      const parent = await insertOpp({ stage: "negotiation" });
+      const child = await insertOpp({ parent_opportunity_id: parent.id });
+      await client.query("delete from opportunities where id = $1", [parent.id]);
+      const { rows } = await client.query(
+        "select id, parent_opportunity_id from opportunities where id = $1",
+        [child.id],
+      );
+      assert.equal(rows.length, 1, "the follow-on must survive its parent");
+      assert.equal(rows[0].parent_opportunity_id, null);
+    });
+
+    it("refuses a parent that is not a real deal", async () => {
+      await assert.rejects(() =>
+        insertOpp({ parent_opportunity_id: "11111111-1111-1111-1111-111111111111" }),
+      );
+      await client.query("rollback");
+      await client.query("begin");
     });
   },
 );

@@ -42,6 +42,14 @@ export const STAGES: {
     open: true,
   },
   {
+    value: "contracting",
+    label: "Contracting",
+    short: "Contract",
+    chip: "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200",
+    dot: "bg-teal-500",
+    open: true,
+  },
+  {
     value: "closed_won",
     label: "Closed Won",
     short: "Won",
@@ -78,6 +86,8 @@ export const DEFAULT_STAGE_PROBABILITY: Record<SalesStage, number> = {
   solutioning: 25,
   proposal: 50,
   negotiation: 75,
+  // They have said yes; nothing is signed.
+  contracting: 90,
   closed_won: 100,
   closed_lost: 0,
   dormant: 0,

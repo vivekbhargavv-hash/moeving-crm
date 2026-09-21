@@ -17,7 +17,8 @@ export default async function MasterDataPage() {
       .select()
       .from(vehicleTypes)
       .where(eq(vehicleTypes.organizationId, org))
-      .orderBy(asc(vehicleTypes.name)),
+      // Admin-controlled order, which is the order Quick Add shows.
+      .orderBy(asc(vehicleTypes.sortOrder), asc(vehicleTypes.name)),
     db
       .select()
       .from(lostReasons)
@@ -46,6 +47,8 @@ export default async function MasterDataPage() {
         <MasterDataEditor
           table="vehicleTypes"
           title="Vehicle types"
+          orderable
+          orderHint="This is the order the sales team sees when adding a deal. Put the ones you sell most at the top."
           items={vehicleRows.map((v) => ({
             id: v.id,
             label: v.name,

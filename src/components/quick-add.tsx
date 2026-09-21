@@ -52,16 +52,36 @@ function readPrefs(): Prefs {
 }
 
 
+/**
+ * Repeat business: the same customer asking for more trucks.
+ *
+ * The follow-on is a NEW deal carrying the original's setup, never an edit to
+ * the won one — a won deal that grows would move a recorded win out of the
+ * month it actually happened in and quietly restate the wins report.
+ */
+export type Prefill = {
+  parentOpportunityId: string;
+  parentLabel: string;
+  accountName: string;
+  cityIds: string[];
+  vehicleTypeId: string;
+  driverType: string | null;
+  chargingScope: string | null;
+  price: string;
+};
+
 export function QuickAdd({
   open,
   onClose,
   master,
   session,
+  prefill,
 }: {
   open: boolean;
   onClose: () => void;
   master: MasterData;
   session: Session;
+  prefill?: Prefill;
 }) {
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
@@ -79,17 +99,19 @@ export function QuickAdd({
 
   React.useEffect(() => {
     if (!open) return;
-    const prefs = readPrefs();
+    // An expansion starts from the deal it grew out of; anything else starts
+    // from what this person last used.
+    const prefs = prefill ?? readPrefs();
     setError(null);
     setCityIds(prefs.cityIds ?? []);
     setVehicleTypeId(prefs.vehicleTypeId ?? "");
     setDriverType(prefs.driverType ?? null);
     setChargingScope(prefs.chargingScope ?? null);
     setFleet(5);
-    setPrice("");
+    setPrice(prefill?.price ?? "");
     setMonth(upcomingMonths(1)[0]!);
     setShowMore(false);
-  }, [open]);
+  }, [open, prefill]);
 
   const perDeal = Number(price || 0) * fleet;
   const dealCount = Math.max(1, cityIds.length);
@@ -104,10 +126,14 @@ export function QuickAdd({
           return;
         }
         try {
-          localStorage.setItem(
-            PREFS_KEY,
-            JSON.stringify({ cityIds, vehicleTypeId, driverType, chargingScope }),
-          );
+          // An expansion copies one customer's existing setup; it is not this
+          // person's new habit, so it does not become their default.
+          if (!prefill) {
+            localStorage.setItem(
+              PREFS_KEY,
+              JSON.stringify({ cityIds, vehicleTypeId, driverType, chargingScope }),
+            );
+          }
         } catch {
           /* private mode — defaults just won't stick */
         }
@@ -135,7 +161,7 @@ export function QuickAdd({
     <Sheet
       open={open}
       onClose={onClose}
-      title="New deal"
+      title={prefill ? "Deploy more vehicles" : "New deal"}
       action={submit}
       footer={
         <div className="flex items-center gap-3">
@@ -159,12 +185,28 @@ export function QuickAdd({
       }
     >
       <div className="space-y-4">
+        {prefill ? (
+          <>
+            <input
+              type="hidden"
+              name="parentOpportunityId"
+              value={prefill.parentOpportunityId}
+            />
+            <p className="rounded-xl bg-brand-soft px-4 py-3 text-[13px] text-brand-ink">
+              A new deal for <strong>{prefill.accountName}</strong>, carrying the
+              setup from {prefill.parentLabel}. The won deal is left exactly as
+              it is, so the month it closed in still counts.
+            </p>
+          </>
+        ) : null}
         <Field label="Customer">
           <Input
             name="accountName"
             list="account-options"
             required
-            autoFocus
+            autoFocus={!prefill}
+            readOnly={Boolean(prefill)}
+            defaultValue={prefill?.accountName ?? ""}
             autoComplete="off"
             placeholder="e.g. Berger Paints"
             enterKeyHint="next"

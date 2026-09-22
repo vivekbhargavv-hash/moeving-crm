@@ -38,7 +38,7 @@ export async function GET(request: Request) {
   const session = await requireSession();
   // Every cost column is in this file. A redirect would hand back an HTML
   // page to something expecting a CSV, so refuse in the same language.
-  if (session.role === "ops") {
+  if (session.role === "ops" || session.role === "noc") {
     return new Response("Not available for this role", { status: 403 });
   }
   const url = new URL(request.url);

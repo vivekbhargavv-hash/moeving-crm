@@ -31,6 +31,11 @@ import {
 } from "@/db/schema";
 import type { LeadStatus, SalesStage } from "@/db/schema";
 import { DEFAULT_STAGE_PROBABILITY, OPEN_STAGES } from "@/lib/constants";
+import {
+  periodStart,
+  summarizeDashboard,
+  type DashboardPeriod,
+} from "@/lib/dashboard";
 import type { CostDefault } from "@/lib/cost-defaults";
 import { requireSession } from "@/server/auth";
 
@@ -191,49 +196,77 @@ function toCard<T extends Omit<OpportunityCard, "value" | "marginPct"> & {
   };
 }
 
+/**
+ * One deal and everything its page shows.
+ *
+ * The deal, its activity and its expansions only need the id, so they are
+ * asked for together — each query is its own round trip to Neon, and these
+ * used to go one after another. Only the parent waits, because its id is on
+ * the deal row. The activity is read before the organization check has
+ * passed, but it is thrown away unless the deal turns out to be this
+ * organization's.
+ */
 export async function getOpportunity(id: string) {
   const session = await requireSession();
-  const [row] = await db
-    .select({
-      opp: opportunities,
-      accountName: accounts.name,
-      city: cities.name,
-      vehicleType: vehicleTypes.name,
-      ownerName: users.name,
-      lostReason: lostReasons.label,
-    })
-    .from(opportunities)
-    .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
-    .innerJoin(users, eq(users.id, opportunities.ownerUserId))
-    .leftJoin(cities, eq(cities.id, opportunities.cityId))
-    .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
-    .leftJoin(lostReasons, eq(lostReasons.id, opportunities.lostReasonId))
-    .where(
-      and(
-        eq(opportunities.id, id),
-        eq(opportunities.organizationId, session.organizationId),
+  const [[row], events, expansions] = await Promise.all([
+    db
+      .select({
+        opp: opportunities,
+        accountName: accounts.name,
+        city: cities.name,
+        vehicleType: vehicleTypes.name,
+        ownerName: users.name,
+        lostReason: lostReasons.label,
+      })
+      .from(opportunities)
+      .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
+      .innerJoin(users, eq(users.id, opportunities.ownerUserId))
+      .leftJoin(cities, eq(cities.id, opportunities.cityId))
+      .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
+      .leftJoin(lostReasons, eq(lostReasons.id, opportunities.lostReasonId))
+      .where(
+        and(
+          eq(opportunities.id, id),
+          eq(opportunities.organizationId, session.organizationId),
+        ),
       ),
-    );
+    db
+      .select({
+        id: opportunityEvents.id,
+        kind: opportunityEvents.kind,
+        fromStage: opportunityEvents.fromStage,
+        toStage: opportunityEvents.toStage,
+        body: opportunityEvents.body,
+        createdAt: opportunityEvents.createdAt,
+        userName: users.name,
+      })
+      .from(opportunityEvents)
+      .leftJoin(users, eq(users.id, opportunityEvents.userId))
+      .where(eq(opportunityEvents.opportunityId, id))
+      .orderBy(desc(opportunityEvents.createdAt))
+      .limit(50),
+    // What has grown out of this deal.
+    db
+      .select({
+        id: opportunities.id,
+        name: opportunities.name,
+        stage: opportunities.stage,
+        fleetSize: opportunities.fleetSize,
+        price: opportunities.price,
+        expectedCloseDate: opportunities.expectedCloseDate,
+      })
+      .from(opportunities)
+      .where(
+        and(
+          eq(opportunities.parentOpportunityId, id),
+          eq(opportunities.organizationId, session.organizationId),
+        ),
+      )
+      .orderBy(desc(opportunities.createdAt)),
+  ]);
   if (!row) return null;
 
-  const events = await db
-    .select({
-      id: opportunityEvents.id,
-      kind: opportunityEvents.kind,
-      fromStage: opportunityEvents.fromStage,
-      toStage: opportunityEvents.toStage,
-      body: opportunityEvents.body,
-      createdAt: opportunityEvents.createdAt,
-      userName: users.name,
-    })
-    .from(opportunityEvents)
-    .leftJoin(users, eq(users.id, opportunityEvents.userId))
-    .where(eq(opportunityEvents.opportunityId, id))
-    .orderBy(desc(opportunityEvents.createdAt))
-    .limit(50);
-
-  // The repeat-business chain, both directions: what this deal grew out of,
-  // and what has grown out of it.
+  // What this deal grew out of.
   const parentAlias = alias(opportunities, "parent");
   const [parent] = row.opp.parentOpportunityId
     ? await db
@@ -252,24 +285,6 @@ export async function getOpportunity(id: string) {
           ),
         )
     : [];
-
-  const expansions = await db
-    .select({
-      id: opportunities.id,
-      name: opportunities.name,
-      stage: opportunities.stage,
-      fleetSize: opportunities.fleetSize,
-      price: opportunities.price,
-      expectedCloseDate: opportunities.expectedCloseDate,
-    })
-    .from(opportunities)
-    .where(
-      and(
-        eq(opportunities.parentOpportunityId, id),
-        eq(opportunities.organizationId, session.organizationId),
-      ),
-    )
-    .orderBy(desc(opportunities.createdAt));
 
   return { ...row, events, parent: parent ?? null, expansions };
 }
@@ -377,85 +392,89 @@ export const getStageProbabilities = cache(async (): Promise<
 
 export type DashboardData = Awaited<ReturnType<typeof getDashboard>>;
 
-export async function getDashboard(filters: OpportunityFilters = {}) {
+/**
+ * The dashboard, added up by Postgres.
+ *
+ * Two grouped queries — one row per stage, and one per owner × city × vehicle
+ * type for the open pipeline — instead of every deal the organization has ever
+ * had. `summarizeDashboard` turns those rows into the tiles and bars.
+ *
+ * `period` narrows the decided deals (won and lost) to those closed since it
+ * began. The open pipeline is never narrowed: it is what is on the table now.
+ */
+export async function getDashboard(
+  filters: OpportunityFilters = {},
+  period: DashboardPeriod = "all",
+) {
   const session = await requireSession();
-  const [opps, probabilities] = await Promise.all([
-    listOpportunitiesRaw(filters),
+  const where = filterConditions(session.organizationId, session.userId, filters);
+  const since = periodStart(period);
+  if (since) {
+    where.push(
+      or(
+        inArray(opportunities.stage, OPEN_STAGES),
+        gte(opportunities.closedAt, since),
+      )!,
+    );
+  }
+
+  const value = sql`coalesce(${opportunities.price}, 0) * ${opportunities.fleetSize}`;
+  const total = (expr: ReturnType<typeof sql>) =>
+    sql<number>`coalesce(sum(${expr}), 0)::float8`;
+
+  const [stageRows, groupRows, probabilities] = await Promise.all([
+    db
+      .select({
+        stage: opportunities.stage,
+        count: sql<number>`count(*)::int`,
+        fleet: total(sql`${opportunities.fleetSize}`),
+        value: total(value),
+        // A zero revenue is read as unrecorded, the way the tile always has.
+        wonValue: total(
+          sql`coalesce(nullif(${opportunities.totalRevenue}, 0), ${value})`,
+        ),
+        revenue: total(sql`${opportunities.totalRevenue}`),
+        margin: total(sql`${opportunities.grossMargin}`),
+      })
+      .from(opportunities)
+      .where(and(...where))
+      .groupBy(opportunities.stage),
+    db
+      .select({
+        owner: users.name,
+        city: cities.name,
+        vehicleType: vehicleTypes.name,
+        fleet: total(sql`${opportunities.fleetSize}`),
+        value: total(value),
+      })
+      .from(opportunities)
+      .innerJoin(users, eq(users.id, opportunities.ownerUserId))
+      .leftJoin(cities, eq(cities.id, opportunities.cityId))
+      .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
+      .where(and(...where, inArray(opportunities.stage, OPEN_STAGES)))
+      .groupBy(users.name, cities.name, vehicleTypes.name),
     getStageProbabilities(),
   ]);
 
-  const open = opps.filter((o) => OPEN_STAGES.includes(o.stage));
-  const won = opps.filter((o) => o.stage === "closed_won");
-  const lost = opps.filter((o) => o.stage === "closed_lost");
-
-  const pipelineValue = open.reduce((s, o) => s + o.value, 0);
-  const weightedPipeline = open.reduce(
-    (s, o) => s + (o.value * probabilities[o.stage]) / 100,
-    0,
+  return summarizeDashboard(
+    stageRows.map((r) => ({
+      stage: r.stage,
+      count: Number(r.count),
+      fleet: Number(r.fleet),
+      value: Number(r.value),
+      wonValue: Number(r.wonValue),
+      revenue: Number(r.revenue),
+      margin: Number(r.margin),
+    })),
+    groupRows.map((r) => ({
+      owner: r.owner,
+      city: r.city,
+      vehicleType: r.vehicleType,
+      fleet: Number(r.fleet),
+      value: Number(r.value),
+    })),
+    probabilities,
   );
-  const fleetInPipeline = open.reduce((s, o) => s + o.fleetSize, 0);
-  const wonValue = won.reduce((s, o) => s + (o.totalRevenue || o.value), 0);
-  const wonFleet = won.reduce((s, o) => s + o.fleetSize, 0);
-  const grossMargin = won.reduce((s, o) => s + (o.grossMargin ?? 0), 0);
-  const wonRevenue = won.reduce((s, o) => s + (o.totalRevenue ?? 0), 0);
-  const decided = won.length + lost.length;
-
-  const funnel = OPEN_STAGES.concat(["closed_won"] as SalesStage[]).map((stage) => {
-    const rows = opps.filter((o) => o.stage === stage);
-    return {
-      stage,
-      count: rows.length,
-      value: rows.reduce((s, o) => s + o.value, 0),
-      fleet: rows.reduce((s, o) => s + o.fleetSize, 0),
-    };
-  });
-
-  const groupBy = (key: "ownerName" | "city" | "vehicleType") => {
-    const acc = new Map<string, { name: string; value: number; fleet: number }>();
-    for (const o of open) {
-      const name = (o[key] as string | null) ?? "Unassigned";
-      const cur = acc.get(name) ?? { name, value: 0, fleet: 0 };
-      cur.value += o.value;
-      cur.fleet += o.fleetSize;
-      acc.set(name, cur);
-    }
-    return [...acc.values()].sort((a, b) => b.value - a.value);
-  };
-
-  return {
-    kpis: {
-      pipelineValue,
-      weightedPipeline: Math.round(weightedPipeline),
-      wonValue,
-      wonFleet,
-      fleetInPipeline,
-      openCount: open.length,
-      wonCount: won.length,
-      winRate: decided ? Math.round((won.length / decided) * 100) : null,
-      grossMargin,
-      marginPct: wonRevenue ? Math.round((grossMargin / wonRevenue) * 100) : null,
-    },
-    funnel,
-    byOwner: groupBy("ownerName"),
-    byCity: groupBy("city"),
-    byVehicleType: groupBy("vehicleType"),
-  };
-}
-
-async function listOpportunitiesRaw(
-  filters: OpportunityFilters,
-): Promise<OpportunityCard[]> {
-  const session = await requireSession();
-  const rows = await db
-    .select(cardColumns)
-    .from(opportunities)
-    .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
-    .innerJoin(users, eq(users.id, opportunities.ownerUserId))
-    .leftJoin(cities, eq(cities.id, opportunities.cityId))
-    .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
-    .where(and(...filterConditions(session.organizationId, session.userId, filters)));
-
-  return rows.map(toCard);
 }
 
 /* ------------------------------------------------------------- deployments */

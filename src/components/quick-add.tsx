@@ -76,6 +76,9 @@ export function QuickAdd({
   const [days, setDays] = React.useState<number | null>(null);
   const [month, setMonth] = React.useState("");
   const [showMore, setShowMore] = React.useState(false);
+  // Anything typed into a text field — the customer, the name, the notes —
+  // which the state above does not hold.
+  const [typed, setTyped] = React.useState(false);
 
   const months = React.useMemo(() => upcomingMonths(6), []);
 
@@ -91,11 +94,23 @@ export function QuickAdd({
     setDays(null);
     setMonth("");
     setShowMore(false);
+    setTyped(false);
   }, [open]);
 
   const fleetCount = Number(fleet || 0);
   const perDeal = Number(price || 0) * fleetCount;
   const dealCount = Math.max(1, cityIds.length);
+  const dirty = Boolean(
+    typed ||
+      cityIds.length ||
+      vehicleTypeId ||
+      driverType ||
+      chargingScope ||
+      fleet ||
+      price ||
+      days ||
+      month,
+  );
 
   function submit(formData: FormData) {
     setError(null);
@@ -108,7 +123,6 @@ export function QuickAdd({
         }
         const { id, count } = result.data!;
         onClose();
-        router.refresh();
         // One deal opens directly; several go back to the pipeline, where
         // seeing the new cards is the point.
         router.push(
@@ -149,6 +163,7 @@ export function QuickAdd({
       onClose={onClose}
       title="New deal"
       action={submit}
+      confirmDiscard={dirty && !pending}
       footer={
         <div className="flex items-center gap-3">
           <div className="flex-1 text-sm">
@@ -170,7 +185,7 @@ export function QuickAdd({
         </div>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-4" onInput={() => setTyped(true)}>
         <Field label="Customer">
           <Input
             name="accountName"
@@ -420,7 +435,7 @@ export function QuickAdd({
         </p>
 
         {error ? (
-          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
           </p>
         ) : null}

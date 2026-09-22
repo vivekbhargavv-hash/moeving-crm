@@ -28,6 +28,7 @@ import {
 import { Avatar, Badge, EmptyState } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
+import { useIsDesktop } from "@/lib/use-desktop";
 import { cn, daysUntil, formatDate, inr, inrCompact, num } from "@/lib/utils";
 import { changeStage } from "@/server/actions";
 import type { OpportunityCard } from "@/server/queries";
@@ -49,6 +50,8 @@ type Props = {
   showingMine: boolean;
   /** True when the row cap was reached, so the screen can say so. */
   capped: boolean;
+  /** The server's guess at the layout, from the user agent. */
+  initialDesktop: boolean;
 };
 
 /** Cards drawn per stage column before "Show more". */
@@ -65,7 +68,12 @@ export function PipelineBoard({
   search,
   showingMine,
   capped,
+  initialDesktop,
 }: Props) {
+  // One layout and one view are built, not all four: the others used to be
+  // rendered and hidden with CSS, which on a phone in List view meant ~300
+  // cards and rows built for nothing.
+  const desktop = useIsDesktop(initialDesktop);
   const [stageIndex, setStageIndex] = React.useState(0);
   // A stage column is drawn a screenful at a time: 200 cards in Negotiation
   // is 200 cards the phone builds before you have scrolled to the third.
@@ -370,145 +378,150 @@ export function PipelineBoard({
       </div>
 
       {view === "list" ? (
-        <PipelineList opportunities={filtered} onStageTap={setTarget} />
+        <PipelineList
+          opportunities={filtered}
+          onStageTap={setTarget}
+          desktop={desktop}
+        />
       ) : null}
 
       {/* ---------------------------------------------------- mobile board */}
-      <div className={cn("md:hidden", view === "list" && "hidden")}>
-        <div
-          ref={tabsRef}
-          className="no-scrollbar -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1"
-        >
-          {visibleStages.map((s, i) => {
-            const count = byStage.get(s.value)?.length ?? 0;
-            const active = i === stageIndex;
-            return (
-              <button
-                key={s.value}
-                onClick={() => setStageIndex(i)}
-                className={cn(
-                  "flex h-10 shrink-0 items-center gap-2 rounded-full border px-4 text-[13px] font-semibold transition",
-                  active
-                    ? "border-transparent bg-ink text-white"
-                    : "border-line bg-white text-muted",
-                )}
-              >
-                <span className={cn("h-2 w-2 rounded-full", s.dot)} />
-                {s.label}
-                <span
+      {view === "board" && !desktop ? (
+        <div>
+          <div
+            ref={tabsRef}
+            className="no-scrollbar -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1"
+          >
+            {visibleStages.map((s, i) => {
+              const count = byStage.get(s.value)?.length ?? 0;
+              const active = i === stageIndex;
+              return (
+                <button
+                  key={s.value}
+                  onClick={() => setStageIndex(i)}
                   className={cn(
-                    "tabular rounded-full px-1.5 text-[11px]",
-                    active ? "bg-white/20" : "bg-canvas",
+                    "flex h-10 shrink-0 items-center gap-2 rounded-full border px-4 text-[13px] font-semibold transition",
+                    active
+                      ? "border-transparent bg-ink text-white"
+                      : "border-line bg-white text-muted",
                   )}
                 >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <StageSummary list={activeList} stage={activeStage.value} />
-
-        <div
-          className="space-y-2.5"
-          onTouchStart={onTouchStart}
-          onTouchEnd={onTouchEnd}
-        >
-          {activeList.length === 0 ? (
-            <EmptyState
-              title={`Nothing in ${activeStage.label}`}
-              body="Swipe left or right for another stage, or tap Add deal."
-            />
-          ) : (
-            <>
-              {activeList.slice(0, cardsShown).map((o) => (
-                <DealCard key={o.id} opp={o} onStageTap={setTarget} />
-              ))}
-              {activeList.length > cardsShown ? (
-                <button
-                  onClick={() => setCardsShown((n) => n + CARD_PAGE)}
-                  className="h-12 w-full rounded-2xl border border-line bg-white text-[14px] font-semibold text-brand-ink active:bg-canvas"
-                >
-                  Show more
-                  <span className="ml-1 font-normal text-muted">
-                    ({activeList.length - cardsShown} left)
+                  <span className={cn("h-2 w-2 rounded-full", s.dot)} />
+                  {s.label}
+                  <span
+                    className={cn(
+                      "tabular rounded-full px-1.5 text-[11px]",
+                      active ? "bg-white/20" : "bg-canvas",
+                    )}
+                  >
+                    {count}
                   </span>
                 </button>
-              ) : null}
-            </>
-          )}
+              );
+            })}
+          </div>
+
+          <StageSummary list={activeList} stage={activeStage.value} />
+
+          <div
+            className="space-y-2.5"
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+          >
+            {activeList.length === 0 ? (
+              <EmptyState
+                title={`Nothing in ${activeStage.label}`}
+                body="Swipe left or right for another stage, or tap Add deal."
+              />
+            ) : (
+              <>
+                {activeList.slice(0, cardsShown).map((o) => (
+                  <DealCard key={o.id} opp={o} onStageTap={setTarget} />
+                ))}
+                {activeList.length > cardsShown ? (
+                  <button
+                    onClick={() => setCardsShown((n) => n + CARD_PAGE)}
+                    className="h-12 w-full rounded-2xl border border-line bg-white text-[14px] font-semibold text-brand-ink active:bg-canvas"
+                  >
+                    Show more
+                    <span className="ml-1 font-normal text-muted">
+                      ({activeList.length - cardsShown} left)
+                    </span>
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* --------------------------------------------------- desktop board */}
-      <div className={cn("hidden md:block", view === "list" && "md:hidden")}>
-        <div className="no-scrollbar flex gap-4 overflow-x-auto pb-4">
-          {visibleStages.map((s) => {
-            const list = byStage.get(s.value) ?? [];
-            const value = list.reduce((sum, o) => sum + o.value, 0);
-            const fleet = list.reduce((sum, o) => sum + o.fleetSize, 0);
-            return (
-              <div
-                key={s.value}
-                className="flex w-72 shrink-0 flex-col rounded-2xl bg-canvas/80 p-2"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={async (e) => {
-                  const id = e.dataTransfer.getData("text/opp");
-                  const from = e.dataTransfer.getData("text/stage");
-                  if (!id || from === s.value) return;
-                  const opp = opportunities.find((o) => o.id === id);
-                  if (!opp) return;
-                  if (s.value === "closed_won" || s.value === "closed_lost") {
-                    setTarget({
-                      id: opp.id,
-                      name: opp.accountName,
-                      stage: opp.stage,
-                      value: opp.value,
-                      price: opp.price,
-                      fleetSize: opp.fleetSize,
-                    });
-                    return;
-                  }
-                  await changeStage(id, s.value);
-                  router.refresh();
-                }}
-              >
-                <div className="flex items-baseline justify-between px-2 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className={cn("h-2 w-2 rounded-full", s.dot)} />
-                    <h3 className="text-sm font-semibold">{s.label}</h3>
-                    <span className="tabular text-xs text-muted">{list.length}</span>
+      {view === "board" && desktop ? (
+        <div>
+          <div className="no-scrollbar flex gap-4 overflow-x-auto pb-4">
+            {visibleStages.map((s) => {
+              const list = byStage.get(s.value) ?? [];
+              const value = list.reduce((sum, o) => sum + o.value, 0);
+              const fleet = list.reduce((sum, o) => sum + o.fleetSize, 0);
+              return (
+                <div
+                  key={s.value}
+                  className="flex w-72 shrink-0 flex-col rounded-2xl bg-canvas/80 p-2"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={async (e) => {
+                    const id = e.dataTransfer.getData("text/opp");
+                    const from = e.dataTransfer.getData("text/stage");
+                    if (!id || from === s.value) return;
+                    const opp = opportunities.find((o) => o.id === id);
+                    if (!opp) return;
+                    if (s.value === "closed_won" || s.value === "closed_lost") {
+                      setTarget({
+                        id: opp.id,
+                        name: opp.accountName,
+                        stage: opp.stage,
+                        value: opp.value,
+                        price: opp.price,
+                        fleetSize: opp.fleetSize,
+                      });
+                      return;
+                    }
+                    await changeStage(id, s.value);
+                  }}
+                >
+                  <div className="flex items-baseline justify-between px-2 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className={cn("h-2 w-2 rounded-full", s.dot)} />
+                      <h3 className="text-sm font-semibold">{s.label}</h3>
+                      <span className="tabular text-xs text-muted">{list.length}</span>
+                    </div>
+                    <span className="tabular text-xs font-medium text-muted">
+                      {fleet ? `${fleet} veh` : ""}
+                    </span>
                   </div>
-                  <span className="tabular text-xs font-medium text-muted">
-                    {fleet ? `${fleet} veh` : ""}
-                  </span>
+                  <p className="tabular px-2 pb-2 text-xs text-muted">
+                    {value ? inrCompact(value) + " / mo" : "—"}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {/* Bounded like the phone column: a stage with hundreds of
+                        deals should not build hundreds of cards up front. */}
+                    {list.slice(0, cardsShown).map((o) => (
+                      <DealCard key={o.id} opp={o} onStageTap={setTarget} draggable />
+                    ))}
+                    {list.length > cardsShown ? (
+                      <button
+                        onClick={() => setCardsShown((n) => n + CARD_PAGE)}
+                        className="h-10 rounded-xl border border-line bg-white text-[13px] font-semibold text-brand-ink hover:bg-canvas"
+                      >
+                        Show {list.length - cardsShown} more
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <p className="tabular px-2 pb-2 text-xs text-muted">
-                  {value ? inrCompact(value) + " / mo" : "—"}
-                </p>
-                <div className="flex flex-col gap-2">
-                  {/* Bounded like the phone column. This whole desktop board
-                      is in the HTML on a phone too — it is hidden with CSS,
-                      not skipped — so an unbounded column here was hundreds of
-                      cards every phone downloaded and hydrated to never see. */}
-                  {list.slice(0, cardsShown).map((o) => (
-                    <DealCard key={o.id} opp={o} onStageTap={setTarget} draggable />
-                  ))}
-                  {list.length > cardsShown ? (
-                    <button
-                      onClick={() => setCardsShown((n) => n + CARD_PAGE)}
-                      className="h-10 rounded-xl border border-line bg-white text-[13px] font-semibold text-brand-ink hover:bg-canvas"
-                    >
-                      Show {list.length - cardsShown} more
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <PipelineFilterSheet
         open={filtering}

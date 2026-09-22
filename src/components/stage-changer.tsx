@@ -1,7 +1,6 @@
 "use client";
 
 import { Check } from "lucide-react";
-import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import {
@@ -15,7 +14,7 @@ import {
 } from "@/components/ui";
 import { COST_FIELDS, STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
-import { cn, inr, inrCompact } from "@/lib/utils";
+import { cn, inr, inrCompact, todayInIndia } from "@/lib/utils";
 import { changeStage, loadUnitEconomics } from "@/server/actions";
 
 export type StageTarget = {
@@ -54,7 +53,6 @@ export function StageChanger({
   lostReasons: { id: string; label: string }[];
   onClose: () => void;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [mode, setMode] = React.useState<
     "pick" | "won" | "lost" | "contracting"
@@ -64,7 +62,7 @@ export function StageChanger({
   // Ops plans against this. It is asked here because winning the deal is the
   // moment anyone actually knows it.
   const [deployDate, setDeployDate] = React.useState("");
-  const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const today = React.useMemo(() => todayInIndia(), []);
   const [revenue, setRevenue] = React.useState("");
   const [loadingSheet, setLoadingSheet] = React.useState(false);
   /** Cost lines showing an admin default rather than something typed here. */
@@ -169,7 +167,6 @@ export function StageChanger({
         return;
       }
       onClose();
-      router.refresh();
     });
   }
 
@@ -318,7 +315,7 @@ export function StageChanger({
             <Row label="Gross margin / month" value={inr(margin * fleet)} strong />
           </dl>
 
-          {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+          {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}
 
           <div className="flex gap-2">
             <Button type="button" variant="secondary" onClick={() => setMode("pick")}>
@@ -363,7 +360,7 @@ export function StageChanger({
             <PickedDate value={deployDate} />
           </Field>
 
-          {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+          {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}
 
           <div className="flex gap-2">
             <Button type="button" variant="secondary" onClick={() => setMode("pick")}>
@@ -397,7 +394,7 @@ export function StageChanger({
           <Field label="Anything worth remembering?">
             <Textarea name="lostReasonNote" placeholder="Optional" />
           </Field>
-          {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+          {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}
           <div className="flex gap-2">
             <Button type="button" variant="secondary" onClick={() => setMode("pick")}>
               Back

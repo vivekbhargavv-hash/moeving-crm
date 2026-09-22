@@ -113,6 +113,11 @@ export function DeploymentGridView({
                       <td key={grid.months[i]} className="p-1 text-center">
                         <button
                           disabled={!c.vehicles}
+                          aria-label={`${r.city}, ${monthLabelLong(grid.months[i]!)}: ${
+                            c.vehicles
+                              ? `${num(c.vehicles)} ${c.vehicles === 1 ? "vehicle" : "vehicles"} to deploy`
+                              : "nothing due"
+                          }`}
                           onClick={() =>
                             setExpanded(expanded === r.key ? null : r.key)
                           }

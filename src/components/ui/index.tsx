@@ -378,6 +378,19 @@ export function Segmented<T extends string>({
 /* ------------------------------------------------------------------- sheet */
 
 /**
+ * The sheets that are open, innermost last.
+ *
+ * A picker inside a sheet is a sheet inside a sheet. Only the innermost one
+ * may answer Escape — every open sheet used to listen, so Escape in the
+ * Vehicle picker closed the New deal sheet behind it too and lost the form —
+ * and the page gets its scrollbar back only when the last one closes.
+ */
+const sheetStack: symbol[] = [];
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
  * Bottom sheet on phones, centred dialog on desktop. Native <dialog>-free so
  * it behaves identically in iOS standalone PWA mode.
  *
@@ -386,15 +399,6 @@ export function Segmented<T extends string>({
  * calling requestSubmit() — silently does nothing on iOS Safari before 16,
  * which is exactly how a "nothing happens when I tap Create" bug is born.
  */
-/**
- * How many sheets are open.
- *
- * A picker inside a sheet is a sheet inside a sheet, and the inner one
- * closing would otherwise hand the page back its scrollbar while the outer
- * one is still covering it.
- */
-let openSheets = 0;
-
 export function Sheet({
   open,
   onClose,
@@ -402,6 +406,7 @@ export function Sheet({
   children,
   footer,
   action,
+  confirmDiscard,
 }: {
   open: boolean;
   onClose: () => void;
@@ -409,19 +414,71 @@ export function Sheet({
   children: React.ReactNode;
   footer?: React.ReactNode;
   action?: (formData: FormData) => void;
+  /**
+   * Set while the sheet holds typing that closing would throw away. Escape,
+   * the backdrop and × then ask first; a deliberate Cancel or a successful
+   * save calls `onClose` directly and is not asked.
+   */
+  confirmDiscard?: boolean;
 }) {
+  const panel = React.useRef<HTMLDivElement>(null);
+  // Read at the moment of closing, so the listener need not be re-bound
+  // every time the form's dirtiness changes.
+  const latest = React.useRef({ onClose, confirmDiscard });
+  latest.current = { onClose, confirmDiscard };
+
+  const requestClose = React.useCallback(() => {
+    const { onClose, confirmDiscard } = latest.current;
+    if (confirmDiscard && !window.confirm("Discard what you have entered?")) return;
+    onClose();
+  }, []);
+
   React.useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    openSheets += 1;
+    const id = Symbol("sheet");
+    sheetStack.push(id);
     document.body.style.overflow = "hidden";
+
+    // Focus moves into the sheet (unless a field already took it with
+    // autoFocus) and goes back to whatever opened it afterwards.
+    const opener = document.activeElement as HTMLElement | null;
+    if (!panel.current?.contains(document.activeElement)) {
+      panel.current?.focus({ preventScroll: true });
+    }
+
+    const onKey = (e: KeyboardEvent) => {
+      if (sheetStack[sheetStack.length - 1] !== id) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        requestClose();
+        return;
+      }
+      // Tab cycles inside the sheet rather than wandering into the page
+      // hidden behind it.
+      if (e.key === "Tab" && panel.current) {
+        const items = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+        if (!items.length) return;
+        const first = items[0]!;
+        const last = items[items.length - 1]!;
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || active === panel.current)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+
     return () => {
       document.removeEventListener("keydown", onKey);
-      openSheets -= 1;
-      if (openSheets === 0) document.body.style.overflow = "";
+      sheetStack.splice(sheetStack.indexOf(id), 1);
+      if (sheetStack.length === 0) document.body.style.overflow = "";
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open, requestClose]);
 
   if (!open) return null;
 
@@ -429,21 +486,25 @@ export function Sheet({
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
       <button
         aria-label="Close"
-        onClick={onClose}
+        tabIndex={-1}
+        onClick={requestClose}
         className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative w-full sm:max-w-lg max-h-[92dvh] flex flex-col bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl animate-[sheet_.18s_ease-out]"
+        tabIndex={-1}
+        className="relative w-full sm:max-w-lg max-h-[92dvh] flex flex-col bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl outline-none animate-[sheet_.18s_ease-out]"
       >
         <div className="shrink-0 px-5 pt-3 pb-3 border-b border-line">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line sm:hidden" />
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
             <button
-              onClick={onClose}
+              type="button"
+              onClick={requestClose}
               className="h-9 w-9 -mr-2 rounded-lg text-muted hover:bg-canvas text-xl leading-none"
               aria-label="Close"
             >

@@ -19,7 +19,7 @@ import {
 } from "@/components/ui";
 import type { LeadStatus } from "@/db/schema";
 import { OPERATING_DAYS } from "@/lib/constants";
-import { cn, formatDate, monthLabelShort, num, upcomingMonths } from "@/lib/utils";
+import { cn, formatDate, monthLabelShort, num, todayInIndia, upcomingMonths } from "@/lib/utils";
 import { actionLead, convertLead, createLead } from "@/server/actions";
 import type { LeadRow } from "@/server/queries";
 
@@ -320,7 +320,6 @@ function ActionSheet({
   mode: "qualified" | "not_qualified";
   onClose: () => void;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
   const [remarks, setRemarks] = React.useState(lead.remarks ?? "");
@@ -332,7 +331,6 @@ function ActionSheet({
       const result = await actionLead(lead.id, { status: mode, remarks, reason });
       if (!result.ok) return setError(result.error);
       onClose();
-      router.refresh();
     });
   }
 
@@ -376,7 +374,7 @@ function ActionSheet({
           </Field>
         ) : null}
         {error ? (
-          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
           </p>
         ) : null}
@@ -423,7 +421,6 @@ function ConvertSheet({
       const result = await convertLead(lead.id, formData);
       if (!result.ok) return setError(result.error);
       onClose();
-      router.refresh();
       router.push(`/opportunities/${result.data!.id}`);
     });
   }
@@ -540,7 +537,7 @@ function ConvertSheet({
         </div>
 
         {error ? (
-          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
           </p>
         ) : null}
@@ -551,10 +548,10 @@ function ConvertSheet({
 
 /** The desk writing down a call. Only the company and the date are required. */
 function LeadForm({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
-  const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [typed, setTyped] = React.useState(false);
+  const today = React.useMemo(() => todayInIndia(), []);
 
   function submit(formData: FormData) {
     setError(null);
@@ -562,7 +559,6 @@ function LeadForm({ onClose }: { onClose: () => void }) {
       const result = await createLead(formData);
       if (!result.ok) return setError(result.error);
       onClose();
-      router.refresh();
     });
   }
 
@@ -572,13 +568,14 @@ function LeadForm({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       title="New lead"
       action={submit}
+      confirmDiscard={typed && !pending}
       footer={
         <Button variant="brand" size="lg" className="w-full" disabled={pending}>
           {pending ? "Saving…" : "Save lead"}
         </Button>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-4" onInput={() => setTyped(true)}>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Date of enquiry">
             <Input type="date" name="enquiryDate" required defaultValue={today} />
@@ -634,7 +631,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
           />
         </Field>
         {error ? (
-          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
           </p>
         ) : null}

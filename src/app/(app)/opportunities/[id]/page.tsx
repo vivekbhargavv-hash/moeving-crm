@@ -12,7 +12,14 @@ import {
   DRIVER_TYPE_LABEL,
   STAGE_MAP,
 } from "@/lib/constants";
-import { cn, formatDate, inr, inrCompact, num } from "@/lib/utils";
+import {
+  cn,
+  formatDate,
+  formatDateTimeInIndia,
+  inr,
+  inrCompact,
+  num,
+} from "@/lib/utils";
 import { requireSales } from "@/server/auth";
 import { defaultsFor } from "@/lib/cost-defaults";
 import { getCostDefaults, getMasterData, getOpportunity } from "@/server/queries";
@@ -316,12 +323,7 @@ export default async function OpportunityPage({
                     </p>
                     <p className="text-xs text-muted">
                       {e.userName ?? "Someone"} ·{" "}
-                      {new Date(e.createdAt).toLocaleString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
+                      {formatDateTimeInIndia(e.createdAt)}
                     </p>
                   </div>
                 </li>

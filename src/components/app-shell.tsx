@@ -56,6 +56,13 @@ const NOC_NAV = [{ href: "/leads", label: "Leads", icon: PhoneCall }];
  */
 const PHONE_TABS = ["/leads", "/pipeline", "/deployments"];
 
+const ROLE_LABEL: Record<Session["role"], string> = {
+  admin: "Admin",
+  sales: "Deal Owner",
+  ops: "Operations",
+  noc: "NOC",
+};
+
 /** Page titles for the mobile header, so it never says "MoEVing" vaguely. */
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -191,18 +198,21 @@ export function AppShell({
             );
           })}
         </nav>
-        <button
-          onClick={() => setAddOpen(true)}
-          className="mt-4 flex h-11 items-center justify-center gap-2 rounded-xl bg-brand font-medium text-white hover:brightness-95"
-        >
-          <Plus size={18} /> New deal
-        </button>
+        {/* Same rule as the phone's tab bar: ops and NOC do not sell. */}
+        {isOps || isNoc ? null : (
+          <button
+            onClick={() => setAddOpen(true)}
+            className="mt-4 flex h-11 items-center justify-center gap-2 rounded-xl bg-brand font-medium text-white hover:brightness-95"
+          >
+            <Plus size={18} /> New deal
+          </button>
+        )}
         <div className="mt-auto flex items-center gap-3 rounded-xl px-3 py-2">
           <UserButton />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{session.name}</p>
             <p className="truncate text-xs text-muted">
-              {session.role === "admin" ? "Admin" : "Deal Owner"}
+              {ROLE_LABEL[session.role]}
             </p>
           </div>
         </div>
@@ -332,12 +342,16 @@ export function AppShell({
         </nav>
       </Sheet>
 
-      <QuickAdd
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        master={master}
-        session={session}
-      />
+      {/* Not even mounted for ops and NOC, so the ?new=1 deep link cannot
+          open it for them either. */}
+      {isOps || isNoc ? null : (
+        <QuickAdd
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+          master={master}
+          session={session}
+        />
+      )}
     </div>
   );
 }

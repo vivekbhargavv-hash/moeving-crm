@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Button, Field, Input, PickedDate, Sheet } from "@/components/ui";
-import { cn, inr } from "@/lib/utils";
+import { cn, inr, todayInIndia } from "@/lib/utils";
 import { createExpansion } from "@/server/actions";
 
 /**
@@ -48,7 +48,7 @@ export function ExpandDeal({
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
 
-  const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const today = React.useMemo(() => todayInIndia(), []);
   const fleetCount = Number(fleet || 0);
 
   React.useEffect(() => {
@@ -66,7 +66,6 @@ export function ExpandDeal({
         const result = await createExpansion(source.id, formData);
         if (!result.ok) return setError(result.error);
         setOpen(false);
-        router.refresh();
         router.push(`/opportunities/${result.data!.id}`);
       } catch {
         setError("Could not save that. Check your connection and try again.");
@@ -205,7 +204,7 @@ export function ExpandDeal({
           </p>
 
           {error ? (
-            <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
               {error}
             </p>
           ) : null}

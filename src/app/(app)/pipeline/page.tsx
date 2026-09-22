@@ -2,6 +2,7 @@ import { PipelineBoard } from "@/components/pipeline/board";
 import type { Filters } from "@/components/pipeline/filters";
 import type { SalesStage } from "@/db/schema";
 import { requireSales } from "@/server/auth";
+import { guessDesktop } from "@/server/device";
 import { getMasterData, listOpportunities } from "@/server/queries";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export default async function PipelinePage({
     vehicleTypeIds: list(sp.vehicle),
   };
 
-  const [opportunities, master] = await Promise.all([
+  const [opportunities, master, initialDesktop] = await Promise.all([
     listOpportunities({
       ...filters,
       search,
@@ -53,6 +54,7 @@ export default async function PipelinePage({
       limit: 250,
     }),
     getMasterData(),
+    guessDesktop(),
   ]);
 
   return (
@@ -75,6 +77,7 @@ export default async function PipelinePage({
         search={search}
         showingMine={mine}
         capped={opportunities.length >= 250}
+        initialDesktop={initialDesktop}
       />
     </>
   );

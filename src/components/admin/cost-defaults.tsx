@@ -153,7 +153,7 @@ export function CostDefaultsEditor({
         <div className="flex items-center gap-3">
           <p className="min-w-0 flex-1 text-[13px] text-muted">
             {error ? (
-              <span className="font-medium text-rose-700">{error}</span>
+              <span role="alert" className="font-medium text-rose-700">{error}</span>
             ) : state === "saved" ? (
               <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
                 <Check size={15} /> Standard rates saved
@@ -254,7 +254,7 @@ function ApplyToDeals({ disabled }: { disabled: boolean }) {
           <p className="mt-2 text-[12.5px] font-medium text-emerald-700">{result}</p>
         ) : null}
         {error ? (
-          <p className="mt-2 text-[12.5px] font-medium text-rose-700">{error}</p>
+          <p role="alert" className="mt-2 text-[12.5px] font-medium text-rose-700">{error}</p>
         ) : null}
       </div>
     </Card>

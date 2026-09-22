@@ -177,6 +177,13 @@ export function ForecastGrid({
                     <td key={months[i]} className="p-1 text-center">
                       <button
                         disabled={!c.count}
+                        // A bare "12" says nothing without the row and column
+                        // a sighted reader gets from the grid around it.
+                        aria-label={`${r.city}, ${monthLabelLong(months[i]!)}: ${
+                          c.count
+                            ? `${show(c)} ${metric === "fleet" ? "vehicles" : "a month"}, ${c.count} ${c.count === 1 ? "deal" : "deals"}`
+                            : "nothing closing"
+                        }`}
                         onClick={() =>
                           setDrill({ city: r.city, cityId: r.cityId, month: months[i]! })
                         }

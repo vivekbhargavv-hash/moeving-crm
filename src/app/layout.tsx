@@ -28,7 +28,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // No maximumScale: pinch-zoom is how people with low vision read small
+  // text. Inputs are 16px (globals.css), so iOS does not zoom on focus anyway.
   viewportFit: "cover",
   themeColor: "#ffffff",
 };

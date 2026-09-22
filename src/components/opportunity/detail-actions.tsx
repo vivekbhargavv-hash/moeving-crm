@@ -107,7 +107,6 @@ export function DetailActions({
         const result = await updateOpportunity(opp.id, formData);
         if (!result.ok) return setError(result.error);
         setEditing(false);
-        router.refresh();
       } catch {
         setError("Could not save that. Check your connection and try again.");
       }
@@ -206,7 +205,7 @@ export function DetailActions({
             pipeline, but the link back to this one is lost.
           </p>
         ) : null}
-        {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
+        {error ? <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p> : null}
         <div className="mt-4 flex gap-2">
           <Button
             type="button"
@@ -406,7 +405,7 @@ export function DetailActions({
             <Textarea name="notes" defaultValue={opp.notes ?? ""} />
           </Field>
           {error ? (
-            <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
               {error}
             </p>
           ) : null}

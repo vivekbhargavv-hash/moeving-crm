@@ -120,7 +120,7 @@ export function MasterDataEditor({
           {list.length === 0 ? (
             <p className="text-sm text-muted">Nothing yet.</p>
           ) : null}
-          {error ? <p className="mt-2 text-sm text-rose-700">{error}</p> : null}
+          {error ? <p role="alert" className="mt-2 text-sm text-rose-700">{error}</p> : null}
         </div>
       ) : (
         <div className="flex flex-wrap gap-2 px-4 pb-4">
@@ -163,7 +163,7 @@ export function MasterDataEditor({
               Show in dropdowns
             </label>
           ) : null}
-          {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+          {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}
           <Button variant="brand" size="lg" className="w-full" disabled={pending}>
             {pending ? "Saving…" : "Save"}
           </Button>

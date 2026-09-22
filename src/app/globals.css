@@ -81,10 +81,19 @@
   padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
 }
 
+/*
+ * Hidden only where a finger does the scrolling. With a mouse the scrollbar
+ * is the only way sideways through the kanban board and the month grids —
+ * without it their right-hand columns were out of reach — so there it stays,
+ * just thin.
+ */
 @utility no-scrollbar {
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
+  scrollbar-width: thin;
+  @media (hover: none) and (pointer: coarse) {
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+      display: none;
+    }
   }
 }
 

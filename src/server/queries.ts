@@ -48,6 +48,8 @@ export type OpportunityCard = {
   value: number;
   driverType: string | null;
   chargingScope: string | null;
+  /** What one truck costs to run for a month — the figure the pipeline shows. */
+  costPerVehicle: number | null;
   totalCost: number | null;
   /** Deal-level, computed by Postgres: per-vehicle figure x fleet. */
   totalRevenue: number | null;
@@ -147,6 +149,7 @@ const cardColumns = {
   price: opportunities.price,
   driverType: opportunities.driverType,
   chargingScope: opportunities.chargingScope,
+  costPerVehicle: opportunities.costPerVehicle,
   totalCost: opportunities.totalCost,
   totalRevenue: opportunities.totalRevenue,
   grossMargin: opportunities.grossMargin,

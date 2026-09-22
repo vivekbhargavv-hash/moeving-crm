@@ -13,7 +13,7 @@ import {
   DRIVER_TYPE_LABEL,
   STAGE_MAP,
 } from "@/lib/constants";
-import { cn, formatDate, inr, inrCompact, num } from "@/lib/utils";
+import { cn, formatDate, inr, num } from "@/lib/utils";
 import type { OpportunityCard } from "@/server/queries";
 
 type SortKey =
@@ -23,8 +23,7 @@ type SortKey =
   | "vehicleType"
   | "fleetSize"
   | "price"
-  | "value"
-  | "totalCost"
+  | "costPerVehicle"
   | "marginPct"
   | "ownerName"
   | "expectedCloseDate"
@@ -49,16 +48,19 @@ const COLUMNS: {
   { key: "city", label: "City" },
   { key: "vehicleType", label: "Vehicle" },
   { key: "fleetSize", label: "Fleet", align: "right" },
-  // The rate one truck earns in a month is how this business thinks about a
-  // deal — "what does a truck earn" — so it is the money column that is always
-  // on screen. Deal value is that times the fleet, and both halves are right
-  // here, so it steps behind the breakpoint instead.
-  { key: "price", label: "Price / veh / mo", align: "right" },
-  { key: "value", label: "Value / mo", align: "right", wide: true },
-  // Never behind a breakpoint. These two hid below `lg` and then scrolled off
-  // the right edge above it, so on a laptop the pipeline's margin was simply
-  // not on the screen.
-  { key: "totalCost", label: "Cost", align: "right" },
+  /*
+   * Everything on this screen is PER VEHICLE PER MONTH — what a truck earns,
+   * what it costs, and the margin between them. That is how the business
+   * thinks about a deal, and the three figures are directly comparable.
+   *
+   * The deal-level numbers (monthly value, whole-fleet cost) are deliberately
+   * NOT here. They are the same figures times the fleet, they are an order of
+   * magnitude larger, and printing both sizes side by side in one row invites
+   * exactly the misreading it looks like it is preventing. They live on the
+   * deal detail page, where one deal has the room to show both.
+   */
+  { key: "price", label: "Price / veh", align: "right" },
+  { key: "costPerVehicle", label: "Cost / veh", align: "right" },
   { key: "marginPct", label: "Margin", align: "right" },
   { key: "ownerName", label: "Deal Owner", wide: true },
   { key: "expectedCloseDate", label: "Closing", align: "right" },
@@ -71,7 +73,6 @@ const MOBILE_SORTS: { key: SortKey; label: string }[] = [
   { key: "updatedAt", label: "Updated" },
   { key: "expectedCloseDate", label: "Closing" },
   { key: "price", label: "Price" },
-  { key: "value", label: "Value" },
   { key: "fleetSize", label: "Fleet" },
   { key: "accountName", label: "Customer" },
   { key: "stage", label: "Stage" },
@@ -95,10 +96,9 @@ function RepeatMark() {
 /** Dates and money read best largest-first; names read best A-Z. */
 const DESC_FIRST: SortKey[] = [
   "updatedAt",
-  "value",
   "fleetSize",
   "price",
-  "totalCost",
+  "costPerVehicle",
   "marginPct",
 ];
 
@@ -151,8 +151,7 @@ export function PipelineList({
           return stageOrder[o.stage] ?? 99;
         case "fleetSize":
         case "price":
-        case "value":
-        case "totalCost":
+        case "costPerVehicle":
           return o[sort.key] ?? 0;
         case "marginPct":
           // Only a won deal has a margin. Undefined sorts to the bottom either
@@ -187,7 +186,6 @@ export function PipelineList({
   const totals = rows.reduce(
     (acc, o) => ({
       fleet: acc.fleet + o.fleetSize,
-      value: acc.value + o.value,
       // Blended margin is margin over revenue across every costed deal — won
       // or still open, since a deal can be costed at any stage — not the
       // average of their percentages: a 60% margin on one truck must not
@@ -195,9 +193,8 @@ export function PipelineList({
       // rather than dragging the blend towards zero.
       costedRevenue: acc.costedRevenue + (o.totalRevenue ?? 0),
       costedMargin: acc.costedMargin + (o.grossMargin ?? 0),
-      costedCost: acc.costedCost + (o.totalCost ?? 0),
     }),
-    { fleet: 0, value: 0, costedRevenue: 0, costedMargin: 0, costedCost: 0 },
+    { fleet: 0, costedRevenue: 0, costedMargin: 0 },
   );
   const blendedMarginPct = totals.costedRevenue
     ? (totals.costedMargin / totals.costedRevenue) * 100
@@ -246,41 +243,25 @@ export function PipelineList({
           })}
         </div>
 
-        <div className="mb-2 flex items-center gap-2 px-1 text-[13px]">
+        {/* How much pipeline there is, and how healthy it is. Deliberately no
+            rupee total: the money on this screen is per vehicle per month, and
+            a deal-level figure sitting beside it would be read as the same
+            kind of number. Blended margin is the honest aggregate. */}
+        <div className="mb-3 flex items-center gap-2 px-1 text-[13px]">
           <span className="font-semibold">{rows.length} deals</span>
           <span className="text-muted">· {num(totals.fleet)} vehicles</span>
-          <span className="tabular ml-auto font-semibold">
-            {inrCompact(totals.value)}
-            <span className="font-normal text-muted"> total / mo</span>
-          </span>
-        </div>
-
-        {/* Cost and margin were desktop-only, which meant a phone — the screen
-            this app is built for first — could not see either. They are shown
-            across whatever has been costed, blended rather than averaged. */}
-        {totals.costedRevenue ? (
-          <div className="mb-3 flex items-center gap-2 rounded-xl bg-canvas px-3 py-2 text-[12.5px]">
-            <span className="text-muted">Costed deals</span>
-            <span className="tabular ml-auto">
-              cost{" "}
-              <span className="font-semibold text-ink">
-                {inrCompact(totals.costedCost)}
-              </span>
-            </span>
+          {blendedMarginPct === null ? null : (
             <span
               className={cn(
-                "tabular font-semibold",
-                blendedMarginPct !== null && blendedMarginPct < 0
-                  ? "text-rose-700"
-                  : "text-emerald-700",
+                "tabular ml-auto font-semibold",
+                blendedMarginPct < 0 ? "text-rose-700" : "text-emerald-700",
               )}
             >
-              {blendedMarginPct === null
-                ? "—"
-                : `${blendedMarginPct.toFixed(1)}% margin`}
+              {blendedMarginPct.toFixed(1)}%
+              <span className="font-normal text-muted"> blended margin</span>
             </span>
-          </div>
-        ) : null}
+          )}
+        </div>
 
         <ul className="space-y-2">
           {rows.slice(0, shown).map((o) => {
@@ -339,12 +320,12 @@ export function PipelineList({
                         {stage.label}
                       </Badge>
                     </button>
-                    {/* A costed deal says what it costs and what it earns.
-                        An uncosted one says nothing rather than printing a
-                        zero that reads as break-even. */}
-                    {o.totalCost ? (
+                    {/* A costed deal says what one truck costs to run. An
+                        uncosted one says nothing rather than printing a zero
+                        that reads as break-even. */}
+                    {o.costPerVehicle ? (
                       <span className="tabular text-[12px] text-muted">
-                        cost {inrCompact(o.totalCost)}
+                        cost {inr(o.costPerVehicle)}
                       </span>
                     ) : null}
                     {o.marginPct === null ? null : (
@@ -476,14 +457,11 @@ export function PipelineList({
                 <td className="tabular px-3 py-2.5 text-right font-semibold">
                   {o.price ? inr(o.price) : "—"}
                 </td>
-                <td className="tabular hidden px-3 py-2.5 text-right text-muted 2xl:table-cell">
-                  {o.value ? inrCompact(o.value) : "—"}
-                </td>
                 <td className="tabular px-3 py-2.5 text-right text-muted">
                   {/* Any costed deal, not only a won one: the sheet can be
                       filled in at any stage now, and a deal nobody has costed
                       is the one that reads as a dash. */}
-                  {o.totalCost ? inrCompact(o.totalCost) : "—"}
+                  {o.costPerVehicle ? inr(o.costPerVehicle) : "—"}
                 </td>
                 <td
                   className={cn(
@@ -523,17 +501,12 @@ export function PipelineList({
             <td colSpan={3} />
             {/* Fleet */}
             <td className="tabular px-3 py-2.5 text-right">{num(totals.fleet)}</td>
-            {/* Price / veh / mo — adding up per-vehicle rates across deals
-                gives a number that means nothing, so there is no total. */}
+            {/* Price and Cost are per-vehicle rates. Adding them up across
+                deals gives a number that means nothing, so neither has a
+                total — the one honest aggregate of the two is the blended
+                margin beside them. */}
             <td />
-            {/* Value / mo */}
-            <td className="tabular hidden px-3 py-2.5 text-right 2xl:table-cell">
-              {inrCompact(totals.value)}
-            </td>
-            {/* Total cost, across the deals anybody has costed. */}
-            <td className="tabular px-3 py-2.5 text-right">
-              {totals.costedCost ? inrCompact(totals.costedCost) : ""}
-            </td>
+            <td />
             {/* Margin % — blended, not an average of percentages. */}
             <td className="tabular px-3 py-2.5 text-right">
               {blendedMarginPct === null ? "" : `${blendedMarginPct.toFixed(1)}%`}

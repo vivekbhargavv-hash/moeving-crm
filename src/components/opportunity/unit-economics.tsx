@@ -173,6 +173,29 @@ export function UnitEconomics({
                     : "text-emerald-700"
               }
             />
+            {/*
+              * The deal-level figures live here and nowhere else.
+              *
+              * The Pipeline is per vehicle per month throughout, because that
+              * is what one deal is comparable with another on. The whole-fleet
+              * numbers are the same figures times the fleet — an order of
+              * magnitude larger — and one deal's page is the one place with
+              * the room to show both without them being confused.
+              */}
+            <div className="my-2 border-t border-line" />
+            <p className="pb-1 text-[12px] font-medium uppercase tracking-wide text-muted">
+              Whole deal × {fleetSize} {fleetSize === 1 ? "vehicle" : "vehicles"}
+            </p>
+            <Row label="Monthly value" value={inr((revenue ?? 0) * fleetSize)} />
+            <Row label="Monthly cost" value={inr(costPerVehicle * fleetSize)} muted />
+            <Row
+              label="Gross margin / month"
+              value={inr(marginPerVehicle * fleetSize)}
+              strong
+              tone={
+                marginPerVehicle < 0 ? "text-rose-700" : "text-emerald-700"
+              }
+            />
             {drifted.length > 0 ? (
               <p className="mt-3 text-[12.5px] text-muted">
                 {drifted.map((k) => LABELS[k]).join(", ")}{" "}

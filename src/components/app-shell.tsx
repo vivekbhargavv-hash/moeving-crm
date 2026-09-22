@@ -16,7 +16,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import { QuickAdd } from "@/components/quick-add";
-import type { MasterData } from "@/components/quick-add";
+import type { QuickAddData } from "@/components/quick-add";
+import { loadQuickAddData } from "@/server/actions";
 import type { Session } from "@/server/auth";
 import { cn } from "@/lib/utils";
 
@@ -51,11 +52,9 @@ const TITLES: Record<string, string> = {
 
 export function AppShell({
   session,
-  master,
   children,
 }: {
   session: Session;
-  master: MasterData;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -64,6 +63,27 @@ export function AppShell({
   const [addOpen, setAddOpen] = React.useState(false);
 
   const [toast, setToast] = React.useState<string | null>(null);
+  const [master, setMaster] = React.useState<QuickAddData | null>(null);
+
+  /**
+   * The Add deal sheet's data is fetched the first time it is opened, not
+   * carried in the shell of every page. Once fetched it is kept for the rest
+   * of the visit, so the sheet only ever waits once.
+   */
+  React.useEffect(() => {
+    if (!addOpen || master) return;
+    let live = true;
+    loadQuickAddData()
+      .then((result) => {
+        if (live && result.ok && result.data) setMaster(result.data);
+      })
+      .catch(() => {
+        /* The sheet keeps its frame; pressing + again retries. */
+      });
+    return () => {
+      live = false;
+    };
+  }, [addOpen, master]);
 
   // /pipeline?new=1 — the PWA "New deal" shortcut and any deep link.
   // /pipeline?created=N — confirmation after creating several deals at once.

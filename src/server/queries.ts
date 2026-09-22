@@ -269,8 +269,7 @@ export async function getOpportunity(id: string) {
 export const getMasterData = cache(async () => {
   const session = await requireSession();
   const org = session.organizationId;
-  const [cityRows, vehicleRows, reasonRows, userRows, accountRows] =
-    await Promise.all([
+  const [cityRows, vehicleRows, reasonRows, userRows] = await Promise.all([
       db
         .select()
         .from(cities)
@@ -295,11 +294,6 @@ export const getMasterData = cache(async () => {
         .from(users)
         .where(and(eq(users.organizationId, org), eq(users.isActive, true)))
         .orderBy(asc(users.name)),
-      db
-        .select({ id: accounts.id, name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.organizationId, org))
-        .orderBy(asc(accounts.name)),
     ]);
 
   return {
@@ -307,8 +301,33 @@ export const getMasterData = cache(async () => {
     vehicleTypes: vehicleRows,
     lostReasons: reasonRows,
     users: userRows,
-    accounts: accountRows,
   };
+});
+
+/**
+ * Everything the Add deal sheet needs, including the customer list.
+ *
+ * Separate from `getMasterData()` because the account list is read by exactly
+ * one control — the customer datalist — and it used to be fetched, serialised
+ * and shipped inside the app shell on every single page view, whether or not
+ * anybody opened the sheet. It grows with the business; the pages that never
+ * show it should not carry it.
+ */
+export type QuickAddData = Awaited<ReturnType<typeof getMasterData>> & {
+  accounts: { id: string; name: string }[];
+};
+
+export const getQuickAddData = cache(async (): Promise<QuickAddData> => {
+  const session = await requireSession();
+  const [master, accountRows] = await Promise.all([
+    getMasterData(),
+    db
+      .select({ id: accounts.id, name: accounts.name })
+      .from(accounts)
+      .where(eq(accounts.organizationId, session.organizationId))
+      .orderBy(asc(accounts.name)),
+  ]);
+  return { ...master, accounts: accountRows };
 });
 
 export const getStageProbabilities = cache(async (): Promise<

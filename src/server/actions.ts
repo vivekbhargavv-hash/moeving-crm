@@ -17,6 +17,7 @@ import {
 } from "@/db/schema";
 import type { SalesStage } from "@/db/schema";
 import { requireAdmin, requireSession } from "@/server/auth";
+import { getQuickAddData, type QuickAddData } from "@/server/queries";
 import { sendInvitation } from "@/server/invites";
 import {
   calendarDate,
@@ -472,6 +473,22 @@ export async function recordDeployment(
   revalidatePath("/deployments");
   revalidatePath(`/opportunities/${id}`);
   return { ok: true };
+}
+
+/* ------------------------------------------------------------- quick add */
+
+/**
+ * What the Add deal sheet needs, fetched when it opens.
+ *
+ * The app shell used to carry this on every page view so the sheet could open
+ * with no wait. That put four master-data queries and the whole customer list
+ * into the payload of every navigation, for a sheet most page views never
+ * open. It is one request now, made the first time somebody presses +, and
+ * the client keeps it for the rest of the visit.
+ */
+export async function loadQuickAddData(): Promise<ActionResult<QuickAddData>> {
+  await requireSession();
+  return { ok: true, data: await getQuickAddData() };
 }
 
 /* --------------------------------------------------------- unit economics */

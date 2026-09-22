@@ -15,6 +15,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import { CHARGING_ICONS, DRIVER_ICONS } from "@/components/choice-icons";
+import { Shimmer } from "@/components/skeletons";
 import { CHARGING_SCOPES, DRIVER_TYPES } from "@/lib/constants";
 import {
   cn,
@@ -31,6 +32,14 @@ export type MasterData = {
   vehicleTypes: { id: string; name: string }[];
   lostReasons: { id: string; label: string }[];
   users: { id: string; name: string; role: string }[];
+};
+
+/**
+ * Master data plus the customer list, which only this sheet reads and which
+ * the shell therefore fetches when the sheet is first opened rather than on
+ * every page view.
+ */
+export type QuickAddData = MasterData & {
   accounts: { id: string; name: string }[];
 };
 
@@ -50,7 +59,7 @@ export function QuickAdd({
 }: {
   open: boolean;
   onClose: () => void;
-  master: MasterData;
+  master: QuickAddData | null;
   session: Session;
 }) {
   const router = useRouter();
@@ -112,6 +121,23 @@ export function QuickAdd({
   function toggleCity(id: string) {
     setCityIds((ids) =>
       ids.includes(id) ? ids.filter((c) => c !== id) : [...ids, id],
+    );
+  }
+
+  // The sheet's own data arrives on first open. Until it does the frame is
+  // here, the right size, rather than a sheet that refuses to open.
+  if (!master) {
+    return (
+      <Sheet open={open} onClose={onClose} title="New deal">
+        <div className="space-y-4">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i}>
+              <Shimmer className="h-3 w-24" />
+              <Shimmer className="mt-2 h-12 w-full rounded-xl" />
+            </div>
+          ))}
+        </div>
+      </Sheet>
     );
   }
 

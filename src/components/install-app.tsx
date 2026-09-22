@@ -11,10 +11,14 @@ import { Button } from "@/components/ui";
  * Android and desktop Chrome fire `beforeinstallprompt`, which can be saved
  * and replayed from a tap — a real one-press install.
  *
- * iOS Safari has no equivalent API and never will; Apple only offers Share →
- * Add to Home Screen. So there are genuinely two different things to render,
- * and the honest version of this screen shows instructions rather than a
- * button that cannot work.
+ * Nobody else does. iOS Safari has no equivalent API and never will; Apple
+ * only offers Share → Add to Home Screen. Firefox does not implement the
+ * event either, on any platform — and Mozilla has said it will not — though
+ * Firefox for Android can still install this from its own menu.
+ *
+ * So a browser with no button is the normal case, not a failure, and each of
+ * these gets the steps that actually work there instead of one message that
+ * reads like something went wrong.
  */
 
 type InstallPromptEvent = Event & {
@@ -28,6 +32,7 @@ export function InstallApp() {
   );
   const [installed, setInstalled] = React.useState(false);
   const [isIos, setIsIos] = React.useState(false);
+  const [firefox, setFirefox] = React.useState<null | "android" | "other">(null);
   const [dismissed, setDismissed] = React.useState(false);
 
   React.useEffect(() => {
@@ -44,6 +49,13 @@ export function InstallApp() {
         /ipad/i.test(ua) ||
         (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1),
     );
+
+    // `fxios` is Firefox on iOS, which is Safari underneath and cannot install
+    // anything — the iOS branch below already tells that story, and it is
+    // checked first, so only real Gecko reaches the Firefox branch.
+    if (/firefox|fxios/i.test(ua)) {
+      setFirefox(/android/i.test(ua) ? "android" : "other");
+    }
 
     function onPrompt(e: Event) {
       // Chrome shows its own mini-infobar unless this is prevented; the point
@@ -116,6 +128,47 @@ export function InstallApp() {
         </ol>
         <p className="mt-3 text-[13px] text-muted">
           It has to be Safari — Chrome on iPhone cannot add to the home screen.
+        </p>
+      </div>
+    );
+  }
+
+  if (firefox === "android") {
+    return (
+      <div>
+        <p className="text-sm">
+          Firefox can install this, but it does not offer a button for a page
+          to press — so it is two taps in Firefox&apos;s own menu:
+        </p>
+        <ol className="mt-3 space-y-2.5 text-sm">
+          <Step n={1}>
+            Tap <strong>⋮</strong> at the edge of the Firefox toolbar.
+          </Step>
+          <Step n={2}>
+            Tap <Plus size={15} className="inline align-[-2px]" />{" "}
+            <strong>Install</strong> — older versions call it{" "}
+            <strong>Add app to Home screen</strong>, under <strong>More</strong>.
+          </Step>
+        </ol>
+        <p className="mt-3 text-[13px] text-muted">
+          Chrome does the same thing with one tap here, if you would rather use
+          it.
+        </p>
+      </div>
+    );
+  }
+
+  if (firefox === "other") {
+    return (
+      <div>
+        <p className="text-sm">
+          Firefox on a computer cannot install web apps, so there is nothing
+          for this screen to offer.
+        </p>
+        <p className="mt-2 text-[13px] text-muted">
+          Open Good Deal in <strong>Chrome</strong> or <strong>Edge</strong> and
+          use the install icon at the right-hand end of the address bar. On a
+          phone, Firefox for Android can install it from its own ⋮ menu.
         </p>
       </div>
     );

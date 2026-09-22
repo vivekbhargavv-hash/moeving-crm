@@ -1,6 +1,7 @@
 import { BarList, Funnel } from "@/components/charts/bars";
 import { Card, CardHeader } from "@/components/ui-server";
 import { STAGE_MAP } from "@/lib/constants";
+import { parsePeriod } from "@/lib/dashboard";
 import { cn, inrCompact, num } from "@/lib/utils";
 import { requireSales } from "@/server/auth";
 import { getDashboard, getMasterData, type OpportunityFilters } from "@/server/queries";
@@ -24,11 +25,12 @@ export default async function DashboardPage({
     ownerUserId: one("spoc"),
     vehicleTypeId: one("vehicle"),
   };
+  const period = parsePeriod(one("period"));
 
   const [, data, master] = await Promise.all([
     // Ops has no business on the dashboard; it is revenue and margin.
     requireSales(),
-    getDashboard(filters),
+    getDashboard(filters, period),
     getMasterData(),
   ]);
   const { kpis } = data;
@@ -44,6 +46,7 @@ export default async function DashboardPage({
 
       <DashboardFilters
         filters={filters}
+        period={period}
         options={{
           cities: master.cities,
           vehicleTypes: master.vehicleTypes,

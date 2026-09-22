@@ -1,7 +1,7 @@
-import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { BackLink } from "@/components/back-link";
 import { DetailActions } from "@/components/opportunity/detail-actions";
 import { ExpandDeal } from "@/components/opportunity/expand-deal";
 import { NoteBox } from "@/components/opportunity/note-box";
@@ -12,7 +12,14 @@ import {
   DRIVER_TYPE_LABEL,
   STAGE_MAP,
 } from "@/lib/constants";
-import { cn, formatDate, inr, inrCompact, num } from "@/lib/utils";
+import {
+  cn,
+  formatDate,
+  formatDateTimeInIndia,
+  inr,
+  inrCompact,
+  num,
+} from "@/lib/utils";
 import { requireSales } from "@/server/auth";
 import { defaultsFor } from "@/lib/cost-defaults";
 import { getCostDefaults, getMasterData, getOpportunity } from "@/server/queries";
@@ -50,12 +57,7 @@ export default async function OpportunityPage({
 
   return (
     <div className="mx-auto max-w-3xl">
-      <Link
-        href="/pipeline"
-        className="mb-2 inline-flex h-9 items-center gap-1 pr-3 text-[15px] font-medium text-brand-ink active:opacity-70"
-      >
-        <ArrowLeft size={18} /> Pipeline
-      </Link>
+      <BackLink fallbackHref="/pipeline" fallbackLabel="Pipeline" />
 
       <div className="mb-3 overflow-hidden rounded-2xl border border-line bg-white">
         <span className={cn("block h-1", stage.dot)} aria-hidden="true" />
@@ -316,12 +318,7 @@ export default async function OpportunityPage({
                     </p>
                     <p className="text-xs text-muted">
                       {e.userName ?? "Someone"} ·{" "}
-                      {new Date(e.createdAt).toLocaleString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
+                      {formatDateTimeInIndia(e.createdAt)}
                     </p>
                   </div>
                 </li>

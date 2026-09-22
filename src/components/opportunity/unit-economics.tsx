@@ -1,13 +1,13 @@
 "use client";
 
 import { Calculator, Pencil } from "lucide-react";
-import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Button, Field, Input, Sheet } from "@/components/ui";
 import { Card, CardHeader } from "@/components/ui-server";
 import { COST_FIELDS } from "@/lib/constants";
 import { driftedFrom, type CostSuggestions } from "@/lib/cost-defaults";
+import { showToast } from "@/lib/toast";
 import { cn, inr } from "@/lib/utils";
 import { saveUnitEconomics } from "@/server/actions";
 import type { EconomicsSheet } from "@/server/actions";
@@ -42,7 +42,6 @@ export function UnitEconomics({
   /** The admin's standard rates for this deal's vehicle and contract. */
   defaults: CostSuggestions;
 }) {
-  const router = useRouter();
   const [editing, setEditing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
@@ -103,8 +102,8 @@ export function UnitEconomics({
       try {
         const result = await saveUnitEconomics(id, formData);
         if (!result.ok) return setError(result.error);
+        showToast("Cost sheet saved");
         setEditing(false);
-        router.refresh();
       } catch {
         setError("Could not save that. Check your connection and try again.");
       }
@@ -327,7 +326,7 @@ export function UnitEconomics({
           )}
 
           {error ? (
-            <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
               {error}
             </p>
           ) : null}

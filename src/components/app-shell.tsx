@@ -22,6 +22,8 @@ import type { QuickAddData } from "@/components/quick-add";
 import { Sheet } from "@/components/ui";
 import { loadQuickAddData } from "@/server/actions";
 import type { Session } from "@/server/auth";
+import { recordPage } from "@/lib/nav-history";
+import { onToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 /**
@@ -56,6 +58,13 @@ const NOC_NAV = [{ href: "/leads", label: "Leads", icon: PhoneCall }];
  */
 const PHONE_TABS = ["/leads", "/pipeline", "/deployments"];
 
+const ROLE_LABEL: Record<Session["role"], string> = {
+  admin: "Admin",
+  sales: "Deal Owner",
+  ops: "Operations",
+  noc: "NOC",
+};
+
 /** Page titles for the mobile header, so it never says "MoEVing" vaguely. */
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -83,7 +92,14 @@ export function AppShell({
   const [addOpen, setAddOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
 
-  const [toast, setToast] = React.useState<string | null>(null);
+  // Keyed, so the same message twice in a row still restarts its timer.
+  const [toast, setToast] = React.useState<{ text: string; key: number } | null>(
+    null,
+  );
+  const say = React.useCallback(
+    (text: string) => setToast({ text, key: Date.now() }),
+    [],
+  );
   const [master, setMaster] = React.useState<QuickAddData | null>(null);
 
   /**
@@ -115,10 +131,18 @@ export function AppShell({
     }
     const created = Number(params.get("created"));
     if (created > 0) {
-      setToast(`${created} deals created`);
+      say(`${created} deals created`);
       router.replace(pathname);
     }
-  }, [params, pathname, router]);
+  }, [params, pathname, router, say]);
+
+  React.useEffect(() => onToast(say), [say]);
+
+  // Remembered for the back link on a deal's page.
+  const query = params.toString();
+  React.useEffect(() => {
+    recordPage(query ? `${pathname}?${query}` : pathname);
+  }, [pathname, query]);
 
   React.useEffect(() => {
     if (!toast) return;
@@ -191,18 +215,21 @@ export function AppShell({
             );
           })}
         </nav>
-        <button
-          onClick={() => setAddOpen(true)}
-          className="mt-4 flex h-11 items-center justify-center gap-2 rounded-xl bg-brand font-medium text-white hover:brightness-95"
-        >
-          <Plus size={18} /> New deal
-        </button>
+        {/* Same rule as the phone's tab bar: ops and NOC do not sell. */}
+        {isOps || isNoc ? null : (
+          <button
+            onClick={() => setAddOpen(true)}
+            className="mt-4 flex h-11 items-center justify-center gap-2 rounded-xl bg-brand font-medium text-white hover:brightness-95"
+          >
+            <Plus size={18} /> New deal
+          </button>
+        )}
         <div className="mt-auto flex items-center gap-3 rounded-xl px-3 py-2">
           <UserButton />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{session.name}</p>
             <p className="truncate text-xs text-muted">
-              {session.role === "admin" ? "Admin" : "Deal Owner"}
+              {ROLE_LABEL[session.role]}
             </p>
           </div>
         </div>
@@ -273,14 +300,22 @@ export function AppShell({
         </div>
       </nav>
 
-      {toast ? (
-        <div
-          role="status"
-          className="fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-50 mx-auto w-fit max-w-[92vw] rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white shadow-lg"
-        >
-          {toast}
-        </div>
-      ) : null}
+      {/* The live region is always there and only its text changes: a
+          region inserted already holding its message is often not read out.
+          Above the sheets, so a confirmation is never hidden by one. */}
+      <div
+        role="status"
+        className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[60] flex justify-center"
+      >
+        {toast ? (
+          <p
+            key={toast.key}
+            className="max-w-[92vw] rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+          >
+            {toast.text}
+          </p>
+        ) : null}
+      </div>
 
       <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Go to">
         <nav className="-my-1">
@@ -332,12 +367,16 @@ export function AppShell({
         </nav>
       </Sheet>
 
-      <QuickAdd
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        master={master}
-        session={session}
-      />
+      {/* Not even mounted for ops and NOC, so the ?new=1 deep link cannot
+          open it for them either. */}
+      {isOps || isNoc ? null : (
+        <QuickAdd
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+          master={master}
+          session={session}
+        />
+      )}
     </div>
   );
 }

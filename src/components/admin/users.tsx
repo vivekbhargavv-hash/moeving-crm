@@ -123,7 +123,7 @@ export function AdminUsers({
         </p>
       ) : null}
       {error && editing === null && !confirmDelete ? (
-        <p className="mb-3 rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-700">
+        <p role="alert" className="mb-3 rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-700">
           {error}
         </p>
       ) : null}
@@ -286,7 +286,7 @@ export function AdminUsers({
             />
             Active — can sign in and own deals
           </label>
-          {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+          {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}
           <Button variant="brand" size="lg" className="w-full" disabled={pending}>
             {pending ? "Saving…" : "Save"}
           </Button>
@@ -303,7 +303,7 @@ export function AdminUsers({
           {confirmDelete?.email})? They own no deals, so nothing else changes.
           This cannot be undone.
         </p>
-        {error ? <p className="mt-3 text-sm text-rose-700">{error}</p> : null}
+        {error ? <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p> : null}
         <div className="mt-4 flex gap-2">
           <Button
             type="button"

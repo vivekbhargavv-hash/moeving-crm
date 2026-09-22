@@ -95,7 +95,14 @@ Change these only deliberately — a lot of code assumes them.
 | **Margin maths live in Postgres** as generated columns (`cost_per_vehicle`, `margin_per_vehicle`, `total_revenue`, `total_cost`, `gross_margin`, `margin_pct`). | No two screens can disagree. |
 | **Two check constraints enforce the workflow.** `closed_won` requires revenue + all seven costs; `closed_lost` requires a reason. | No code path, present or future, can write a half-closed deal. |
 | **`organization_id` on every table; `requireSession()` is the only place it is produced**, always from the Clerk session — never a form field, query string or header. | Multi-tenant from day one. Adding a second organization is a row, not a migration. |
-| **Wins count on `closed_at`**, not `expected_close_date`. | The expected date is a forecast and usually wrong by the time a deal lands. |
+| **Wins count on `closed_at`**, not `expected_close_date`. | The expected date is a forecast and usually wrong by the time a deal lands. The Dashboard's period switch (all time / this FY / quarter / 90 days) narrows won and lost deals by `closed_at` too; the open pipeline is never narrowed. |
+| **Dates and times are India's**, via `todayInIndia()` and `formatDateTimeInIndia()` in `lib/utils.ts`. | The server renders in UTC. Anything that formats a moment or asks for "today" without `Asia/Kolkata` is 5½ hours out — activity times read wrong, and before 05:30 "today" was yesterday. |
+| **A screen with a phone and a desktop layout renders only one**, chosen by `useIsDesktop()` (`lib/use-desktop.ts`) with the server's user-agent guess (`server/device.ts`) as the first value. | Rendering both and hiding one with CSS meant a phone built the whole desktop board and table it never showed. The Pipeline does this; other screens still use CSS hiding and are candidates. |
+| **Sheets render at the end of `<body>`** (`createPortal` in `Sheet`). | A Picker lives inside a `Field`, which is a `<label>`. Rendered in there, choosing an option closed the sheet and the label then "clicked" the picker's trigger, reopening the list — on every choice, in production. Keep it portalled. |
+| **Confirm a save with `showToast()`** (`lib/toast.ts`); the shell owns the one toast. | A sheet that closes and says nothing reads as a tap that missed. |
+| **A required `Picker` validates in the browser.** Its value posts from a visually hidden text input, not `type="hidden"`. | Browsers skip hidden and read-only inputs when validating, so `required` there never stopped a form. |
+| **The deal page's back link goes back through history** when the previous page is in the app (`BackLink`, `lib/nav-history.ts`). | A fresh link to `/pipeline` lost the search and filters, and was wrong from Leads, Forecast or Deployments. |
+| **After a server action that calls `revalidatePath`, do not also call `router.refresh()`.** | The action's response already carries the re-rendered page; a refresh on top renders and fetches it a second time. The admin screens and the delete path still have one — harmless, just slower. |
 | **Everyone's Pipeline opens on their own deals, admins included**, with a My deals / All deals toggle in plain sight. | Your own deals are what you came to look at. It is a default view, not a permission — the whole team is one tap away and never hidden. |
 | **`deployment_date` is not `expected_close_date`.** It is asked for on the Closed Won sheet and enforced by `opps_won_requires_deployment_date`. | The expected close date is a sales forecast made months earlier about a different question. Ops cannot plan trucks against it, and reusing the field would have let a sales edit silently move an ops commitment. |
 | **The Closed Won sheet asks for a DAY, not a month.** A full `date`, validated as a real calendar day (`2026-02-31` is refused, not rolled over to 3 March). | Ops schedules drivers and charging against a date. Storing a month as its last day made every deal in a month look due on the 30th — wrong, and for most of them late. Rows won before 21 Sep 2026 still carry month-end dates; nothing migrates them, because nobody now knows what day was meant. |
@@ -634,6 +641,16 @@ Roughly in order of value to adoption:
   four of them across a dozen call sites plus the CSV route, and a new page has
   to remember to add the right one. Greppable, but not automatic, and picking
   the wrong one is a silent widening rather than an error.
+  **Server actions need the same guard as the page that calls them.** An
+  action is its own door: until September most deal actions only called
+  `requireSession()`, so ops and NOC — refused every commercial page — could
+  still create deals, move stages and read cost sheets and wins revenue by
+  calling the action directly (the desktop rail even showed them a working New
+  deal button). Every commercial action in `actions.ts` and
+  `forecast-actions.ts` now calls `requireSales()` or `requireDealOwner()`,
+  and `recordDeployment` calls `requireDeployments()`. A new action should do
+  the same; `requireSession()` alone is right only for things every role may
+  do.
 - Nothing runs the tests automatically — there is no CI workflow, so `npm test`
   is a thing a person remembers to type.
 - **"Fill in the blanks" walks every deal in the org one UPDATE at a time.**

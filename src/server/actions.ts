@@ -20,12 +20,13 @@ import {
 import type { SalesStage } from "@/db/schema";
 import { COST_FIELDS, OPERATING_DAYS } from "@/lib/constants";
 import { defaultsFor, type CostSuggestions } from "@/lib/cost-defaults";
-import { inr } from "@/lib/utils";
+import { inr, todayInIndia } from "@/lib/utils";
 import {
   requireAdmin,
   requireDealOwner,
+  requireDeployments,
   requireLeads,
-  requireSession,
+  requireSales,
 } from "@/server/auth";
 import { getCostDefaults, getQuickAddData, type QuickAddData } from "@/server/queries";
 import { sendInvitation } from "@/server/invites";
@@ -144,7 +145,7 @@ function formToObject(formData: FormData) {
 export async function createOpportunity(
   formData: FormData,
 ): Promise<ActionResult<{ id: string; count: number }>> {
-  const session = await requireSession();
+  const session = await requireDealOwner();
   const parsed = baseOpportunity.safeParse(formToObject(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -246,7 +247,7 @@ export async function updateOpportunity(
   id: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  const session = await requireSession();
+  const session = await requireSales();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Opportunity not found" };
 
@@ -391,7 +392,7 @@ export async function createExpansion(
   parentId: string,
   formData: FormData,
 ): Promise<ActionResult<{ id: string }>> {
-  const session = await requireSession();
+  const session = await requireSales();
   const parent = await loadOwned(session.organizationId, parentId);
   if (!parent) return { ok: false, error: "That deal no longer exists" };
   if (parent.stage !== "closed_won") {
@@ -429,7 +430,7 @@ export async function createExpansion(
   // Two different dates, deliberately: the expansion is recorded now, and the
   // trucks go out when they go out.
   const raisedAt = new Date();
-  const raisedOn = raisedAt.toISOString().slice(0, 10);
+  const raisedOn = todayInIndia(raisedAt);
   const deployOn = input.deploymentDate;
   const label = `+${input.fleetSize} vehicle${input.fleetSize === 1 ? "" : "s"}`;
   const name = cityName
@@ -511,7 +512,7 @@ export async function recordDeployment(
   id: string,
   vehiclesDeployed: number,
 ): Promise<ActionResult> {
-  const session = await requireSession();
+  const session = await requireDeployments();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Deal not found" };
   if (existing.stage !== "closed_won") {
@@ -572,7 +573,7 @@ export async function recordDeployment(
  * the client keeps it for the rest of the visit.
  */
 export async function loadQuickAddData(): Promise<ActionResult<QuickAddData>> {
-  await requireSession();
+  await requireDealOwner();
   return { ok: true, data: await getQuickAddData() };
 }
 
@@ -597,7 +598,7 @@ function pickEconomics(row: Partial<EconomicsSheet>): EconomicsSheet {
 export async function loadUnitEconomics(
   id: string,
 ): Promise<ActionResult<{ sheet: EconomicsSheet; defaults: CostSuggestions }>> {
-  const session = await requireSession();
+  const session = await requireSales();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Deal not found" };
   return {
@@ -793,7 +794,7 @@ export async function saveUnitEconomics(
   id: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  const session = await requireSession();
+  const session = await requireSales();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Deal not found" };
 
@@ -876,7 +877,7 @@ export async function changeStage(
   stage: SalesStage,
   formData?: FormData,
 ): Promise<ActionResult<{ needs?: "won" | "lost" | "contracting" }>> {
-  const session = await requireSession();
+  const session = await requireSales();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Opportunity not found" };
 
@@ -940,7 +941,7 @@ export async function changeStage(
 }
 
 export async function addNote(id: string, body: string): Promise<ActionResult> {
-  const session = await requireSession();
+  const session = await requireSales();
   const text = body.trim();
   if (!text) return { ok: false, error: "Note is empty" };
   const existing = await loadOwned(session.organizationId, id);
@@ -980,7 +981,7 @@ export async function addNote(id: string, body: string): Promise<ActionResult> {
  * happened whatever became of the deal afterwards.
  */
 export async function deleteOpportunity(id: string): Promise<ActionResult> {
-  const session = await requireSession();
+  const session = await requireSales();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Opportunity not found" };
   if (session.role !== "admin" && existing.ownerUserId !== session.userId) {

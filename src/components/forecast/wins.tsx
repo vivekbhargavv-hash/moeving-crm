@@ -147,6 +147,11 @@ export function WinsGrid({
                     <td key={months[i]} className="p-1 text-center">
                       <button
                         disabled={!c.deals}
+                        aria-label={`${r.owner}, ${monthLabelLong(months[i]!)}: ${
+                          c.deals
+                            ? `${c.deals} ${c.deals === 1 ? "win" : "wins"}, ${num(c.fleet)} vehicles, ${inrCompact(c.value)} a month`
+                            : "no wins"
+                        }`}
                         onClick={() =>
                           setDrill({
                             owner: r.owner,

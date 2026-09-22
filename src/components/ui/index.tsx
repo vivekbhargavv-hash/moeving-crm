@@ -2,6 +2,7 @@
 
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
@@ -62,8 +63,10 @@ export function Label({
   );
 }
 
+// The focus ring is the field's "you are here". At 20% it was too faint to
+// find on a sunlit phone or by keyboard; 60% on top of the brand border is.
 const fieldStyles =
-  "w-full h-12 rounded-xl border border-line bg-white px-3.5 text-ink placeholder:text-muted/60 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition";
+  "w-full h-12 rounded-xl border border-line bg-white px-3.5 text-ink placeholder:text-muted/60 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/60 transition";
 
 export const Input = React.forwardRef<
   HTMLInputElement,
@@ -189,19 +192,27 @@ export function Picker({
   disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [missing, setMissing] = React.useState(false);
+  const trigger = React.useRef<HTMLButtonElement>(null);
   const selected = options.find((o) => o.value === value);
 
   return (
     <>
       <button
+        ref={trigger}
         type="button"
         disabled={disabled}
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-label={`${label}: ${selected?.label ?? placeholder}`}
+        aria-invalid={missing || undefined}
+        aria-describedby={missing && name ? `${name}-missing` : undefined}
         className={cn(
           fieldStyles,
           "flex items-center gap-1 text-left disabled:opacity-50",
+          // Important, so the red outlasts the focus styles: the picker is
+          // focused at the very moment it is flagged.
+          missing && "!border-rose-500 !ring-2 !ring-rose-500/40",
           className,
         )}
       >
@@ -229,9 +240,39 @@ export function Picker({
         </svg>
       </button>
 
-      {/* The value still reaches the server the way a select's did. */}
-      {name ? (
-        <input type="hidden" name={name} value={value} required={required} />
+      {/* The value still reaches the server the way a select's did.
+          A required one is a visually hidden text input rather than
+          type="hidden": browsers skip hidden inputs when validating, so
+          `required` there never stopped a form — the server refused it
+          instead, in a message at the bottom of the sheet. */}
+      {name && required ? (
+        <input
+          name={name}
+          value={value}
+          required
+          // Not readOnly: a read-only input is skipped by validation too.
+          onChange={() => {}}
+          tabIndex={-1}
+          aria-hidden="true"
+          className="sr-only"
+          onInvalid={(e) => {
+            // The page's own message beside the control, not the browser's
+            // bubble pointing at an input nobody can see.
+            e.preventDefault();
+            setMissing(true);
+            trigger.current?.focus();
+          }}
+        />
+      ) : name ? (
+        <input type="hidden" name={name} value={value} />
+      ) : null}
+      {missing ? (
+        <p
+          id={name ? `${name}-missing` : undefined}
+          className="mt-1 text-xs font-medium text-rose-700"
+        >
+          Pick one to continue.
+        </p>
       ) : null}
 
       <Sheet open={open} onClose={() => setOpen(false)} title={label}>
@@ -244,6 +285,7 @@ export function Picker({
                   type="button"
                   onClick={() => {
                     onChange(o.value);
+                    if (o.value) setMissing(false);
                     setOpen(false);
                   }}
                   aria-current={on}
@@ -378,6 +420,19 @@ export function Segmented<T extends string>({
 /* ------------------------------------------------------------------- sheet */
 
 /**
+ * The sheets that are open, innermost last.
+ *
+ * A picker inside a sheet is a sheet inside a sheet. Only the innermost one
+ * may answer Escape — every open sheet used to listen, so Escape in the
+ * Vehicle picker closed the New deal sheet behind it too and lost the form —
+ * and the page gets its scrollbar back only when the last one closes.
+ */
+const sheetStack: symbol[] = [];
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
  * Bottom sheet on phones, centred dialog on desktop. Native <dialog>-free so
  * it behaves identically in iOS standalone PWA mode.
  *
@@ -386,15 +441,6 @@ export function Segmented<T extends string>({
  * calling requestSubmit() — silently does nothing on iOS Safari before 16,
  * which is exactly how a "nothing happens when I tap Create" bug is born.
  */
-/**
- * How many sheets are open.
- *
- * A picker inside a sheet is a sheet inside a sheet, and the inner one
- * closing would otherwise hand the page back its scrollbar while the outer
- * one is still covering it.
- */
-let openSheets = 0;
-
 export function Sheet({
   open,
   onClose,
@@ -402,6 +448,7 @@ export function Sheet({
   children,
   footer,
   action,
+  confirmDiscard,
 }: {
   open: boolean;
   onClose: () => void;
@@ -409,41 +456,109 @@ export function Sheet({
   children: React.ReactNode;
   footer?: React.ReactNode;
   action?: (formData: FormData) => void;
+  /**
+   * Set while the sheet holds typing that closing would throw away. Escape,
+   * the backdrop and × then ask first; a deliberate Cancel or a successful
+   * save calls `onClose` directly and is not asked.
+   */
+  confirmDiscard?: boolean;
 }) {
+  const panel = React.useRef<HTMLDivElement>(null);
+  // Read at the moment of closing, so the listener need not be re-bound
+  // every time the form's dirtiness changes.
+  const latest = React.useRef({ onClose, confirmDiscard });
+  latest.current = { onClose, confirmDiscard };
+
+  const requestClose = React.useCallback(() => {
+    const { onClose, confirmDiscard } = latest.current;
+    if (confirmDiscard && !window.confirm("Discard what you have entered?")) return;
+    onClose();
+  }, []);
+
   React.useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    openSheets += 1;
+    const id = Symbol("sheet");
+    sheetStack.push(id);
     document.body.style.overflow = "hidden";
+
+    // Focus moves into the sheet (unless a field already took it with
+    // autoFocus) and goes back to whatever opened it afterwards.
+    const opener = document.activeElement as HTMLElement | null;
+    if (!panel.current?.contains(document.activeElement)) {
+      panel.current?.focus({ preventScroll: true });
+    }
+
+    const onKey = (e: KeyboardEvent) => {
+      if (sheetStack[sheetStack.length - 1] !== id) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        requestClose();
+        return;
+      }
+      // Tab cycles inside the sheet rather than wandering into the page
+      // hidden behind it.
+      if (e.key === "Tab" && panel.current) {
+        const items = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+        if (!items.length) return;
+        const first = items[0]!;
+        const last = items[items.length - 1]!;
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || active === panel.current)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+
     return () => {
       document.removeEventListener("keydown", onKey);
-      openSheets -= 1;
-      if (openSheets === 0) document.body.style.overflow = "";
+      sheetStack.splice(sheetStack.indexOf(id), 1);
+      if (sheetStack.length === 0) document.body.style.overflow = "";
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open, requestClose]);
 
-  if (!open) return null;
+  // No <body> on the server. Every sheet starts closed today; this keeps one
+  // that ever starts open from taking the page down with it.
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  /*
+   * Rendered at the end of <body>, not where it is used.
+   *
+   * A Picker sits inside a Field, which is a <label>, and its sheet used to be
+   * rendered in there with it. Choosing an option closed the sheet — removing
+   * the option from the page — before the browser ran the label's own click
+   * behaviour, which then "clicked" the label's control: the picker's trigger.
+   * So every choice reopened the list it had just closed. A form inside a
+   * sheet inside another form was the same kind of accident waiting.
+   */
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
       <button
         aria-label="Close"
-        onClick={onClose}
+        tabIndex={-1}
+        onClick={requestClose}
         className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative w-full sm:max-w-lg max-h-[92dvh] flex flex-col bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl animate-[sheet_.18s_ease-out]"
+        tabIndex={-1}
+        className="relative w-full sm:max-w-lg max-h-[92dvh] flex flex-col bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl outline-none animate-[sheet_.18s_ease-out]"
       >
         <div className="shrink-0 px-5 pt-3 pb-3 border-b border-line">
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line sm:hidden" />
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
             <button
-              onClick={onClose}
+              type="button"
+              onClick={requestClose}
               className="h-9 w-9 -mr-2 rounded-lg text-muted hover:bg-canvas text-xl leading-none"
               aria-label="Close"
             >
@@ -461,7 +576,8 @@ export function Sheet({
         </Body>
       </div>
       <style>{`@keyframes sheet{from{transform:translateY(12px);opacity:.6}to{transform:none;opacity:1}}`}</style>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

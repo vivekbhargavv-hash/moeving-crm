@@ -17,6 +17,7 @@ import {
 import { CHARGING_ICONS, DRIVER_ICONS } from "@/components/choice-icons";
 import { Shimmer } from "@/components/skeletons";
 import { CHARGING_SCOPES, DRIVER_TYPES, OPERATING_DAYS } from "@/lib/constants";
+import { showToast } from "@/lib/toast";
 import {
   cn,
   inrCompact,
@@ -76,6 +77,9 @@ export function QuickAdd({
   const [days, setDays] = React.useState<number | null>(null);
   const [month, setMonth] = React.useState("");
   const [showMore, setShowMore] = React.useState(false);
+  // Anything typed into a text field — the customer, the name, the notes —
+  // which the state above does not hold.
+  const [typed, setTyped] = React.useState(false);
 
   const months = React.useMemo(() => upcomingMonths(6), []);
 
@@ -91,11 +95,23 @@ export function QuickAdd({
     setDays(null);
     setMonth("");
     setShowMore(false);
+    setTyped(false);
   }, [open]);
 
   const fleetCount = Number(fleet || 0);
   const perDeal = Number(price || 0) * fleetCount;
   const dealCount = Math.max(1, cityIds.length);
+  const dirty = Boolean(
+    typed ||
+      cityIds.length ||
+      vehicleTypeId ||
+      driverType ||
+      chargingScope ||
+      fleet ||
+      price ||
+      days ||
+      month,
+  );
 
   function submit(formData: FormData) {
     setError(null);
@@ -107,8 +123,9 @@ export function QuickAdd({
           return;
         }
         const { id, count } = result.data!;
+        // Several deals are confirmed on the Pipeline, by ?created=N.
+        if (count === 1) showToast("Deal created");
         onClose();
-        router.refresh();
         // One deal opens directly; several go back to the pipeline, where
         // seeing the new cards is the point.
         router.push(
@@ -149,6 +166,7 @@ export function QuickAdd({
       onClose={onClose}
       title="New deal"
       action={submit}
+      confirmDiscard={dirty && !pending}
       footer={
         <div className="flex items-center gap-3">
           <div className="flex-1 text-sm">
@@ -170,7 +188,7 @@ export function QuickAdd({
         </div>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-4" onInput={() => setTyped(true)}>
         <Field label="Customer">
           <Input
             name="accountName"
@@ -237,7 +255,7 @@ export function QuickAdd({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fleet size">
-            <div className="flex h-12 items-center rounded-xl border border-line bg-white">
+            <div className="flex h-12 items-center rounded-xl border border-line bg-white focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/60">
               <button
                 type="button"
                 onClick={() => setFleet(String(Math.max(1, fleetCount - 1)))}
@@ -420,7 +438,7 @@ export function QuickAdd({
         </p>
 
         {error ? (
-          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
           </p>
         ) : null}

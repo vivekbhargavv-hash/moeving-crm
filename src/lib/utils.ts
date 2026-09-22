@@ -101,6 +101,33 @@ export function formatDate(value: string | Date | null | undefined) {
   return `${day} ${month} ${year}`;
 }
 
+/**
+ * The team works in India, and the server does not.
+ *
+ * Vercel renders in UTC, so anything that formats a moment or asks for
+ * "today" without a time zone is five and a half hours out: activity stamped
+ * 9:10 read as 3:40, and until 5:30 in the morning "today" was yesterday.
+ */
+export const INDIA_TZ = "Asia/Kolkata";
+
+/** Today's date in India as YYYY-MM-DD — what a date field's value looks like. */
+export function todayInIndia(from = new Date()) {
+  // en-CA formats as YYYY-MM-DD.
+  return from.toLocaleDateString("en-CA", { timeZone: INDIA_TZ });
+}
+
+/** "22 Sept, 9:10 am" in India time, for activity feeds. */
+export function formatDateTimeInIndia(value: string | Date) {
+  const d = typeof value === "string" ? new Date(value) : value;
+  return d.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: INDIA_TZ,
+  });
+}
+
 /** Whole days from today to `value`; negative once it is in the past. */
 /**
  * "30 Sep", and "30 Sep 27" only when it is not this year.

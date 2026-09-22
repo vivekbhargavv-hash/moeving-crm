@@ -1,13 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Button, Textarea } from "@/components/ui";
 import { addNote } from "@/server/actions";
 
 export function NoteBox({ opportunityId }: { opportunityId: string }) {
-  const router = useRouter();
   const [body, setBody] = React.useState("");
   const [pending, startTransition] = React.useTransition();
 
@@ -17,7 +15,6 @@ export function NoteBox({ opportunityId }: { opportunityId: string }) {
       const result = await addNote(opportunityId, body);
       if (result.ok) {
         setBody("");
-        router.refresh();
       }
     });
   }

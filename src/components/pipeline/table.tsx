@@ -173,16 +173,18 @@ export function PipelineList({
     (acc, o) => ({
       fleet: acc.fleet + o.fleetSize,
       value: acc.value + o.value,
-      // Blended margin is margin over revenue across the won deals, not the
-      // average of their percentages — a 60% margin on one truck must not
-      // outweigh a 5% margin on forty.
-      wonRevenue: acc.wonRevenue + (o.totalRevenue ?? 0),
-      wonMargin: acc.wonMargin + (o.grossMargin ?? 0),
+      // Blended margin is margin over revenue across every costed deal — won
+      // or still open, since a deal can be costed at any stage — not the
+      // average of their percentages: a 60% margin on one truck must not
+      // outweigh a 5% margin on forty. Uncosted deals contribute nothing
+      // rather than dragging the blend towards zero.
+      costedRevenue: acc.costedRevenue + (o.totalRevenue ?? 0),
+      costedMargin: acc.costedMargin + (o.grossMargin ?? 0),
     }),
-    { fleet: 0, value: 0, wonRevenue: 0, wonMargin: 0 },
+    { fleet: 0, value: 0, costedRevenue: 0, costedMargin: 0 },
   );
-  const blendedMarginPct = totals.wonRevenue
-    ? (totals.wonMargin / totals.wonRevenue) * 100
+  const blendedMarginPct = totals.costedRevenue
+    ? (totals.costedMargin / totals.costedRevenue) * 100
     : null;
 
   if (!rows.length) {
@@ -411,9 +413,10 @@ export function PipelineList({
                   {o.value ? inrCompact(o.value) : "—"}
                 </td>
                 <td className="tabular hidden px-3 py-2.5 text-right text-muted lg:table-cell">
-                  {o.stage === "closed_won" && o.totalCost
-                    ? inrCompact(o.totalCost)
-                    : "—"}
+                  {/* Any costed deal, not only a won one: the sheet can be
+                      filled in at any stage now, and a deal nobody has costed
+                      is the one that reads as a dash. */}
+                  {o.totalCost ? inrCompact(o.totalCost) : "—"}
                 </td>
                 <td
                   className={cn(

@@ -8,6 +8,8 @@ import {
   Rows3,
   Search,
   Truck,
+  User,
+  Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -311,35 +313,26 @@ export function PipelineBoard({
             className="h-11 w-full rounded-xl border border-line bg-white pl-9 pr-3 text-[15px] placeholder:text-muted/70 focus:border-brand focus:outline-none"
           />
         </div>
-        <div className="flex h-11 shrink-0 rounded-xl border border-line bg-white p-1">
-          {(
-            [
-              ["board", LayoutGrid, "Board"],
-              ["list", Rows3, "Table"],
-            ] as const
-          ).map(([key, Icon, label]) => (
-            <button
-              key={key}
-              onClick={() => chooseView(key)}
-              aria-pressed={view === key}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium transition",
-                view === key ? "bg-ink text-white" : "text-muted",
-              )}
-            >
-              <Icon size={16} />
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* Both desktop switches are the same control, so "whose deals" reads
+            as something you press rather than as two words of label text. */}
+        <Segmented
+          label="Pipeline view"
+          className="w-[186px] shrink-0"
+          value={view}
+          onChange={chooseView}
+          options={[
+            { value: "board", label: "Board", icon: <LayoutGrid size={16} /> },
+            { value: "list", label: "Table", icon: <Rows3 size={16} /> },
+          ]}
+        />
         <Segmented
           label="Whose deals"
           className="w-[210px] shrink-0"
           value={showingMine ? "mine" : "all"}
           onChange={(v) => apply({ ...filters, ownerIds: [] }, v)}
           options={[
-            { value: "mine", label: "My deals" },
-            { value: "all", label: "All deals" },
+            { value: "mine", label: "My deals", icon: <User size={16} /> },
+            { value: "all", label: "All deals", icon: <Users size={16} /> },
           ]}
         />
         <button

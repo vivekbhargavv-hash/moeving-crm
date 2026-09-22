@@ -16,7 +16,7 @@ import {
 import { COST_FIELDS, STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
 import { cn, inr, inrCompact } from "@/lib/utils";
-import { changeStage } from "@/server/actions";
+import { changeStage, loadUnitEconomics } from "@/server/actions";
 
 export type StageTarget = {
   id: string;
@@ -52,6 +52,7 @@ export function StageChanger({
   const [deployDate, setDeployDate] = React.useState("");
   const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [revenue, setRevenue] = React.useState("");
+  const [loadingSheet, setLoadingSheet] = React.useState(false);
 
   React.useEffect(() => {
     if (target) {
@@ -62,6 +63,43 @@ export function StageChanger({
       setRevenue(target.price ? String(target.price) : "");
     }
   }, [target]);
+
+  const id = target?.id;
+
+  /**
+   * A deal costed earlier in the pipeline arrives here with its sheet already
+   * filled; closing it should be a glance and a date, not a retype. The
+   * figures are fetched when the Won sheet opens rather than carried on every
+   * pipeline card, which would put eight more columns on a 250-row table to
+   * serve one screen.
+   */
+  React.useEffect(() => {
+    if (!id || mode !== "won") return;
+    let live = true;
+    setLoadingSheet(true);
+    loadUnitEconomics(id)
+      .then((result) => {
+        if (!live || !result.ok || !result.data) return;
+        const { revenue: storedRevenue, ...storedCosts } = result.data;
+        if (storedRevenue !== null) setRevenue(String(storedRevenue));
+        setCosts(
+          Object.fromEntries(
+            Object.entries(storedCosts)
+              .filter(([, v]) => v !== null)
+              .map(([k, v]) => [k, String(v)]),
+          ),
+        );
+      })
+      .catch(() => {
+        // Prefill is a convenience; the sheet still works typed by hand.
+      })
+      .finally(() => {
+        if (live) setLoadingSheet(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [id, mode]);
 
   if (!target) return null;
 
@@ -146,6 +184,11 @@ export function StageChanger({
             <p className="mt-0.5 text-muted">
               Quoted at {target.price ? inr(target.price) : "—"} per vehicle ·{" "}
               {fleet} {fleet === 1 ? "vehicle" : "vehicles"} in this deal.
+            </p>
+            <p className="mt-1 text-[12.5px] text-muted">
+              {loadingSheet
+                ? "Loading what this deal already has…"
+                : "Anything already costed on the deal is filled in below — check it, correct it, and close."}
             </p>
           </div>
 

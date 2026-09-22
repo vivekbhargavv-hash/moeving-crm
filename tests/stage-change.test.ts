@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { planStageChange } from "@/server/stage-change";
+import {
+  missingEconomics,
+  planStageChange,
+  unitEconomicsSchema,
+} from "@/server/stage-change";
 
 const REASON = "3f1c0a6e-8f1d-4d2b-9a3e-0b7c5d2e1f44";
 
@@ -160,5 +164,86 @@ describe("planStageChange", () => {
     if (plan.type !== "move") return;
     assert.equal(plan.patch.closedAt, null);
     assert.equal("revenue" in plan.patch, false);
+  });
+});
+
+/** The eight figures as a costed-but-open deal carries them: numbers. */
+const storedSheet = {
+  revenue: 48000,
+  leaseCost: 18000,
+  driverCost: 16000,
+  chargingCost: 6000,
+  parkingCost: 1500,
+  maintenanceCost: 2000,
+  supervisorCost: 1200,
+  miscCost: 300,
+};
+
+describe("unit economics saved before the win", () => {
+  it("closes a deal costed earlier from its stored sheet and a date alone", () => {
+    const plan = planStageChange({
+      from: "negotiation",
+      to: "closed_won",
+      fields: { deploymentDate: "2026-11-18" },
+      stored: storedSheet,
+    });
+    assert.equal(plan.type, "move");
+    if (plan.type !== "move") return;
+    assert.equal(plan.patch.revenue, 48000);
+    assert.equal(plan.patch.miscCost, 300);
+    assert.equal(plan.patch.deploymentDate, "2026-11-18");
+  });
+
+  it("prefers what the Closed Won sheet posts over what was stored", () => {
+    const plan = planStageChange({
+      from: "negotiation",
+      to: "closed_won",
+      fields: { ...wonSheet, revenue: "52000" },
+      stored: storedSheet,
+    });
+    assert.equal(plan.type, "move");
+    if (plan.type !== "move") return;
+    assert.equal(plan.patch.revenue, 52000);
+  });
+
+  it("still asks when the stored sheet is only half filled in", () => {
+    const plan = planStageChange({
+      from: "negotiation",
+      to: "closed_won",
+      fields: { deploymentDate: "2026-11-18" },
+      stored: { ...storedSheet, driverCost: null },
+    });
+    assert.equal(plan.type, "needs");
+  });
+
+  it("does not let a stored sheet close a deal with no deployment date", () => {
+    const plan = planStageChange({
+      from: "negotiation",
+      to: "closed_won",
+      stored: storedSheet,
+    });
+    assert.equal(plan.type, "needs");
+  });
+
+  it("names every figure a deal is still missing", () => {
+    assert.deepEqual(missingEconomics(storedSheet), []);
+    assert.deepEqual(missingEconomics({ ...storedSheet, revenue: null }), [
+      "revenue",
+    ]);
+    assert.deepEqual(missingEconomics({}).length, 8);
+  });
+
+  it("keeps a part-filled sheet, and reads a cleared field as cleared", () => {
+    const parsed = unitEconomicsSchema.parse({
+      revenue: "48000",
+      leaseCost: null,
+    });
+    assert.equal(parsed.revenue, 48000);
+    assert.equal(parsed.leaseCost, null);
+    assert.equal(parsed.driverCost, undefined);
+  });
+
+  it("refuses a figure that is not a number", () => {
+    assert.equal(unitEconomicsSchema.safeParse({ revenue: "lots" }).success, false);
   });
 });

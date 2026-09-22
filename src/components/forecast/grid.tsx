@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, IndianRupee, Loader2, Truck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -381,13 +381,16 @@ function FilterBar({
        broken, and a row wider than the screen stretches the layout viewport,
        which is what makes the fixed tab bar change width between pages. */
     <div className="mb-4 space-y-2">
+      {/* Full width on a phone, a sized switch on desktop: a bordered bar
+          stretched across a wide screen stops reading as a control. */}
       <Segmented
         label="Measure"
+        className="md:w-[220px]"
         value={metric}
         onChange={setMetric}
         options={[
-          { value: "fleet", label: "Vehicles" },
-          { value: "value", label: "Value" },
+          { value: "fleet", label: "Vehicles", icon: <Truck size={16} /> },
+          { value: "value", label: "Value", icon: <IndianRupee size={16} /> },
         ]}
       />
       <div className="grid grid-cols-2 gap-2">

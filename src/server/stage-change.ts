@@ -79,6 +79,55 @@ export const closeWonSchema = z.object({
   miscCost: money,
 });
 
+/**
+ * The same eight figures, saved mid-pipeline.
+ *
+ * A deal is priced and costed long before it is won — quoting is where those
+ * numbers are worked out — so the sheet can be filled in at any stage and
+ * revised as the deal moves. Every field is optional here: a half-built
+ * estimate is worth keeping, and nothing downstream reads an open deal's
+ * economics. What stays mandatory is the *moment of winning*, which still goes
+ * through `closeWonSchema` and the Postgres check behind it.
+ *
+ * Blank means "cleared", not zero: `null` erases the figure so a guess never
+ * hardens into a recorded ₹0.
+ */
+const optionalMoney = money.nullable().optional();
+
+export const unitEconomicsSchema = z.object({
+  revenue: optionalMoney,
+  leaseCost: optionalMoney,
+  driverCost: optionalMoney,
+  chargingCost: optionalMoney,
+  parkingCost: optionalMoney,
+  maintenanceCost: optionalMoney,
+  supervisorCost: optionalMoney,
+  miscCost: optionalMoney,
+});
+
+export type UnitEconomics = z.infer<typeof unitEconomicsSchema>;
+
+/** The eight keys, in the order the sheet asks for them. */
+export const ECONOMICS_KEYS = [
+  "revenue",
+  "leaseCost",
+  "driverCost",
+  "chargingCost",
+  "parkingCost",
+  "maintenanceCost",
+  "supervisorCost",
+  "miscCost",
+] as const;
+
+export type EconomicsKey = (typeof ECONOMICS_KEYS)[number];
+
+/** Which of the eight are still missing — what Closed Won will ask for. */
+export function missingEconomics(
+  row: Partial<Record<EconomicsKey, number | null>>,
+): EconomicsKey[] {
+  return ECONOMICS_KEYS.filter((k) => row[k] === null || row[k] === undefined);
+}
+
 export const closeLostSchema = z.object({
   lostReasonId: z.string().uuid("Pick a reason"),
   lostReasonNote: z.string().trim().max(1000).nullable().optional(),
@@ -113,11 +162,19 @@ export function planStageChange({
   from,
   to,
   fields,
+  stored,
   now = new Date(),
 }: {
   from: SalesStage;
   to: SalesStage;
   fields?: Record<string, unknown>;
+  /**
+   * What the deal already carries. Economics filled in earlier in the pipeline
+   * stand in for anything the Closed Won sheet does not post, so a deal that
+   * was costed at Proposal is not made to type it all again — the rule is that
+   * the figures must *exist* by Closed Won, not that they are typed there.
+   */
+  stored?: Partial<Record<EconomicsKey, number | null>>;
   now?: Date;
 }): StagePlan {
   if (from === to) return { type: "noop" };
@@ -131,7 +188,15 @@ export function planStageChange({
   };
 
   if (to === "closed_won") {
-    const parsed = closeWonSchema.safeParse(fields ?? {});
+    const posted = fields ?? {};
+    const merged: Record<string, unknown> = { ...posted };
+    for (const key of ECONOMICS_KEYS) {
+      const value = merged[key];
+      if ((value === undefined || value === null || value === "") && stored?.[key] != null) {
+        merged[key] = stored[key];
+      }
+    }
+    const parsed = closeWonSchema.safeParse(merged);
     if (!parsed.success) return { type: "needs", needs: "won" };
     const { deploymentDate, ...costs } = parsed.data;
     Object.assign(patch, costs);

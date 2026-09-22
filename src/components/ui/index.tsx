@@ -322,6 +322,12 @@ export function PickerField({
  * ink: on a phone the darkest thing on screen should be a primary action, not
  * a view switch. Options share the width evenly so the control never grows
  * with its labels and pushes the row past the screen.
+ *
+ * On a desktop row the phone treatment disappeared: a grey track next to white
+ * inputs and bordered buttons read as two words of text, not something you
+ * could press. From `md` up it becomes the same bordered white shell the
+ * Board/Table switch uses, with the chosen option in ink — one switch shape
+ * across the whole app.
  */
 export function Segmented<T extends string>({
   options,
@@ -341,7 +347,11 @@ export function Segmented<T extends string>({
     <div
       role="group"
       aria-label={label}
-      className={cn("flex rounded-xl bg-canvas p-1", className)}
+      className={cn(
+        "flex rounded-xl bg-canvas p-1",
+        "md:h-11 md:border md:border-line md:bg-white md:p-[3px]",
+        className,
+      )}
     >
       {options.map((o) => {
         const active = o.value === value;
@@ -352,10 +362,10 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             aria-pressed={active}
             className={cn(
-              "flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[10px] px-2 text-[13.5px] font-semibold transition",
+              "flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[10px] px-2 text-[13.5px] font-semibold transition md:h-full md:rounded-lg md:text-sm",
               active
-                ? "bg-white text-ink shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
-                : "text-muted active:bg-white/60",
+                ? "bg-white text-ink shadow-[0_1px_2px_rgba(16,24,40,0.08)] md:bg-ink md:text-white md:shadow-none"
+                : "text-muted active:bg-white/60 md:hover:bg-canvas md:hover:text-ink",
             )}
           >
             {o.icon}

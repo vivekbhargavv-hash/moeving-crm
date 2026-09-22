@@ -17,7 +17,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
-import { CHARGING_SCOPES, DRIVER_TYPES } from "@/lib/constants";
+import { CHARGING_SCOPES, DRIVER_TYPES, OPERATING_DAYS } from "@/lib/constants";
 import { monthLabelShort, upcomingMonths } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { deleteOpportunity, updateOpportunity } from "@/server/actions";
@@ -37,6 +37,7 @@ type Editable = {
   fleetSize: number;
   price: number | null;
   expectedCloseDate: string | null;
+  operatingDays: number | null;
   notes: string | null;
   ownerUserId: string;
 };
@@ -66,6 +67,7 @@ export function DetailActions({
   const [chargingScope, setChargingScope] = React.useState<string | null>(
     opp.chargingScope,
   );
+  const [days, setDays] = React.useState<number | null>(opp.operatingDays);
   const [month, setMonth] = React.useState(
     opp.expectedCloseDate ? opp.expectedCloseDate.slice(0, 7) : "",
   );
@@ -81,6 +83,7 @@ export function DetailActions({
     setDriverType(opp.driverType);
     setChargingScope(opp.chargingScope);
     setMonth(opp.expectedCloseDate ? opp.expectedCloseDate.slice(0, 7) : "");
+    setDays(opp.operatingDays);
   }, [editing, opp]);
 
   function save(formData: FormData) {
@@ -265,6 +268,37 @@ export function DetailActions({
                 defaultValue={opp.price ?? ""}
               />
             </Field>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
+              Operating days a month
+            </p>
+            <div className="flex gap-2">
+              {OPERATING_DAYS.map((d) => {
+                const on = days === d.value;
+                return (
+                  <button
+                    key={d.value}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setDays(on ? null : d.value)}
+                    className={cn(
+                      "flex h-12 flex-1 flex-col items-center justify-center rounded-xl border text-sm font-semibold transition",
+                      on
+                        ? "border-brand bg-brand-soft text-brand-ink"
+                        : "border-line bg-white text-muted",
+                    )}
+                  >
+                    {d.label}
+                    <span className="text-[11px] font-normal opacity-70">
+                      {d.hint}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <input type="hidden" name="operatingDays" value={days ?? ""} />
           </div>
           <div>
             <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">

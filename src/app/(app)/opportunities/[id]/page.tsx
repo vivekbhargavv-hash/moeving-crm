@@ -82,6 +82,7 @@ export default async function OpportunityPage({
           chargingScope: opp.chargingScope,
           fleetSize: opp.fleetSize,
           price: opp.price,
+          operatingDays: opp.operatingDays,
           expectedCloseDate: opp.expectedCloseDate,
           notes: opp.notes,
           ownerUserId: opp.ownerUserId,
@@ -207,6 +208,10 @@ export default async function OpportunityPage({
           <CardHeader title="Commercials" />
           <dl className="px-4 pb-4 text-sm">
             <Row label="Price / vehicle / month" value={inr(opp.price)} />
+            <Row
+              label="Operating days"
+              value={opp.operatingDays ? `${opp.operatingDays} a month` : "—"}
+            />
             <Row label="Fleet size" value={num(opp.fleetSize)} />
             <Row label="Monthly value" value={inr(value)} strong />
           </dl>

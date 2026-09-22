@@ -149,6 +149,16 @@ export const SEED_LOST_REASONS = [
   "Other",
 ];
 
+/**
+ * Operating days a month, as the contracts are actually written: a six-day
+ * week or every day. Recorded on the deal, never multiplied by anything —
+ * `price` is the monthly rate under whichever one is chosen.
+ */
+export const OPERATING_DAYS = [
+  { value: 26, label: "26 days", hint: "Six-day week" },
+  { value: 30, label: "30 days", hint: "Every day" },
+] as const;
+
 export const COST_FIELDS = [
   { key: "leaseCost", label: "Lease" },
   { key: "driverCost", label: "Driver" },

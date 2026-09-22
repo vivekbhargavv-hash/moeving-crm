@@ -208,8 +208,26 @@ export const opportunities = pgTable(
     chargingScope: chargingScope("charging_scope"),
 
     fleetSize: integer("fleet_size").notNull().default(1),
-    /** Monthly rent per vehicle, whole rupees. */
+    /**
+     * Monthly rent per vehicle, whole rupees.
+     *
+     * The ONE rate on a deal. `revenue` in the Closed Won block is the same
+     * figure — the money a vehicle earns per month — and is written from here
+     * rather than asked for twice, because two fields for one number is two
+     * numbers that disagree.
+     */
     price: integer("price"),
+    /**
+     * Operating days a month the contract runs on: 26 for a six-day week, 30
+     * for every day. Recorded, not arithmetic — `price` is the monthly rate
+     * whichever is chosen, and nothing computes from this. It is here because
+     * the same monthly rent means a different day rate at 26 days than at 30,
+     * and that is the first thing anyone asks when comparing two deals.
+     *
+     * Nullable: every deal raised before this field existed has no answer,
+     * and guessing one would be inventing a contract term.
+     */
+    operatingDays: integer("operating_days"),
     /** A sales forecast of when the deal closes. Not a deployment date. */
     expectedCloseDate: date("expected_close_date"),
 

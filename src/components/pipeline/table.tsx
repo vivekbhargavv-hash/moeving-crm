@@ -49,16 +49,19 @@ const COLUMNS: {
   { key: "city", label: "City" },
   { key: "vehicleType", label: "Vehicle" },
   { key: "fleetSize", label: "Fleet", align: "right" },
-  // Price per vehicle is Value / mo divided by Fleet, and both are right here.
-  { key: "price", label: "Price / veh", align: "right", wide: true },
-  { key: "value", label: "Value / mo", align: "right" },
+  // The rate one truck earns in a month is how this business thinks about a
+  // deal — "what does a truck earn" — so it is the money column that is always
+  // on screen. Deal value is that times the fleet, and both halves are right
+  // here, so it steps behind the breakpoint instead.
+  { key: "price", label: "Price / veh / mo", align: "right" },
+  { key: "value", label: "Value / mo", align: "right", wide: true },
   // Never behind a breakpoint. These two hid below `lg` and then scrolled off
   // the right edge above it, so on a laptop the pipeline's margin was simply
   // not on the screen.
-  { key: "totalCost", label: "Total cost", align: "right" },
-  { key: "marginPct", label: "Margin %", align: "right" },
+  { key: "totalCost", label: "Cost", align: "right" },
+  { key: "marginPct", label: "Margin", align: "right" },
   { key: "ownerName", label: "Deal Owner", wide: true },
-  { key: "expectedCloseDate", label: "Expected close", align: "right" },
+  { key: "expectedCloseDate", label: "Closing", align: "right" },
   { key: "updatedAt", label: "Updated", align: "right", wide: true },
 ];
 
@@ -67,6 +70,7 @@ const COLUMNS: {
 const MOBILE_SORTS: { key: SortKey; label: string }[] = [
   { key: "updatedAt", label: "Updated" },
   { key: "expectedCloseDate", label: "Closing" },
+  { key: "price", label: "Price" },
   { key: "value", label: "Value" },
   { key: "fleetSize", label: "Fleet" },
   { key: "accountName", label: "Customer" },
@@ -247,7 +251,7 @@ export function PipelineList({
           <span className="text-muted">· {num(totals.fleet)} vehicles</span>
           <span className="tabular ml-auto font-semibold">
             {inrCompact(totals.value)}
-            <span className="font-normal text-muted"> / mo</span>
+            <span className="font-normal text-muted"> total / mo</span>
           </span>
         </div>
 
@@ -293,8 +297,12 @@ export function PipelineList({
                       <span className="truncate">{o.accountName}</span>
                       {o.parentOpportunityId ? <RepeatMark /> : null}
                     </p>
-                    <p className="tabular shrink-0 text-[15px] font-bold">
-                      {o.value ? inrCompact(o.value) : "—"}
+                    <p className="tabular shrink-0 whitespace-nowrap text-[15px] font-bold">
+                      {o.price ? inr(o.price) : "—"}
+                      <span className="text-[11px] font-normal text-muted">
+                        {" "}
+                        /veh/mo
+                      </span>
                     </p>
                   </div>
                   <div className="mt-1.5 flex items-center gap-2 text-[13px] text-muted">
@@ -322,6 +330,7 @@ export function PipelineList({
                           value: o.value,
                           price: o.price,
                           fleetSize: o.fleetSize,
+                          deploymentDate: o.deploymentDate,
                         });
                       }}
                       className="active:opacity-70"
@@ -439,6 +448,7 @@ export function PipelineList({
                         value: o.value,
                         price: o.price,
                         fleetSize: o.fleetSize,
+                        deploymentDate: o.deploymentDate,
                       });
                     }}
                     title="Move stage"
@@ -463,10 +473,10 @@ export function PipelineList({
                   </span>
                 </td>
                 <td className="tabular px-3 py-2.5 text-right">{o.fleetSize}</td>
-                <td className="tabular hidden px-3 py-2.5 text-right text-muted 2xl:table-cell">
+                <td className="tabular px-3 py-2.5 text-right font-semibold">
                   {o.price ? inr(o.price) : "—"}
                 </td>
-                <td className="tabular px-3 py-2.5 text-right font-semibold">
+                <td className="tabular hidden px-3 py-2.5 text-right text-muted 2xl:table-cell">
                   {o.value ? inrCompact(o.value) : "—"}
                 </td>
                 <td className="tabular px-3 py-2.5 text-right text-muted">
@@ -513,10 +523,11 @@ export function PipelineList({
             <td colSpan={3} />
             {/* Fleet */}
             <td className="tabular px-3 py-2.5 text-right">{num(totals.fleet)}</td>
-            {/* Price / veh — an average price would mean nothing here. */}
-            <td className="hidden 2xl:table-cell" />
+            {/* Price / veh / mo — adding up per-vehicle rates across deals
+                gives a number that means nothing, so there is no total. */}
+            <td />
             {/* Value / mo */}
-            <td className="tabular px-3 py-2.5 text-right">
+            <td className="tabular hidden px-3 py-2.5 text-right 2xl:table-cell">
               {inrCompact(totals.value)}
             </td>
             {/* Total cost, across the deals anybody has costed. */}

@@ -35,6 +35,12 @@ import type { Deployment } from "@/server/queries";
  *
  * Completed deployments drop to the bottom of the two lists rather than
  * disappearing, so "did we do that one" has an answer.
+ *
+ * Deals still at **Contracting** that have pencilled in a date appear here
+ * too, marked "Expected". They are verbally agreed with paperwork in flight,
+ * so a hub can plan weeks ahead instead of learning about a fleet the day it
+ * is sold — but nothing is owed until the deal is won, and recording vehicles
+ * against one is refused (`recordDeployment` checks the stage, not the page).
  */
 
 type View = "date" | "city" | "month";
@@ -379,11 +385,13 @@ function Row({
           "flex h-[52px] w-[52px] shrink-0 flex-col items-center justify-center rounded-xl",
           complete
             ? "bg-emerald-50 text-emerald-700"
-            : overdue
-              ? "bg-rose-50 text-rose-700"
-              : started
-                ? "bg-amber-50 text-amber-800"
-                : "bg-brand-soft text-brand-ink",
+            : d.isExpected
+              ? "bg-violet-50 text-violet-700"
+              : overdue
+                ? "bg-rose-50 text-rose-700"
+                : started
+                  ? "bg-amber-50 text-amber-800"
+                  : "bg-brand-soft text-brand-ink",
         )}
       >
         {complete ? (
@@ -403,6 +411,11 @@ function Row({
       <div className="min-w-0 flex-1">
         <p className="flex items-baseline gap-1.5 text-[16px] font-semibold leading-tight">
           <span className="truncate">{d.accountName}</span>
+          {d.isExpected ? (
+            <span className="shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">
+              Expected
+            </span>
+          ) : null}
           {d.isRepeat ? (
             <span className="shrink-0 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-700">
               Repeat
@@ -511,6 +524,30 @@ function RecordSheet({
 
   if (!target) return null;
   const n = Number(count || 0);
+
+  // An unwon deal has nothing to record against. `recordDeployment` refuses it
+  // at the server too; this is so ops reads a sentence rather than an error.
+  if (target.isExpected) {
+    return (
+      <Sheet open onClose={onClose} title="Not won yet">
+        <p className="-mt-1 mb-4 text-sm text-muted">
+          <strong>{target.accountName}</strong> · {target.city ?? "No city"} ·{" "}
+          {target.fleetSize} × {target.vehicleType ?? "—"}
+        </p>
+        <p className="rounded-xl bg-violet-50 px-4 py-3 text-[13.5px] text-violet-900">
+          This deal is at Contracting — verbally agreed, paperwork still in
+          flight. It is here so you can plan for{" "}
+          <strong>
+            {target.deploymentDate
+              ? formatDateCompact(target.deploymentDate)
+              : "the expected date"}
+          </strong>
+          , but nothing is owed until it is won. Vehicles can be recorded
+          against it the moment the deal is marked Closed Won.
+        </p>
+      </Sheet>
+    );
+  }
 
   function save() {
     if (!target) return;

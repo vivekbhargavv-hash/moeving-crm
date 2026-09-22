@@ -247,3 +247,117 @@ describe("unit economics saved before the win", () => {
     assert.equal(unitEconomicsSchema.safeParse({ revenue: "lots" }).success, false);
   });
 });
+
+/**
+ * The expected deployment date: offered at Contracting, required at Closed Won.
+ *
+ * The rule under test is the same one the cost sheet already follows — the
+ * answer must EXIST by the time the deal is won, not be typed at that moment.
+ */
+describe("the expected deployment date", () => {
+  const storedSheet = {
+    revenue: 48000,
+    leaseCost: 18000,
+    driverCost: 16000,
+    chargingCost: 6000,
+    parkingCost: 1500,
+    maintenanceCost: 2000,
+    supervisorCost: 1200,
+    miscCost: 300,
+  };
+
+  it("lets a deal reach Contracting without one", () => {
+    // Paperwork in flight and nobody has said when yet is an ordinary state,
+    // so this must never become a gate.
+    const plan = planStageChange({ from: "negotiation", to: "contracting" });
+    assert.equal(plan.type, "move");
+    if (plan.type !== "move") return;
+    assert.equal(plan.patch.stage, "contracting");
+    assert.equal(plan.patch.deploymentDate, undefined);
+  });
+
+  it("records one given at Contracting", () => {
+    const plan = planStageChange({
+      from: "negotiation",
+      to: "contracting",
+      fields: { deploymentDate: "2026-12-01" },
+    });
+    assert.equal(plan.type, "move");
+    if (plan.type !== "move") return;
+    assert.equal(plan.patch.deploymentDate, "2026-12-01");
+  });
+
+  it("refuses a date that is not a real day", () => {
+    // "2026-02-31" passes a regex and rolls over to 3 March, a day ops never
+    // agreed to.
+    const plan = planStageChange({
+      from: "negotiation",
+      to: "contracting",
+      fields: { deploymentDate: "2026-02-31" },
+    });
+    assert.equal(plan.type, "needs");
+    if (plan.type !== "needs") return;
+    assert.equal(plan.needs, "contracting");
+  });
+
+  it("clears the date when Contracting posts a blank", () => {
+    const plan = planStageChange({
+      from: "contracting",
+      to: "contracting",
+      fields: { deploymentDate: null },
+    });
+    // Same stage is still a noop; the clearing case is the move below.
+    assert.equal(plan.type, "noop");
+
+    const moved = planStageChange({
+      from: "negotiation",
+      to: "contracting",
+      fields: { deploymentDate: null },
+    });
+    assert.equal(moved.type, "move");
+    if (moved.type !== "move") return;
+    assert.equal(moved.patch.deploymentDate, null);
+  });
+
+  it("still demands one at Closed Won when the deal has none", () => {
+    const { deploymentDate, ...costsOnly } = wonSheet;
+    void deploymentDate;
+    const plan = planStageChange({
+      from: "contracting",
+      to: "closed_won",
+      fields: costsOnly,
+      stored: storedSheet,
+    });
+    assert.equal(plan.type, "needs");
+    if (plan.type !== "needs") return;
+    assert.equal(plan.needs, "won");
+  });
+
+  it("accepts a date pencilled in at Contracting instead of retyping it", () => {
+    const { deploymentDate, ...costsOnly } = wonSheet;
+    void deploymentDate;
+    const plan = planStageChange({
+      from: "contracting",
+      to: "closed_won",
+      fields: costsOnly,
+      stored: { ...storedSheet, deploymentDate: "2026-12-01" },
+    });
+    assert.equal(plan.type, "move");
+    if (plan.type !== "move") return;
+    assert.equal(plan.patch.deploymentDate, "2026-12-01");
+  });
+
+  it("lets the Won sheet correct a date set earlier", () => {
+    // Deliveries slip between the handshake and the signature; what is typed
+    // at the win is the commitment, so it wins over what was pencilled in.
+    const plan = planStageChange({
+      from: "contracting",
+      to: "closed_won",
+      fields: { ...wonSheet, deploymentDate: "2027-01-15" },
+      stored: { ...storedSheet, deploymentDate: "2026-12-01" },
+    });
+    assert.equal(plan.type, "move");
+    if (plan.type !== "move") return;
+    assert.equal(plan.patch.deploymentDate, "2027-01-15");
+  });
+});

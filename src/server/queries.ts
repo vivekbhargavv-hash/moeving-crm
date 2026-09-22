@@ -8,6 +8,7 @@ import {
   gte,
   ilike,
   inArray,
+  isNotNull,
   lte,
   or,
   sql,
@@ -56,6 +57,8 @@ export type OpportunityCard = {
   /** Set when this deal grew out of an earlier one for the same customer. */
   parentOpportunityId: string | null;
   expectedCloseDate: string | null;
+  /** Pencilled in at Contracting, or committed at Closed Won. */
+  deploymentDate: string | null;
   updatedAt: Date;
   ownerName: string;
   ownerId: string;
@@ -150,6 +153,7 @@ const cardColumns = {
   marginPct: opportunities.marginPct,
   parentOpportunityId: opportunities.parentOpportunityId,
   expectedCloseDate: opportunities.expectedCloseDate,
+  deploymentDate: opportunities.deploymentDate,
   updatedAt: opportunities.updatedAt,
   ownerName: users.name,
   ownerId: opportunities.ownerUserId,
@@ -466,6 +470,16 @@ export type Deployment = {
   deploymentDate: string | null;
   ownerName: string;
   isRepeat: boolean;
+  /**
+   * True while the deal is only at Contracting — verbally agreed, paperwork
+   * in flight, and not yet won.
+   *
+   * Ops sees these so a hub can plan weeks ahead instead of learning about a
+   * fleet the day it is sold. They are NOT a commitment: nothing is owed
+   * until the deal is won, and the board marks them so nobody loads trucks
+   * against a signature that has not arrived.
+   */
+  isExpected: boolean;
 };
 
 /**
@@ -493,6 +507,7 @@ export async function listDeployments(): Promise<Deployment[]> {
       deploymentDate: opportunities.deploymentDate,
       ownerName: users.name,
       parentOpportunityId: opportunities.parentOpportunityId,
+      stage: opportunities.stage,
     })
     .from(opportunities)
     .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
@@ -502,7 +517,17 @@ export async function listDeployments(): Promise<Deployment[]> {
     .where(
       and(
         eq(opportunities.organizationId, session.organizationId),
-        eq(opportunities.stage, "closed_won"),
+        // Won work, plus Contracting deals that have pencilled in a date.
+        // A Contracting deal with no date has nothing to tell ops, so it is
+        // not here — it would be a row with an empty column where the whole
+        // point is the column.
+        or(
+          eq(opportunities.stage, "closed_won"),
+          and(
+            eq(opportunities.stage, "contracting"),
+            isNotNull(opportunities.deploymentDate),
+          ),
+        )!,
         // Everything still owed, however old, plus recently finished work so
         // "did we do that one" still has an answer. Without the second half
         // this grows forever: every deployment the company has ever made was
@@ -527,9 +552,10 @@ export async function listDeployments(): Promise<Deployment[]> {
     // that" still has an answer.
     .limit(600);
 
-  return rows.map(({ parentOpportunityId, ...r }) => ({
+  return rows.map(({ parentOpportunityId, stage, ...r }) => ({
     ...r,
     isRepeat: parentOpportunityId !== null,
+    isExpected: stage === "contracting",
   }));
 }
 
@@ -798,6 +824,16 @@ export type LeadRow = {
   actionedBy: string | null;
   actionedAt: Date | null;
   createdBy: string | null;
+  /** When the enquiry was written down — not the day it came in. */
+  createdAt: Date;
+  /** When it became a deal. */
+  convertedAt: Date | null;
+  /**
+   * The stage of the deal it became. This is what turns "converted" into
+   * "won": a conversion rate that stops at the deal being raised says nothing
+   * about whether the inbound is any good.
+   */
+  dealStage: SalesStage | null;
 };
 
 /**
@@ -833,10 +869,16 @@ export async function listLeads(): Promise<LeadRow[]> {
       actionedBy: actioner.name,
       actionedAt: leads.actionedAt,
       createdBy: creator.name,
+      createdAt: leads.createdAt,
+      convertedAt: leads.convertedAt,
+      dealStage: opportunities.stage,
     })
     .from(leads)
     .leftJoin(actioner, eq(actioner.id, leads.actionedByUserId))
     .leftJoin(creator, eq(creator.id, leads.createdByUserId))
+    // Left, not inner: most leads never became a deal, and those are the rows
+    // the funnel is mostly about.
+    .leftJoin(opportunities, eq(opportunities.id, leads.opportunityId))
     .where(eq(leads.organizationId, session.organizationId))
     .orderBy(desc(leads.enquiryDate), desc(leads.createdAt));
 }

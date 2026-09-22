@@ -89,6 +89,7 @@ export default async function OpportunityPage({
           accountName: row.accountName,
           dealName: opp.name,
           cityId: opp.cityId,
+          deploymentDate: opp.deploymentDate,
           vehicleTypeId: opp.vehicleTypeId,
           driverType: opp.driverType,
           chargingScope: opp.chargingScope,

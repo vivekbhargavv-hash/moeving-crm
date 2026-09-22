@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 22 September 2026 (sixth session)
+**Last updated:** 22 September 2026 (seventh session)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -11,9 +11,15 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-**Migrations 0000–0010 are all applied to production.** Nothing to run. The
-last three were applied by hand through the Neon MCP connector before their
-code deployed, because the app queries those tables on page load.
+**Migrations 0000–0010 are applied to production. `0011_lead_funnel.sql` is
+NOT.** Apply it by hand through the Neon MCP connector **before** the code that
+needs it deploys — the Leads screen selects `converted_at` on page load, so
+deploying first gives every lead-facing page a 500. It is additive (one
+nullable column, one index, and a backfill of `converted_at` for leads already
+marked converted) and safe to run against live data.
+
+The earlier ones were applied the same way, for the same reason: the app
+queries those tables on page load.
 
 ### Blocking somebody today
 
@@ -127,6 +133,12 @@ Change these only deliberately — a lot of code assumes them.
 | **`revenue` is written from `price` at creation**, not only when the price is later edited. | Quick Add wrote the price and left revenue null, and every margin column in Postgres is generated from `revenue` — so a brand-new deal had `total_revenue` 0 and `margin_pct` null however carefully it was costed. The Pipeline's Total cost and Margin % columns stayed empty until somebody happened to edit the price, which was the one edit that carried revenue with it. |
 | **One `Segmented` treatment at every width**: a bordered white shell, the chosen option filled in ink. | The phone used to get a grey track with a white card on it, which does not read as a control — a grey strip with two words above white cards looks like a caption you cannot press. Vivek's words: "they don't appear as toggle buttons in mobile view". |
 | **The phone's bottom bar carries four tabs** — Leads, Pipeline, Deploy, Add deal — and a hamburger in the header opens every page. | Six tabs plus the Add-deal button gave each one 56px on a 390px screen. Dashboard and Forecast are screens you sit down to look at; the other three are in and out of all day. |
+| **A lead keeps three timestamps: `created_at`, `actioned_at`, `converted_at`.** Converting no longer overwrites `actioned_at`. | The three are the funnel — how fast the desk rings back, and how many of those calls become business. Conversion used to stamp `actioned_at` with the moment of conversion, which erased the one number the desk is actually measured on. |
+| **Inbound conversion is measured out of ENQUIRIES, never out of the previous step**, and the headline rate is WON, not converted. | A rate measured against the step before it flatters itself: a desk that rang two leads and converted both would report 100%. And raising a deal costs nothing — the enquiry only paid for itself when the trucks were sold. `lib/lead-funnel.ts`, free of React, so the denominators are tested. |
+| **The expected deployment date is offered at Contracting and mandated at Closed Won.** A date given at Contracting satisfies the Won sheet. | Contracting means verbally agreed with paperwork in flight — the first moment anybody can honestly say when the trucks are wanted, and weeks before the win. It is the same rule the cost sheet already follows: the answer must EXIST by Closed Won, not be typed at that moment. Optional at Contracting on purpose; a deal owner who does not know yet must not be blocked from moving the stage. |
+| **A Contracting deal with a date appears in Deployments, badged "Expected", and counts in the totals.** Recording vehicles against one is refused. | Vivek's call, over the alternative of a separate uncounted section: ops wants the forward view in the numbers they plan against. The guard that matters is still real — `recordDeployment()` checks the stage, so nothing can be marked deployed against an unsigned deal. The risk he accepted: "To deploy" includes work that is not yet owed. |
+| **Deleting a deal hands its lead back to the desk** as `qualified`, with a remark saying where the deal went. | `leads.opportunity_id` is ON DELETE SET NULL and `leads_converted_requires_opportunity` forbids a converted lead holding a null one, so the cascade fought the check and Postgres refused the delete outright. The lead itself is never deleted: somebody rang that company, and the enquiry happened whatever became of the deal. |
+| **The Pipeline's headline money column is `price` — per vehicle, per month.** Deal value steps behind the `2xl` breakpoint. | It is how the business thinks about a deal ("what does a truck earn"), and it is the figure every cost line on the sheet is comparable with. Value is that times the fleet and both halves are on the same row. |
 | **Deployments has a third view, By month**: city in rows, month in columns, vehicles in the cells, tapping a city for the clients behind the number. | By date answers "what is late", By city answers "what does Bangalore owe". Neither answers "how many trucks land where, and when", which is a shape rather than a list. The arithmetic is `lib/deployment-grid.ts`, free of React, so it tests. |
 | **The Deployments grid's detail panel sits UNDER the table**, not inside a row of it. | The Forecast tucks its drill-down into a table cell held to the viewport width by hand. Here the client rows landed beneath the fade that hints at sideways scroll: legible, and looking cut off. Below the table they get the full page width and no hack. |
 | **The Deployments grid spans the data's own months with no gaps.** | A fixed window hides a delivery that slipped past its end; dropping empty months prints "Sep, Nov, Jan", which reads as a stride rather than a calendar. The blank October column is itself the answer to "what does October look like". |
@@ -148,6 +160,7 @@ src/
     app-shell.tsx     mobile header + tab bar + desktop rail + toast
     quick-add.tsx     the 30-second create sheet
     stage-changer.tsx stage picker + Closed Won cost sheet + Closed Lost reason
+    leads/funnel.tsx  inbound conversion, by period
     leads/board.tsx   the inbound desk: list, new-lead form, qualify /
                       not-qualify sheets, and the convert-to-deal sheet
     pipeline/         board.tsx (kanban) · table.tsx (list + table) · filters.tsx
@@ -172,6 +185,8 @@ src/
   lib/
     deployment-groups.ts  how the ops queue is cut into sections (by due
                       date, or by city) — no React, so it tests
+    lead-funnel.ts    the inbound funnel and its denominators — no React,
+                      so the rates are tested
     cost-defaults.ts  which standard rate applies to a deal, and which stored
                       figures have drifted from it — no React, so it tests
     deployment-grid.ts  the Deployments By month grid: which months get a
@@ -182,6 +197,7 @@ tests/
   invite-url.test.ts            the absolute-redirect rule, runs anywhere
   deployment-groups.test.ts     the ops queue's two groupings, runs anywhere
   deployment-grid.test.ts       the By month grid's months and cells, anywhere
+  lead-funnel.test.ts           the inbound rates and their denominators
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
   0000_*.sql          initial schema
@@ -195,6 +211,8 @@ drizzle/
   0008_*.sql          opportunities.operating_days — 26 or 30, recorded only
   0009_*.sql          cost_defaults — the standard rate per cost line
   0010_*.sql          the noc role, lead_status, and the leads table
+  0011_*.sql          leads.converted_at — the funnel's third timestamp.
+                      NOT YET APPLIED to production, see § 0
   meta/               drizzle's journal. Repaired on 22 Sep — see § 6
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
@@ -213,13 +231,15 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. Sixty-four
+`node --test` with `tsx` — no test framework, no new dependencies. Eighty-two
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"
 stops, and which city leads), twelve on the By month grid (the month span, the
 empty column in the middle, a dateless deal kept aside), eleven on the
-cost-default matching rules, and twenty-five on what Postgres itself refuses — the check constraints, the
+cost-default matching rules, and eleven on the inbound funnel's rates and denominators, seven on the expected
+deployment date's optional-then-mandatory rule, and twenty-five on what
+Postgres itself refuses — the check constraints, the
 generated margin columns, the stage order, and the expansion link surviving the
 deletion of its parent.
 
@@ -401,6 +421,21 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   and New lead came to ~490px on a 390px screen, and the search box — the only
   one allowed to shrink — went to 44px with the switch sitting over its own
   placeholder. Two rows on a phone, one from `sm` up.
+- **A deal raised from a lead could not be deleted, ever.**
+  `leads.opportunity_id` is ON DELETE SET NULL, and
+  `leads_converted_requires_opportunity` forbids a converted lead from holding
+  a null one — so the cascade fought the check and Postgres refused the whole
+  delete. The page caught the throw and said *"Could not delete that. Check
+  your connection"*, which sent everybody looking at the wrong thing.
+  `deleteOpportunity` now hands the lead back to the desk in the same
+  transaction. Reproduced in SQL before the fix and after, and driven through
+  the UI.
+- **Converting a lead overwrote `actioned_at`** with the moment of conversion,
+  destroying the one timestamp that says how long an enquiry waited for its
+  callback. `converted_at` is its own column now (0011) and conversion leaves
+  `actioned_at` alone. Leads converted BEFORE that migration cannot be
+  recovered — their callback and conversion read as the same moment, and the
+  backfill deliberately guesses at nothing else.
 - **The Vercel deployments API reports `BUILDING` after a build is finished.**
   A deployment whose `ready` timestamp is already set keeps coming back as
   `BUILDING` on repeated `get_deployment` calls for minutes. Check
@@ -562,6 +597,21 @@ Roughly in order of value to adoption:
 - **Nothing records WHEN a deployment completed**, only how many are out. The
   count is in `opportunity_events` as a note, so "what did we deploy in
   October" needs parsing text. A `deployed_at` column would fix it properly.
+  This is the ONE date in the deal's life that is not captured: created,
+  expected close, actual close (`closed_at`) and expected deployment all are.
+- **"To deploy" on the Deployments screen now includes Contracting deals**,
+  which are not yet owed. That was a deliberate choice (§ 2) over a separate
+  uncounted section; the cost is that the headline number is capacity to plan
+  for rather than work committed. If it ever misleads, the fix is to exclude
+  `isExpected` rows from `totals` in `deployments/board.tsx` — a few lines.
+- **The funnel is computed in the browser over every lead**, like the rest of
+  the Leads screen. Right for a desk taking a few enquiries a day, wrong at a
+  few thousand, where it becomes the same WHERE-clause job the Pipeline
+  already had done to it.
+- **The funnel is hidden from the NOC desk**, because won/lost counts are deal
+  information and NOC sees leads and nothing else. They are the people whose
+  work it measures, so if Vivek wants them to see it, the honest version shows
+  enquiries/called/converted and stops short of the outcome.
 - Role guards are a call at the top of each page — `requireSales()`,
   `requireLeads()`, `requireDealOwner()`, `requireDeployments()`. There are now
   four of them across a dozen call sites plus the CSV route, and a new page has

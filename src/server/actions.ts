@@ -202,6 +202,17 @@ export async function createOpportunity(
         chargingScope: input.chargingScope ?? null,
         fleetSize: input.fleetSize,
         price: input.price,
+        /*
+         * Revenue per vehicle IS the price per vehicle — one figure, and the
+         * one every margin column in Postgres is generated from.
+         *
+         * Quick Add wrote the price and left revenue null, so a brand-new
+         * deal had total_revenue 0 and margin_pct null however carefully it
+         * was costed afterwards: the Pipeline's Total cost and Margin %
+         * columns stayed empty until somebody happened to edit the price,
+         * which is the one edit that used to carry revenue with it.
+         */
+        revenue: input.price,
         operatingDays: input.operatingDays,
         expectedCloseDate: input.expectedCloseMonth,
         ownerUserId,
@@ -670,6 +681,81 @@ export async function saveCostDefault(input: {
 
   revalidatePath("/admin/cost-defaults");
   return { ok: true };
+}
+
+/**
+ * Filling the blanks on deals nobody has costed yet.
+ *
+ * Setting a standard rate in Admin does nothing to a deal on its own — the
+ * rules pre-fill the cost sheet the next time somebody opens it, which means
+ * a pipeline of deals raised before the rates existed shows no cost and no
+ * margin until each one is opened by hand. This is the one deliberate act
+ * that closes that gap.
+ *
+ * It obeys the same rule the sheet does, and that is the whole reason it is
+ * safe: a figure already saved is never touched, only a blank one is filled.
+ * A won deal cannot have a blank (`opps_won_requires_costs` sees to that), so
+ * nothing here can restate a margin already reported.
+ */
+export async function applyCostDefaults(): Promise<
+  ActionResult<{ deals: number; figures: number }>
+> {
+  const session = await requireAdmin();
+  const defaults = await getCostDefaults();
+  if (!defaults.length) {
+    return { ok: false, error: "No standard rates are set yet." };
+  }
+
+  const open = await db
+    .select()
+    .from(opportunities)
+    .where(eq(opportunities.organizationId, session.organizationId));
+
+  let deals = 0;
+  let figures = 0;
+
+  for (const deal of open) {
+    const suggested = defaultsFor(
+      {
+        vehicleTypeId: deal.vehicleTypeId,
+        chargingScope: deal.chargingScope,
+        operatingDays: deal.operatingDays,
+      },
+      defaults,
+    );
+
+    const patch: Partial<Record<EconomicsKey, number>> = {};
+
+    // A deal quoted before revenue was written from price carries a price and
+    // no revenue, which leaves every generated margin column blank. The two
+    // are the same figure, so this is a repair, not a restatement.
+    if (deal.revenue === null && deal.price !== null) {
+      patch.revenue = deal.price;
+      figures += 1;
+    }
+
+    for (const field of COST_FIELDS) {
+      const rate = suggested[field.key];
+      // Blank only. A typed figure — and every figure on a won deal is one —
+      // stays exactly as it was saved.
+      if (rate !== undefined && deal[field.key] === null) {
+        patch[field.key] = rate;
+        figures += 1;
+      }
+    }
+    if (Object.keys(patch).length === 0) continue;
+
+    await db
+      .update(opportunities)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(opportunities.id, deal.id));
+    deals += 1;
+  }
+
+  revalidatePath("/admin/cost-defaults");
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+  return { ok: true, data: { deals, figures } };
 }
 
 /**
@@ -1222,6 +1308,18 @@ const leadInput = z.object({
 });
 
 /**
+ * The same fields plus what the caller said.
+ *
+ * Only the create form asks for it. `updateLead` deliberately keeps the
+ * narrower schema: its form does not carry a remarks field, and
+ * `formToObject` reads a missing field as null — which would wipe the remark
+ * a deal owner left behind on their call.
+ */
+const newLeadInput = leadInput.extend({
+  remarks: z.string().trim().max(2000).nullable().optional(),
+});
+
+/**
  * The NOC desk writing down a call.
  *
  * Only the company and the date are required. Somebody who rings off before
@@ -1230,7 +1328,7 @@ const leadInput = z.object({
  */
 export async function createLead(formData: FormData): Promise<ActionResult> {
   const session = await requireLeads();
-  const parsed = leadInput.safeParse(formToObject(formData));
+  const parsed = newLeadInput.safeParse(formToObject(formData));
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }

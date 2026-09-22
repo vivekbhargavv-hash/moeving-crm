@@ -5,6 +5,7 @@ import {
   BarChart3,
   CalendarRange,
   KanbanSquare,
+  Menu,
   PhoneCall,
   Plus,
   Settings,
@@ -18,6 +19,7 @@ import * as React from "react";
 
 import { QuickAdd } from "@/components/quick-add";
 import type { QuickAddData } from "@/components/quick-add";
+import { Sheet } from "@/components/ui";
 import { loadQuickAddData } from "@/server/actions";
 import type { Session } from "@/server/auth";
 import { cn } from "@/lib/utils";
@@ -43,6 +45,17 @@ const OPS_NAV = [{ href: "/deployments", label: "Deployments", icon: Truck }];
 /** The desk that answers the phone. Leads in, and nothing else. */
 const NOC_NAV = [{ href: "/leads", label: "Leads", icon: PhoneCall }];
 
+/**
+ * The four tabs a phone keeps at the bottom.
+ *
+ * Six tabs plus the Add-deal button on a 390px screen gave each one 56px and
+ * a label that had to be read rather than glanced at. These are the screens a
+ * deal owner is in and out of all day; Dashboard and Forecast are things you
+ * sit down to look at, so they live in the menu and the bottom bar gets its
+ * width back.
+ */
+const PHONE_TABS = ["/leads", "/pipeline", "/deployments"];
+
 /** Page titles for the mobile header, so it never says "MoEVing" vaguely. */
 const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -51,6 +64,7 @@ const TITLES: Record<string, string> = {
   "/opportunities": "Deal",
   "/admin/users": "Users",
   "/admin/master-data": "Master data",
+  "/admin/cost-defaults": "Cost defaults",
   "/settings": "Settings",
   "/deployments": "Deployments",
   "/leads": "Leads",
@@ -67,6 +81,7 @@ export function AppShell({
   const router = useRouter();
   const params = useSearchParams();
   const [addOpen, setAddOpen] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
 
   const [toast, setToast] = React.useState<string | null>(null);
   const [master, setMaster] = React.useState<QuickAddData | null>(null);
@@ -126,6 +141,14 @@ export function AppShell({
       : []),
     { href: "/settings", label: "Settings", icon: Settings },
   ];
+
+  // A tap that goes somewhere should close the menu behind it.
+  React.useEffect(() => setMenuOpen(false), [pathname]);
+
+  // What the phone's bottom bar keeps. Ops and NOC have one screen each, so
+  // there is nothing to trim for them.
+  const phoneTabs =
+    isOps || isNoc ? tabs : tabs.filter((t) => PHONE_TABS.includes(t.href));
 
   const title =
     pathname.startsWith("/forecast") && params.get("tab") === "wins"
@@ -188,18 +211,29 @@ export function AppShell({
       <div className="min-w-0 flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
         {/* Mobile header: one line, the page you are on, and you. */}
         <header className="glass sticky top-0 z-30 border-b border-line/70 md:hidden">
-          <div className="flex items-center justify-between px-4 pb-2.5 pt-3">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em]">{title}</h1>
-            <div className="flex items-center gap-2">
-              <Link
-                href="/settings"
-                aria-label="Settings"
-                className="flex h-10 w-10 items-center justify-center rounded-full text-muted active:bg-canvas"
-              >
-                <Settings size={19} />
-              </Link>
+          <div className="flex items-center gap-2 px-2 pb-2.5 pt-3">
+            {/* Every page the tab bar no longer has room for. */}
+            <button
+              onClick={() => setMenuOpen(true)}
+              aria-label="Menu"
+              aria-haspopup="dialog"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink active:bg-canvas"
+            >
+              <Menu size={22} />
+            </button>
+            <h1 className="min-w-0 flex-1 truncate text-[22px] font-semibold tracking-[-0.02em]">
+              {title}
+            </h1>
+            <Link
+              href="/settings"
+              aria-label="Settings"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted active:bg-canvas"
+            >
+              <Settings size={19} />
+            </Link>
+            <span className="mr-1 flex shrink-0 items-center">
               <UserButton />
-            </div>
+            </span>
           </div>
         </header>
 
@@ -208,19 +242,20 @@ export function AppShell({
         </main>
       </div>
 
-      {/* Mobile tab bar. Ops and NOC get their one screen and no Add deal:
-          neither of them sells. */}
+      {/* Mobile tab bar: the screens a deal owner lives in, plus Add deal.
+          Everything else is behind the hamburger. Ops and NOC get their one
+          screen and no Add deal — neither of them sells. */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
         <div
           className={cn(
             "mx-auto grid max-w-md",
             // The count has to match what is rendered, or the tabs sit off
-            // centre: one screen each for ops and NOC, five sales tabs plus
-            // the Add deal button for everyone else.
-            isOps || isNoc ? "grid-cols-1" : "grid-cols-6",
+            // centre: one screen each for ops and NOC, three tabs plus the
+            // Add deal button for everyone else.
+            isOps || isNoc ? "grid-cols-1" : "grid-cols-4",
           )}
         >
-          {tabs.map((item) => (
+          {phoneTabs.map((item) => (
             <NavTab key={item.href} {...item} pathname={pathname} />
           ))}
           {isOps || isNoc ? null : (
@@ -246,6 +281,56 @@ export function AppShell({
           {toast}
         </div>
       ) : null}
+
+      <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Go to">
+        <nav className="-my-1">
+          <ul className="divide-y divide-line">
+            {nav.map((item) => {
+              const active = pathname.startsWith(item.href);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "flex h-[54px] items-center gap-3 text-[15.5px] transition active:opacity-70",
+                      active ? "font-semibold text-brand-ink" : "text-ink",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+                        active ? "bg-brand-soft text-brand-ink" : "bg-canvas text-muted",
+                      )}
+                    >
+                      <item.icon size={18} strokeWidth={active ? 2.5 : 2} />
+                    </span>
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+            {/* The same action the + button performs, named, for anyone who
+                came looking for it in a list of pages. */}
+            {isOps || isNoc ? null : (
+              <li>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setAddOpen(true);
+                  }}
+                  className="flex h-[54px] w-full items-center gap-3 text-left text-[15.5px] text-ink active:opacity-70"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand text-white">
+                    <Plus size={18} strokeWidth={2.5} />
+                  </span>
+                  Add deal
+                </button>
+              </li>
+            )}
+          </ul>
+        </nav>
+      </Sheet>
 
       <QuickAdd
         open={addOpen}

@@ -318,16 +318,15 @@ export function PickerField({
  * visual treatments, and the Admin one had no active state at all, so you
  * could not tell which page you were on. They are all this now.
  *
- * The selected option is a white card lifted off a grey track, not a slab of
- * ink: on a phone the darkest thing on screen should be a primary action, not
- * a view switch. Options share the width evenly so the control never grows
- * with its labels and pushes the row past the screen.
+ * One treatment, at every width: a bordered white shell with the chosen
+ * option filled in ink. The phone used to get a different one — a white card
+ * lifted off a grey track — and it did not read as a control at all: a grey
+ * strip with two words in it, sitting above white cards, looks like a caption
+ * you cannot press. The desktop treatment says "these are buttons, this one is
+ * on" from across the room, so it is what the phone gets too.
  *
- * On a desktop row the phone treatment disappeared: a grey track next to white
- * inputs and bordered buttons read as two words of text, not something you
- * could press. From `md` up it becomes the same bordered white shell the
- * Board/Table switch uses, with the chosen option in ink — one switch shape
- * across the whole app.
+ * Options share the width evenly, so the control never grows with its labels
+ * and pushes a row past the edge of the screen.
  */
 export function Segmented<T extends string>({
   options,
@@ -348,8 +347,7 @@ export function Segmented<T extends string>({
       role="group"
       aria-label={label}
       className={cn(
-        "flex rounded-xl bg-canvas p-1",
-        "md:h-11 md:border md:border-line md:bg-white md:p-[3px]",
+        "flex h-12 rounded-xl border border-line bg-white p-[3px] md:h-11",
         className,
       )}
     >
@@ -362,10 +360,10 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             aria-pressed={active}
             className={cn(
-              "flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[10px] px-2 text-[13.5px] font-semibold transition md:h-full md:rounded-lg md:text-sm",
+              "flex h-full min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-[13.5px] font-semibold transition md:text-sm",
               active
-                ? "bg-white text-ink shadow-[0_1px_2px_rgba(16,24,40,0.08)] md:bg-ink md:text-white md:shadow-none"
-                : "text-muted active:bg-white/60 md:hover:bg-canvas md:hover:text-ink",
+                ? "bg-ink text-white"
+                : "text-muted active:bg-canvas hover:bg-canvas hover:text-ink",
             )}
           >
             {o.icon}

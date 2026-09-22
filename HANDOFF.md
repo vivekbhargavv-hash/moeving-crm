@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 22 September 2026 (fifth session)
+**Last updated:** 22 September 2026 (sixth session)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -26,13 +26,21 @@ code deployed, because the app queries those tables on page load.
    organization comes from our own tables), so the fix is to turn the
    requirement off: Clerk Dashboard → Organizations → Settings → membership
    **optional** (or disable Organizations entirely). One toggle, no deploy.
-2. **Fill in the blank cost defaults.** Admin → Cost defaults is live and
-   seeded with what was known on 22 Sep: Maintenance 2000, Supervisor 2000,
-   Miscellaneous 0, Charging 5000 (1T Tata Ace) and 7000 (1.7T Eicher) when
-   MoEVing pays, 0 for every vehicle when the client pays. **Lease, Driver,
-   Parking and charging for Switch iev4 / Ultra E7 / Ultra E9 are deliberately
-   blank** — nobody gave those figures, and a blank means the cost sheet leaves
-   that line alone rather than inventing one.
+2. **Fill in the blank cost defaults, then press "Fill in the blanks".**
+   Admin → Cost defaults is seeded with what was known on 22 Sep: Maintenance
+   2000, Supervisor 2000, Miscellaneous 0, Charging 5000 (1T Tata Ace) and 7000
+   (1.7T Eicher) when MoEVing pays, 0 for every vehicle when the client pays.
+   **Lease, Driver, Parking and charging for Switch iev4 / Ultra E7 / Ultra E9
+   are deliberately blank** — nobody gave those figures, and a blank means the
+   cost sheet leaves that line alone rather than inventing one.
+
+   The screen now has a **Save changes** button (it used to save each box on
+   blur, silently), and under the grids a **Fill in the blanks** button that
+   carries the rates onto deals already in the pipeline. Setting a rate does
+   nothing to an existing deal on its own — it pre-fills the cost sheet the
+   next time somebody opens one — so without that button a pipeline raised
+   before the rates existed shows no cost and no margin. It fills blanks only:
+   a typed figure is never touched, and a won deal cannot have a blank.
 3. **Give the phone desk the NOC role.** Admin → Users → role **NOC**. They see
    Leads and nothing else. Until somebody has it, leads can only be added by an
    admin.
@@ -116,6 +124,12 @@ Change these only deliberately — a lot of code assumes them.
 | **Converting a lead asks for the city and vehicle type.** The enquiry says "3W" and a typed city; a deal needs a real model and a city from the master list. | A deal raised against the wrong vehicle is worse than one more question. The caller's details travel into the deal's notes, because a deal has nowhere else to hold a phone number. |
 | **Every screen has a `loading.tsx`.** | Every page is `force-dynamic`, so a tap used to leave you on the page you were leaving, frozen, until the whole next page came back. A loading boundary also lets Next prefetch the shape of the next screen. |
 | **Filters draft locally and apply once.** The pipeline's filter sheet keeps a draft; the button says what it will do. | Filters live in the URL, so each chip was its own navigation: a stage, two cities and an owner cost four server renders in a row. |
+| **`revenue` is written from `price` at creation**, not only when the price is later edited. | Quick Add wrote the price and left revenue null, and every margin column in Postgres is generated from `revenue` — so a brand-new deal had `total_revenue` 0 and `margin_pct` null however carefully it was costed. The Pipeline's Total cost and Margin % columns stayed empty until somebody happened to edit the price, which was the one edit that carried revenue with it. |
+| **One `Segmented` treatment at every width**: a bordered white shell, the chosen option filled in ink. | The phone used to get a grey track with a white card on it, which does not read as a control — a grey strip with two words above white cards looks like a caption you cannot press. Vivek's words: "they don't appear as toggle buttons in mobile view". |
+| **The phone's bottom bar carries four tabs** — Leads, Pipeline, Deploy, Add deal — and a hamburger in the header opens every page. | Six tabs plus the Add-deal button gave each one 56px on a 390px screen. Dashboard and Forecast are screens you sit down to look at; the other three are in and out of all day. |
+| **Deployments has a third view, By month**: city in rows, month in columns, vehicles in the cells, tapping a city for the clients behind the number. | By date answers "what is late", By city answers "what does Bangalore owe". Neither answers "how many trucks land where, and when", which is a shape rather than a list. The arithmetic is `lib/deployment-grid.ts`, free of React, so it tests. |
+| **The Deployments grid's detail panel sits UNDER the table**, not inside a row of it. | The Forecast tucks its drill-down into a table cell held to the viewport width by hand. Here the client rows landed beneath the fade that hints at sideways scroll: legible, and looking cut off. Below the table they get the full page width and no hack. |
+| **The Deployments grid spans the data's own months with no gaps.** | A fixed window hides a delivery that slipped past its end; dropping empty months prints "Sep, Nov, Jan", which reads as a stride rather than a calendar. The blank October column is itself the answer to "what does October look like". |
 
 ---
 
@@ -160,11 +174,14 @@ src/
                       date, or by city) — no React, so it tests
     cost-defaults.ts  which standard rate applies to a deal, and which stored
                       figures have drifted from it — no React, so it tests
+    deployment-grid.ts  the Deployments By month grid: which months get a
+                      column, and what a cell counts — no React, so it tests
 tests/
   stage-change.test.ts          planStageChange, runs anywhere
   cost-defaults.test.ts         the standard-rate matching rules, runs anywhere
   invite-url.test.ts            the absolute-redirect rule, runs anywhere
   deployment-groups.test.ts     the ops queue's two groupings, runs anywhere
+  deployment-grid.test.ts       the By month grid's months and cells, anywhere
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
   0000_*.sql          initial schema
@@ -196,12 +213,13 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. Fifty-two
+`node --test` with `tsx` — no test framework, no new dependencies. Sixty-four
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"
-stops, and which city leads), eleven on the cost-default matching rules, and
-twenty-five on what Postgres itself refuses — the check constraints, the
+stops, and which city leads), twelve on the By month grid (the month span, the
+empty column in the middle, a dateless deal kept aside), eleven on the
+cost-default matching rules, and twenty-five on what Postgres itself refuses — the check constraints, the
 generated margin columns, the stage order, and the expansion link surviving the
 deletion of its parent.
 
@@ -363,6 +381,26 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   menu; desktop Firefox cannot install web apps at all. `install-app.tsx` now
   says so per browser instead of showing a Chrome instruction to a Firefox
   user.
+- **A new deal had no `revenue`, so its margin could never compute.** Quick Add
+  wrote `price` and left `revenue` null; every margin column in Postgres is
+  generated from `revenue`, so `total_revenue` was 0 and `margin_pct` null on
+  every deal ever created through the app. Nothing errored — the Pipeline's
+  Total cost and Margin % columns were simply blank, and the only thing that
+  ever fixed a row was editing its price, which is the one edit that carried
+  revenue with it. `createOpportunity` now writes both, and **Fill in the
+  blanks** (§ 0) repairs the rows that predate it.
+- **The Pipeline's totals row was one column out.** The footer closed two
+  hidden columns with a single `colSpan={2}` and then printed the blended
+  margin in the next cell along — which put it under **Deal Owner**, and left
+  **Total cost** with no total at all. It is one `<td>` per column now.
+- **Twelve columns do not fit a laptop.** The desktop table needs ~1,270px and
+  a 1280px screen gives it ~980 after the rail, so it scrolled — and what
+  scrolled off the right was Total cost and Margin %. Price / veh, Deal Owner
+  and Updated now wait for `2xl`; the money never hides.
+- **The Leads control row collapsed on a phone.** Search, the Open/All switch
+  and New lead came to ~490px on a 390px screen, and the search box — the only
+  one allowed to shrink — went to 44px with the switch sitting over its own
+  placeholder. Two rows on a phone, one from `sm` up.
 - **The Vercel deployments API reports `BUILDING` after a build is finished.**
   A deployment whose `ready` timestamp is already set keeps coming back as
   `BUILDING` on repeated `get_deployment` calls for minutes. Check
@@ -531,6 +569,17 @@ Roughly in order of value to adoption:
   the wrong one is a silent widening rather than an error.
 - Nothing runs the tests automatically — there is no CI workflow, so `npm test`
   is a thing a person remembers to type.
+- **"Fill in the blanks" walks every deal in the org one UPDATE at a time.**
+  Fine at a few hundred; at a few thousand it wants to be one statement. It is
+  an admin pressing a button occasionally, not a page load.
+- **A lead's Remarks box is on the create form now, but `updateLead` still has
+  no screen.** The narrower schema behind it deliberately leaves `remarks`
+  alone, so correcting a typo in a lead cannot wipe the remark a deal owner
+  left — but there is nothing in the UI that calls it either way.
+- **The Deployments By month grid holds every outstanding deployment in the
+  page** and does its arithmetic in the browser, unlike Forecast, which asks
+  the server per city. Right at today's volume and the reason the detail opens
+  instantly; wrong once the queue is thousands of rows.
 - **The Leads list loads every lead and filters in the browser.** Right for a
   desk taking a few enquiries a day; wrong at a few thousand, where it becomes
   the same WHERE-clause job the Pipeline already had done to it.

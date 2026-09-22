@@ -26,7 +26,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div
         role="tablist"
         aria-label="Admin section"
-        className="mx-auto mb-4 flex max-w-3xl rounded-xl bg-canvas p-1"
+        className="mx-auto mb-4 flex h-12 max-w-3xl rounded-xl border border-line bg-white p-[3px] md:h-11"
       >
         {TABS.map((t) => {
           const active = pathname.startsWith(t.href);
@@ -37,10 +37,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               role="tab"
               aria-selected={active}
               className={cn(
-                "flex h-10 flex-1 items-center justify-center rounded-[10px] text-[13.5px] font-semibold transition",
+                "flex h-full flex-1 items-center justify-center rounded-lg px-1 text-center text-[13px] font-semibold leading-tight transition sm:text-[13.5px]",
                 active
-                  ? "bg-white text-ink shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
-                  : "text-muted",
+                  ? "bg-ink text-white"
+                  : "text-muted hover:bg-canvas hover:text-ink",
               )}
             >
               {t.label}

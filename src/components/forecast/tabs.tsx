@@ -18,7 +18,7 @@ export function ForecastTabs({ active }: { active: "forecast" | "wins" }) {
     <div
       role="tablist"
       aria-label="Forecast view"
-      className="mb-3 flex rounded-xl bg-canvas p-1 md:h-11 md:w-[280px] md:border md:border-line md:bg-white md:p-[3px]"
+      className="mb-3 flex h-12 rounded-xl border border-line bg-white p-[3px] md:h-11 md:w-[280px]"
     >
       {tabs.map((t) => (
         <Link
@@ -27,10 +27,10 @@ export function ForecastTabs({ active }: { active: "forecast" | "wins" }) {
           role="tab"
           aria-selected={active === t.key}
           className={cn(
-            "flex h-10 flex-1 items-center justify-center gap-1.5 rounded-[10px] text-[13.5px] font-semibold transition md:h-full md:rounded-lg md:text-sm",
+            "flex h-full flex-1 items-center justify-center gap-1.5 rounded-lg text-[13.5px] font-semibold transition md:text-sm",
             active === t.key
-              ? "bg-white text-ink shadow-[0_1px_2px_rgba(16,24,40,0.08)] md:bg-ink md:text-white md:shadow-none"
-              : "text-muted md:hover:bg-canvas md:hover:text-ink",
+              ? "bg-ink text-white"
+              : "text-muted hover:bg-canvas hover:text-ink",
           )}
         >
           <t.icon size={15} />

@@ -35,6 +35,9 @@ type Row = {
   isActive: boolean;
   linked: boolean;
   invitedAt: Date | null;
+  /** "2 hours ago" / "22 Sep 2026", already worked out on the server. */
+  lastSeen: string | null;
+  lastSeenExact: string | null;
   /** Clerk's accept link, kept because the email often does not arrive. */
   inviteUrl: string | null;
   /** Deals they own. A user who owns any cannot be deleted, only suspended. */
@@ -150,7 +153,16 @@ export function AdminUsers({
                     <Badge className="bg-amber-100 text-amber-900">
                       {u.invitedAt ? "Invited" : "Not invited"}
                     </Badge>
-                  ) : null}
+                  ) : (
+                    /* Signed in at least once. The date says whether they are
+                       actually using it or accepted the invite and vanished. */
+                    <Badge
+                      className="bg-emerald-50 text-emerald-800"
+                      title={u.lastSeenExact ?? undefined}
+                    >
+                      {u.lastSeen ? `Seen ${u.lastSeen}` : "Signed in"}
+                    </Badge>
+                  )}
                   <Badge className={ROLE_STYLE[u.role]}>{ROLE_LABEL[u.role]}</Badge>
                 </div>
               </button>

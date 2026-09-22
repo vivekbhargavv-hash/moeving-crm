@@ -11,7 +11,7 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-**Migrations 0000–0006 are all applied to production.** Nothing to run.
+**Migrations 0000–0007 are all applied to production.** Nothing to run.
 
 1. **Rotate the Clerk secret key.** `sk_live_…` was pasted into a chat
    transcript. Clerk → API Keys → regenerate. A live secret can read and
@@ -19,10 +19,13 @@ Read this, then `README.md` for setup mechanics.
 2. **The GitHub repo is public.** Settings → General → Change visibility →
    Private. Nothing secret is committed (`.env.local` is gitignored), but the
    schema and pipeline logic are readable by anyone.
-3. **Demo data is still in the production database.** 36 sample deals across
-   12 fake customers. Removal is three statements at the bottom of
-   `drizzle/demo-data.sql`. Do this before the team starts entering real deals,
-   or the dashboard will mix the two.
+3. **The production database is live and empty of demo data.** On 21 Sep every
+   deal, deal event and customer was deleted — the 36 demo ones and the 9 real
+   ones — and the team is now entering live data. Users, cities, vehicle types,
+   lost reasons and stage probabilities were kept. A Neon snapshot,
+   `before-live-data-wipe-21sep2026`, holds the state from just before.
+   `drizzle/demo-data.sql` is still in the repo: running it now would put fake
+   deals into live data.
 
 ---
 
@@ -69,6 +72,7 @@ Change these only deliberately — a lot of code assumes them.
 | **One `Segmented` control in `components/ui`, used by every view switch.** | There were five built by hand in three treatments — and the Admin one had no active state at all, so both tabs looked identical and the screen never said which page you were on. |
 | **Colour means a state, never decoration.** Stage chips run a cool ramp while a deal is open (slate → sky → blue → indigo → violet), emerald won, rose lost, slate dormant; Dashboard tiles are white unless the number is money banked (green) or actually bad (rose). | Six tinted tiles in five hues made every number shout equally, and Negotiation — the healthiest an open deal gets — was painted the amber every other screen uses for "late". |
 | **There is no native `<select>` in the app.** Every choice is `Picker` (or `PickerField` for an uncontrolled one), which opens the app's own sheet; it posts through a hidden input, so a form sees exactly what a select gave it. | A native select hands the choosing to the OS — on Android a grey system dialog in the middle of a screen that looks nothing like it — and sizes itself to its longest option, which is what once pushed a control row past the edge of the screen. `Sheet` ref-counts its scroll lock so a picker inside a sheet is safe. |
+| **`users.last_seen_at` says who is actually using the CRM.** Written by `requireSession()`, throttled to once every few minutes per person (`lib/last-seen.ts`); null means never signed in, which Admin shows as "Invited". | The amber "Invited" badge vanished on first sign-in and left nothing, so a person who signed in once in March looked identical to one who was in this morning. It is deliberately not backfilled: `created_at` is when an admin typed someone's address, not a moment they were ever here. |
 | **A picked date is echoed in words** under every `input[type=date]` (`PickedDate`). | The native picker uses the BROWSER's language, not the page's, so the same field reads dd/mm/yyyy on one phone and mm/dd/yyyy on the next and 05/09 means two different days. Nothing in the app can change that, so it says the date in words instead. |
 | **A screen never loads more than it can show.** Pipeline filters, owner scope and SEARCH are all a WHERE clause (URL-driven, `?scope=&stage=&city=&vehicle=&owner=&q=`), capped at 250 rows; long lists render a window with "Show more". | It used to select every deal the organization had ever had and hide the rest in the browser: 1,476 deals was 1 MB of HTML on a phone to show the thirty that were yours. Search is in SQL specifically so the cap can never hide a deal from the feature whose job is to find one. |
 | **The Deployments query keeps all outstanding work plus 90 days of finished work**, not every deployment ever made. | Outstanding is bounded by what is owed; history is bounded by nothing at all, and all of it was being sent to a phone, oldest first. |
@@ -122,6 +126,7 @@ drizzle/
   0004_*.sql          users.invite_url — the accept link, see § 7
   0005_*.sql          the ops role — ALTER TYPE alone, see § 6
   0006_*.sql          deployment_date, vehicles_deployed, their constraints
+  0007_*.sql          users.last_seen_at — who has actually signed in
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
 ```

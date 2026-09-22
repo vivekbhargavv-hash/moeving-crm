@@ -18,6 +18,11 @@ import type { EconomicsSheet } from "@/server/actions";
  * sheet on the one screen where somebody is busiest and least able to go and
  * ask. Pricing is worked out while quoting, so it is captured while quoting —
  * and Closed Won simply refuses to happen until every figure is there.
+ *
+ * Revenue is not one of the questions. What a vehicle earns in a month is the
+ * price it was quoted at, which the deal already holds; asking again made two
+ * fields for one number, and two numbers that could disagree. It is shown
+ * here, sourced from the price, and changed by changing the price.
  */
 export function UnitEconomics({
   id,
@@ -51,10 +56,15 @@ export function UnitEconomics({
     );
   }, [editing, sheet]);
 
-  const filled = Object.values(sheet).filter((v) => v !== null).length;
+  // Revenue is the deal's price rather than an answer given here, so what is
+  // "filled in" is the costs plus that price — counted the same way the
+  // Closed Won check counts it, since that is what the deal will be held to.
+  const filled = Object.values({ ...sheet, revenue: price }).filter(
+    (v) => v !== null && v !== undefined,
+  ).length;
   const missing = Object.values(sheet).length - filled;
 
-  const draftRevenue = Number(values.revenue || 0);
+  const draftRevenue = price ?? 0;
   const draftCost = COST_FIELDS.reduce(
     (sum, f) => sum + (Number(values[f.key] || 0) || 0),
     0,
@@ -84,8 +94,11 @@ export function UnitEconomics({
     (sum, f) => sum + (sheet[f.key] ?? 0),
     0,
   );
-  const marginPerVehicle = (sheet.revenue ?? 0) - costPerVehicle;
-  const marginPct = sheet.revenue ? (marginPerVehicle / sheet.revenue) * 100 : null;
+  // The deal's price is the truth; a stored revenue that predates that rule
+  // only shows through on a deal with no price at all.
+  const revenue = price ?? sheet.revenue;
+  const marginPerVehicle = (revenue ?? 0) - costPerVehicle;
+  const marginPct = revenue ? (marginPerVehicle / revenue) * 100 : null;
 
   return (
     <>
@@ -115,7 +128,7 @@ export function UnitEconomics({
           </div>
         ) : (
           <dl className="px-4 pb-4 text-sm">
-            <Row label="Revenue" value={inr(sheet.revenue)} />
+            <Row label="Revenue" value={inr(revenue)} />
             {COST_FIELDS.map((f) => (
               <Row key={f.key} label={f.label} value={inr(sheet[f.key])} muted />
             ))}
@@ -154,7 +167,12 @@ export function UnitEconomics({
         title="Unit economics"
         action={save}
         footer={
-          <Button variant="brand" size="lg" className="w-full" disabled={pending}>
+          <Button
+            variant="brand"
+            size="lg"
+            className="w-full"
+            disabled={pending || price === null}
+          >
             {pending ? "Saving…" : "Save"}
           </Button>
         }
@@ -169,19 +187,25 @@ export function UnitEconomics({
             in this deal.
           </p>
 
-          <Field
-            label="Revenue per vehicle / month"
-            hint="From the quoted price — change it if the rate differs."
-          >
-            <Input
-              name="revenue"
-              inputMode="numeric"
-              required={isWon}
-              placeholder={price ? String(price) : "₹0"}
-              value={values.revenue ?? ""}
-              onChange={(e) => set("revenue", e.target.value)}
-            />
-          </Field>
+          <div className="flex items-baseline justify-between gap-4 rounded-xl border border-line px-4 py-3">
+            <div>
+              <p className="text-[13px] font-medium">Revenue per vehicle / month</p>
+              <p className="text-[12px] text-muted">
+                The price this deal is quoted at. Change it by editing the deal.
+              </p>
+            </div>
+            <span className="tabular shrink-0 font-semibold">
+              {price ? inr(price) : "—"}
+            </span>
+          </div>
+
+          {price === null ? (
+            <p className="rounded-xl bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+              This deal has no price yet, so there is nothing for it to earn.
+              Set the price per vehicle in <strong>Edit</strong> first — the
+              costs below can be saved once it has one.
+            </p>
+          ) : null}
 
           <p className="!mt-5 text-[13px] font-medium text-muted">
             Monthly cost of running one vehicle

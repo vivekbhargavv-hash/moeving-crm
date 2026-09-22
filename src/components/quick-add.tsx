@@ -16,7 +16,7 @@ import {
 } from "@/components/ui";
 import { CHARGING_ICONS, DRIVER_ICONS } from "@/components/choice-icons";
 import { Shimmer } from "@/components/skeletons";
-import { CHARGING_SCOPES, DRIVER_TYPES } from "@/lib/constants";
+import { CHARGING_SCOPES, DRIVER_TYPES, OPERATING_DAYS } from "@/lib/constants";
 import {
   cn,
   inrCompact,
@@ -73,6 +73,7 @@ export function QuickAdd({
   // rather than showing a 1 nobody chose.
   const [fleet, setFleet] = React.useState("");
   const [price, setPrice] = React.useState("");
+  const [days, setDays] = React.useState<number | null>(null);
   const [month, setMonth] = React.useState("");
   const [showMore, setShowMore] = React.useState(false);
 
@@ -87,6 +88,7 @@ export function QuickAdd({
     setChargingScope(null);
     setFleet("");
     setPrice("");
+    setDays(null);
     setMonth("");
     setShowMore(false);
   }, [open]);
@@ -273,6 +275,40 @@ export function QuickAdd({
               onChange={(e) => setPrice(e.target.value.replace(/\D/g, ""))}
             />
           </Field>
+        </div>
+
+        {/* The price above is the monthly rate either way; this is the shape
+            of the contract behind it, and the reason two deals at the same
+            rent are not the same deal. */}
+        <div>
+          <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
+            Operating days a month
+          </p>
+          <div className="flex gap-2">
+            {OPERATING_DAYS.map((d) => {
+              const on = days === d.value;
+              return (
+                <button
+                  key={d.value}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setDays(on ? null : d.value)}
+                  className={cn(
+                    "flex h-12 flex-1 flex-col items-center justify-center rounded-xl border text-sm font-semibold transition active:scale-[0.98]",
+                    on
+                      ? "border-brand bg-brand-soft text-brand-ink"
+                      : "border-line bg-white text-muted",
+                  )}
+                >
+                  {d.label}
+                  <span className="text-[11px] font-normal opacity-70">
+                    {d.hint}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <input type="hidden" name="operatingDays" value={days ?? ""} />
         </div>
 
         <div>

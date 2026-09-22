@@ -25,13 +25,17 @@ export default async function ForecastPage({
     const v = params[k];
     return typeof v === "string" && v ? v : undefined;
   };
+  /** One `?stage=a,b` parameter to a list — the same shape the pipeline uses. */
+  const list = (k: string) => (one(k) ?? "").split(",").filter(Boolean);
 
   const months = upcomingMonths(MONTH_COUNT);
   const filters: OpportunityFilters = {
     cityId: one("city"),
     vehicleTypeId: one("vehicle"),
     ownerUserId: one("spoc"),
-    stage: one("stage") as SalesStage | undefined,
+    // Multi-select: "how do Negotiation and Contracting look together" is the
+    // question this page is usually opened with.
+    stages: list("stage") as SalesStage[],
     from: `${months[0]}-01`,
     to: lastDayOf(months[months.length - 1]!),
   };

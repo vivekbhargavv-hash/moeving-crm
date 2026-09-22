@@ -16,6 +16,8 @@ import {
   vehicleTypes,
 } from "@/db/schema";
 import type { SalesStage } from "@/db/schema";
+import { OPERATING_DAYS } from "@/lib/constants";
+import { inr } from "@/lib/utils";
 import { requireAdmin, requireSession } from "@/server/auth";
 import { getQuickAddData, type QuickAddData } from "@/server/queries";
 import { sendInvitation } from "@/server/invites";
@@ -81,6 +83,14 @@ const baseOpportunity = z.object({
   chargingScope: z.enum(["client", "moeving"]).nullable().optional(),
   fleetSize: z.coerce.number().int().min(1).max(100_000),
   price: optionalMoney,
+  /** 26 or 30 — the shape of the contract, not a figure to compute with. */
+  operatingDays: z
+    .union([z.string().trim().min(1), z.number()])
+    .transform(Number)
+    .pipe(z.number().int().refine((v) => OPERATING_DAYS.some((d) => d.value === v)))
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
   expectedCloseMonth: closeMonth,
   notes: z.string().trim().max(4000).nullable().optional(),
   ownerUserId: uuidish,
@@ -184,6 +194,7 @@ export async function createOpportunity(
         chargingScope: input.chargingScope ?? null,
         fleetSize: input.fleetSize,
         price: input.price,
+        operatingDays: input.operatingDays,
         expectedCloseDate: input.expectedCloseMonth,
         ownerUserId,
         notes: input.notes ?? null,
@@ -236,6 +247,25 @@ export async function updateOpportunity(
   // go out, so the count follows the fleet down rather than the edit failing.
   const vehiclesDeployed = Math.min(existing.vehiclesDeployed, input.fleetSize);
 
+  /**
+   * A price change is a revenue change.
+   *
+   * `price` and the Closed Won `revenue` are the same figure — the money one
+   * vehicle earns in a month — so revenue is written from price rather than
+   * typed a second time. A won deal may not hold a NULL revenue (the
+   * `opps_won_requires_costs` check), so clearing the price of a won deal is
+   * refused rather than allowed to fail at the database.
+   */
+  const repricing = (existing.price ?? null) !== (input.price ?? null);
+  const isWon = existing.stage === "closed_won";
+  if (repricing && isWon && input.price === null) {
+    return {
+      ok: false,
+      error:
+        "This deal is won, so it has to keep a price — that figure is the revenue already reported for the month it closed in.",
+    };
+  }
+
   await db
     .update(opportunities)
     .set({
@@ -248,7 +278,12 @@ export async function updateOpportunity(
       chargingScope: input.chargingScope ?? null,
       fleetSize: input.fleetSize,
       price: input.price,
+      operatingDays: input.operatingDays,
       expectedCloseDate: input.expectedCloseMonth,
+      // Revenue per vehicle IS the price per vehicle — one number, kept in one
+      // place. Changing the rate here changes what the deal earns, including
+      // on a won deal, whose timeline then says so below.
+      ...(repricing ? { revenue: input.price } : {}),
       ownerUserId,
       notes: input.notes ?? null,
       updatedAt: new Date(),
@@ -266,6 +301,20 @@ export async function updateOpportunity(
     userId: session.userId,
     kind: "updated",
   });
+
+  // Repricing a won deal restates a month that has already been reported, so
+  // it is never silent: the deal's own timeline carries the before and after.
+  if (repricing && isWon) {
+    await db.insert(opportunityEvents).values({
+      organizationId: session.organizationId,
+      opportunityId: id,
+      userId: session.userId,
+      kind: "note",
+      body: `Price per vehicle changed from ${inr(existing.price)} to ${inr(
+        input.price,
+      )}. Revenue and margin for this won deal now follow it.`,
+    });
+  }
 
   revalidatePath(`/opportunities/${id}`);
   revalidatePath("/pipeline");
@@ -548,7 +597,21 @@ export async function saveUnitEconomics(
     };
   }
 
-  const next = pickEconomics(parsed.data);
+  /**
+   * Revenue is not asked for here, whatever the form posts.
+   *
+   * The money one vehicle earns in a month is the price it was quoted at —
+   * one number, held on the deal. Asking for it twice produced two fields
+   * that could disagree, and nobody could say which was right.
+   */
+  const next = { ...pickEconomics(parsed.data), revenue: existing.price ?? null };
+  if (existing.price === null) {
+    return {
+      ok: false,
+      error:
+        "Set the price per vehicle on this deal first — that price is the revenue, so the sheet has nothing to earn from without it.",
+    };
+  }
   if (existing.stage === "closed_won" && missingEconomics(next).length > 0) {
     return {
       ok: false,
@@ -621,6 +684,11 @@ export async function changeStage(
   if (plan.type === "needs") return { ok: true, data: { needs: plan.needs } };
 
   const patch: Partial<typeof opportunities.$inferInsert> = { ...plan.patch };
+
+  // The Won sheet asks for the price per vehicle and posts it as `revenue`,
+  // because they are the same figure. Writing it back to `price` too keeps the
+  // deal's quoted rate and its recorded revenue from ever drifting apart.
+  if (patch.revenue != null) patch.price = patch.revenue;
 
   if (plan.lostReason) {
     // A reason id is a form field, so it is checked against this org before it

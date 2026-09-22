@@ -81,7 +81,11 @@ export function StageChanger({
       .then((result) => {
         if (!live || !result.ok || !result.data) return;
         const { revenue: storedRevenue, ...storedCosts } = result.data;
-        if (storedRevenue !== null) setRevenue(String(storedRevenue));
+        // Only where the deal carries no price at all does a stored revenue
+        // still have something to say.
+        if (!target?.price && storedRevenue !== null) {
+          setRevenue(String(storedRevenue));
+        }
         setCosts(
           Object.fromEntries(
             Object.entries(storedCosts)
@@ -207,9 +211,12 @@ export function StageChanger({
             <PickedDate value={deployDate} />
           </Field>
 
+          {/* The price per vehicle IS the revenue per vehicle — one figure. It
+              is editable here because winning is the moment a rate is finally
+              agreed, and saving writes it back to the deal's price. */}
           <Field
-            label="Revenue per vehicle / month"
-            hint="From the quoted price — change it if the rate differs."
+            label="Price per vehicle / month"
+            hint="What the customer pays for one vehicle — this is the deal's revenue."
           >
             <Input
               name="revenue"

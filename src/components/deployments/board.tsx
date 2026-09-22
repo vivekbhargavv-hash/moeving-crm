@@ -8,6 +8,7 @@ import { Badge, Button, Segmented, Sheet } from "@/components/ui";
 import { DeploymentGridView } from "@/components/deployments/grid";
 import { groupByCity, groupByDueDate } from "@/lib/deployment-groups";
 import type { Group } from "@/lib/deployment-groups";
+import { showToast } from "@/lib/toast";
 import { cn, daysUntil, formatDateCompact, num, todayInIndia } from "@/lib/utils";
 import { recordDeployment } from "@/server/actions";
 import type { Deployment } from "@/server/queries";
@@ -552,6 +553,7 @@ function RecordSheet({
     startTransition(async () => {
       const result = await recordDeployment(target.id, n);
       if (!result.ok) return setError(result.error);
+      showToast(`${target.accountName}: ${n} of ${target.fleetSize} on the road`);
       onSaved();
     });
   }
@@ -582,7 +584,7 @@ function RecordSheet({
       <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
         How many vehicles are on the road?
       </p>
-      <div className="flex h-12 items-center rounded-xl border border-line bg-white">
+      <div className="flex h-12 items-center rounded-xl border border-line bg-white focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/60">
         <button
           type="button"
           onClick={() => setCount(String(Math.max(0, n - 1)))}

@@ -39,17 +39,34 @@
     user-select: none;
   }
 
-  /* Anything readable stays selectable. */
+  /* Anything readable stays selectable — including links and spans, or a
+     lead's phone number and email could not be copied. */
   input,
   textarea,
   p,
   h1,
   h2,
   h3,
+  dt,
   dd,
-  td {
+  td,
+  li,
+  a,
+  span {
     -webkit-user-select: text;
     user-select: text;
+  }
+
+  /* ...but not the label of a control: a long press on a button or a tab
+     should press it, not start selecting its text. */
+  button,
+  button *,
+  [role="button"],
+  [role="button"] *,
+  nav a,
+  nav a * {
+    -webkit-user-select: none;
+    user-select: none;
   }
 
   /* Numbers in tables and tiles line up. */

@@ -20,6 +20,7 @@ import {
 import type { SalesStage } from "@/db/schema";
 import type { UserRole } from "@/server/auth";
 import { CHARGING_SCOPES, DRIVER_TYPES, OPERATING_DAYS } from "@/lib/constants";
+import { showToast } from "@/lib/toast";
 import { monthLabelShort, upcomingMonths } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { deleteOpportunity, updateOpportunity } from "@/server/actions";
@@ -106,6 +107,7 @@ export function DetailActions({
       try {
         const result = await updateOpportunity(opp.id, formData);
         if (!result.ok) return setError(result.error);
+        showToast("Changes saved");
         setEditing(false);
       } catch {
         setError("Could not save that. Check your connection and try again.");

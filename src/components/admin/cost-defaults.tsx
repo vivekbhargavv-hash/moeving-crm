@@ -300,7 +300,7 @@ function CostLine({
                   aria-label={`${cell.label} amount`}
                   onChange={(e) => onChange(cell.id, e.target.value)}
                   className={cn(
-                    "tabular h-11 w-28 shrink-0 rounded-xl border bg-white px-3 text-right text-sm font-semibold focus:border-brand focus:outline-none",
+                    "tabular h-11 w-28 shrink-0 rounded-xl border bg-white px-3 text-right text-sm font-semibold focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/60",
                     dirty ? "border-brand ring-2 ring-brand/20" : "border-line",
                   )}
                 />

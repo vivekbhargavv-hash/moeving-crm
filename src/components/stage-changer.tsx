@@ -14,6 +14,7 @@ import {
 } from "@/components/ui";
 import { COST_FIELDS, STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
+import { showToast } from "@/lib/toast";
 import { cn, inr, inrCompact, todayInIndia } from "@/lib/utils";
 import { changeStage, loadUnitEconomics } from "@/server/actions";
 
@@ -32,6 +33,12 @@ export type StageTarget = {
    * filled for a deal that pencilled one in weeks earlier.
    */
   deploymentDate?: string | null;
+  /**
+   * Where it is headed, when that is already known — a card dropped on the
+   * Contracting, Won or Lost column. The sheet opens on that stage's form
+   * instead of asking which stage all over again.
+   */
+  to?: SalesStage;
 };
 
 /**
@@ -70,7 +77,15 @@ export function StageChanger({
 
   React.useEffect(() => {
     if (target) {
-      setMode("pick");
+      setMode(
+        target.to === "closed_won"
+          ? "won"
+          : target.to === "closed_lost"
+            ? "lost"
+            : target.to === "contracting"
+              ? "contracting"
+              : "pick",
+      );
       setError(null);
       setCosts({});
       setPrefilled([]);
@@ -166,6 +181,7 @@ export function StageChanger({
         );
         return;
       }
+      showToast(`${target!.name} moved to ${STAGE_MAP[stage].label}`);
       onClose();
     });
   }

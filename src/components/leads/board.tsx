@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight, Check, Phone, Plus, Search, ThumbsDown } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui";
 import type { LeadStatus } from "@/db/schema";
 import { OPERATING_DAYS } from "@/lib/constants";
+import { showToast } from "@/lib/toast";
 import { cn, formatDate, monthLabelShort, num, todayInIndia, upcomingMonths } from "@/lib/utils";
 import { actionLead, convertLead, createLead } from "@/server/actions";
 import type { LeadRow } from "@/server/queries";
@@ -49,6 +51,9 @@ export const LEAD_STATUS: Record<
  * status with no sentence behind it tells the next person nothing — so it is
  * shown in the list rather than hidden behind a tap.
  */
+/** Lead cards drawn per tap of "Show more". */
+const PAGE = 40;
+
 export function LeadsBoard({
   leads,
   master,
@@ -88,6 +93,14 @@ export function LeadsBoard({
         .some((v) => v!.toLowerCase().includes(q));
     });
   }, [leads, query, filter]);
+
+  /**
+   * How many cards are in the DOM. Every lead still arrives and search and
+   * the funnel still run over all of them; only the drawing waits until
+   * somebody scrolls that far. A new search or filter starts from the top.
+   */
+  const [limit, setLimit] = React.useState(PAGE);
+  React.useEffect(() => setLimit(PAGE), [query, filter]);
 
   const waiting = leads.filter((l) => l.status === "new").length;
 
@@ -160,7 +173,7 @@ export function LeadsBoard({
         />
       ) : (
         <div className="space-y-2">
-          {shown.map((lead) => (
+          {shown.slice(0, limit).map((lead) => (
             <LeadCard
               key={lead.id}
               lead={lead}
@@ -170,6 +183,17 @@ export function LeadsBoard({
               onConvert={() => setConverting(lead)}
             />
           ))}
+          {shown.length > limit ? (
+            <button
+              onClick={() => setLimit((n) => n + PAGE)}
+              className="h-12 w-full rounded-2xl border border-line bg-white text-[14px] font-semibold text-brand-ink active:bg-canvas"
+            >
+              Show {Math.min(PAGE, shown.length - limit)} more
+              <span className="ml-1 font-normal text-muted">
+                ({shown.length - limit} left)
+              </span>
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -299,12 +323,12 @@ function LeadCard({
       ) : null}
 
       {lead.status === "converted" && lead.opportunityId ? (
-        <a
+        <Link
           href={`/opportunities/${lead.opportunityId}`}
-          className="mt-3 inline-flex h-10 items-center gap-1.5 text-[13px] font-semibold text-brand-ink"
+          className="mt-3 inline-flex h-11 items-center gap-1.5 text-[13px] font-semibold text-brand-ink"
         >
           Open the deal <ArrowRight size={15} />
-        </a>
+        </Link>
       ) : null}
     </div>
   );
@@ -330,6 +354,9 @@ function ActionSheet({
     startTransition(async () => {
       const result = await actionLead(lead.id, { status: mode, remarks, reason });
       if (!result.ok) return setError(result.error);
+      showToast(
+        `${lead.companyName} marked ${mode === "qualified" ? "qualified" : "not qualified"}`,
+      );
       onClose();
     });
   }
@@ -420,6 +447,7 @@ function ConvertSheet({
     startTransition(async () => {
       const result = await convertLead(lead.id, formData);
       if (!result.ok) return setError(result.error);
+      showToast(`${lead.companyName} is a deal now`);
       onClose();
       router.push(`/opportunities/${result.data!.id}`);
     });
@@ -558,6 +586,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
     startTransition(async () => {
       const result = await createLead(formData);
       if (!result.ok) return setError(result.error);
+      showToast("Lead saved");
       onClose();
     });
   }

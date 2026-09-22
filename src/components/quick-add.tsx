@@ -17,6 +17,7 @@ import {
 import { CHARGING_ICONS, DRIVER_ICONS } from "@/components/choice-icons";
 import { Shimmer } from "@/components/skeletons";
 import { CHARGING_SCOPES, DRIVER_TYPES, OPERATING_DAYS } from "@/lib/constants";
+import { showToast } from "@/lib/toast";
 import {
   cn,
   inrCompact,
@@ -122,6 +123,8 @@ export function QuickAdd({
           return;
         }
         const { id, count } = result.data!;
+        // Several deals are confirmed on the Pipeline, by ?created=N.
+        if (count === 1) showToast("Deal created");
         onClose();
         // One deal opens directly; several go back to the pipeline, where
         // seeing the new cards is the point.
@@ -252,7 +255,7 @@ export function QuickAdd({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fleet size">
-            <div className="flex h-12 items-center rounded-xl border border-line bg-white">
+            <div className="flex h-12 items-center rounded-xl border border-line bg-white focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/60">
               <button
                 type="button"
                 onClick={() => setFleet(String(Math.max(1, fleetCount - 1)))}

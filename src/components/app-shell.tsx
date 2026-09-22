@@ -22,6 +22,8 @@ import type { QuickAddData } from "@/components/quick-add";
 import { Sheet } from "@/components/ui";
 import { loadQuickAddData } from "@/server/actions";
 import type { Session } from "@/server/auth";
+import { recordPage } from "@/lib/nav-history";
+import { onToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 /**
@@ -90,7 +92,14 @@ export function AppShell({
   const [addOpen, setAddOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
 
-  const [toast, setToast] = React.useState<string | null>(null);
+  // Keyed, so the same message twice in a row still restarts its timer.
+  const [toast, setToast] = React.useState<{ text: string; key: number } | null>(
+    null,
+  );
+  const say = React.useCallback(
+    (text: string) => setToast({ text, key: Date.now() }),
+    [],
+  );
   const [master, setMaster] = React.useState<QuickAddData | null>(null);
 
   /**
@@ -122,10 +131,18 @@ export function AppShell({
     }
     const created = Number(params.get("created"));
     if (created > 0) {
-      setToast(`${created} deals created`);
+      say(`${created} deals created`);
       router.replace(pathname);
     }
-  }, [params, pathname, router]);
+  }, [params, pathname, router, say]);
+
+  React.useEffect(() => onToast(say), [say]);
+
+  // Remembered for the back link on a deal's page.
+  const query = params.toString();
+  React.useEffect(() => {
+    recordPage(query ? `${pathname}?${query}` : pathname);
+  }, [pathname, query]);
 
   React.useEffect(() => {
     if (!toast) return;
@@ -283,14 +300,22 @@ export function AppShell({
         </div>
       </nav>
 
-      {toast ? (
-        <div
-          role="status"
-          className="fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-50 mx-auto w-fit max-w-[92vw] rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white shadow-lg"
-        >
-          {toast}
-        </div>
-      ) : null}
+      {/* The live region is always there and only its text changes: a
+          region inserted already holding its message is often not read out.
+          Above the sheets, so a confirmation is never hidden by one. */}
+      <div
+        role="status"
+        className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[60] flex justify-center"
+      >
+        {toast ? (
+          <p
+            key={toast.key}
+            className="max-w-[92vw] rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+          >
+            {toast.text}
+          </p>
+        ) : null}
+      </div>
 
       <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Go to">
         <nav className="-my-1">

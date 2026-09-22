@@ -2,6 +2,7 @@
 
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
@@ -62,8 +63,10 @@ export function Label({
   );
 }
 
+// The focus ring is the field's "you are here". At 20% it was too faint to
+// find on a sunlit phone or by keyboard; 60% on top of the brand border is.
 const fieldStyles =
-  "w-full h-12 rounded-xl border border-line bg-white px-3.5 text-ink placeholder:text-muted/60 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition";
+  "w-full h-12 rounded-xl border border-line bg-white px-3.5 text-ink placeholder:text-muted/60 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/60 transition";
 
 export const Input = React.forwardRef<
   HTMLInputElement,
@@ -189,19 +192,27 @@ export function Picker({
   disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [missing, setMissing] = React.useState(false);
+  const trigger = React.useRef<HTMLButtonElement>(null);
   const selected = options.find((o) => o.value === value);
 
   return (
     <>
       <button
+        ref={trigger}
         type="button"
         disabled={disabled}
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-label={`${label}: ${selected?.label ?? placeholder}`}
+        aria-invalid={missing || undefined}
+        aria-describedby={missing && name ? `${name}-missing` : undefined}
         className={cn(
           fieldStyles,
           "flex items-center gap-1 text-left disabled:opacity-50",
+          // Important, so the red outlasts the focus styles: the picker is
+          // focused at the very moment it is flagged.
+          missing && "!border-rose-500 !ring-2 !ring-rose-500/40",
           className,
         )}
       >
@@ -229,9 +240,39 @@ export function Picker({
         </svg>
       </button>
 
-      {/* The value still reaches the server the way a select's did. */}
-      {name ? (
-        <input type="hidden" name={name} value={value} required={required} />
+      {/* The value still reaches the server the way a select's did.
+          A required one is a visually hidden text input rather than
+          type="hidden": browsers skip hidden inputs when validating, so
+          `required` there never stopped a form — the server refused it
+          instead, in a message at the bottom of the sheet. */}
+      {name && required ? (
+        <input
+          name={name}
+          value={value}
+          required
+          // Not readOnly: a read-only input is skipped by validation too.
+          onChange={() => {}}
+          tabIndex={-1}
+          aria-hidden="true"
+          className="sr-only"
+          onInvalid={(e) => {
+            // The page's own message beside the control, not the browser's
+            // bubble pointing at an input nobody can see.
+            e.preventDefault();
+            setMissing(true);
+            trigger.current?.focus();
+          }}
+        />
+      ) : name ? (
+        <input type="hidden" name={name} value={value} />
+      ) : null}
+      {missing ? (
+        <p
+          id={name ? `${name}-missing` : undefined}
+          className="mt-1 text-xs font-medium text-rose-700"
+        >
+          Pick one to continue.
+        </p>
       ) : null}
 
       <Sheet open={open} onClose={() => setOpen(false)} title={label}>
@@ -244,6 +285,7 @@ export function Picker({
                   type="button"
                   onClick={() => {
                     onChange(o.value);
+                    if (o.value) setMissing(false);
                     setOpen(false);
                   }}
                   aria-current={on}
@@ -480,9 +522,21 @@ export function Sheet({
     };
   }, [open, requestClose]);
 
-  if (!open) return null;
+  // No <body> on the server. Every sheet starts closed today; this keeps one
+  // that ever starts open from taking the page down with it.
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  /*
+   * Rendered at the end of <body>, not where it is used.
+   *
+   * A Picker sits inside a Field, which is a <label>, and its sheet used to be
+   * rendered in there with it. Choosing an option closed the sheet — removing
+   * the option from the page — before the browser ran the label's own click
+   * behaviour, which then "clicked" the label's control: the picker's trigger.
+   * So every choice reopened the list it had just closed. A form inside a
+   * sheet inside another form was the same kind of accident waiting.
+   */
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center">
       <button
         aria-label="Close"
@@ -522,7 +576,8 @@ export function Sheet({
         </Body>
       </div>
       <style>{`@keyframes sheet{from{transform:translateY(12px);opacity:.6}to{transform:none;opacity:1}}`}</style>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

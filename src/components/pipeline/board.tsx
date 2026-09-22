@@ -28,6 +28,7 @@ import {
 import { Avatar, Badge, EmptyState } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
+import { showToast } from "@/lib/toast";
 import { useIsDesktop } from "@/lib/use-desktop";
 import { cn, daysUntil, formatDate, inr, inrCompact, num } from "@/lib/utils";
 import { changeStage } from "@/server/actions";
@@ -116,10 +117,39 @@ export function PipelineBoard({
     }
   }
 
+  /**
+   * A dropped card lands in its new column at once.
+   *
+   * It used to sit in the old one until the server answered, which read as a
+   * drop that had not taken. The move is optimistic for the length of the
+   * save; the re-rendered page replaces it, and a failure puts it back.
+   */
+  const [moved, move] = React.useOptimistic(
+    opportunities,
+    (list, m: { id: string; stage: SalesStage }) =>
+      list.map((o) => (o.id === m.id ? { ...o, stage: m.stage } : o)),
+  );
+
+  function drop(opp: OpportunityCard, stage: SalesStage) {
+    startTransition(async () => {
+      move({ id: opp.id, stage });
+      try {
+        const result = await changeStage(opp.id, stage);
+        showToast(
+          result.ok
+            ? `${opp.accountName} moved to ${STAGE_MAP[stage].label}`
+            : `Could not move ${opp.accountName}: ${result.error}`,
+        );
+      } catch {
+        showToast(`Could not move ${opp.accountName}. Check your connection.`);
+      }
+    });
+  }
+
   // Narrowing all happened in SQL before these rows were sent, search
   // included — so what arrives IS the result, and a row cap can never hide a
   // deal from the one feature whose job is to find it.
-  const filtered = opportunities;
+  const filtered = moved;
 
   const byStage = React.useMemo(() => {
     const map = new Map<SalesStage, OpportunityCard[]>();
@@ -224,7 +254,7 @@ export function PipelineBoard({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Customer or city"
-              className="h-12 w-full rounded-2xl border border-line bg-white pl-10 pr-11 text-[16px] placeholder:text-muted/70 focus:border-brand focus:outline-none"
+              className="h-12 w-full rounded-2xl border border-line bg-white pl-10 pr-11 text-[16px] placeholder:text-muted/70 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/60"
             />
             <button
               onClick={() => {
@@ -327,7 +357,7 @@ export function PipelineBoard({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search customer or city"
-            className="h-11 w-full rounded-xl border border-line bg-white pl-9 pr-3 text-[15px] placeholder:text-muted/70 focus:border-brand focus:outline-none"
+            className="h-11 w-full rounded-xl border border-line bg-white pl-9 pr-3 text-[15px] placeholder:text-muted/70 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/60"
           />
         </div>
         {/* Both desktop switches are the same control, so "whose deals" reads
@@ -468,25 +498,33 @@ export function PipelineBoard({
                   key={s.value}
                   className="flex w-72 shrink-0 flex-col rounded-2xl bg-canvas/80 p-2"
                   onDragOver={(e) => e.preventDefault()}
-                  onDrop={async (e) => {
-                    const id = e.dataTransfer.getData("text/opp");
-                    const from = e.dataTransfer.getData("text/stage");
-                    if (!id || from === s.value) return;
-                    const opp = opportunities.find((o) => o.id === id);
-                    if (!opp) return;
-                    if (s.value === "closed_won" || s.value === "closed_lost") {
-                      setTarget({
-                        id: opp.id,
-                        name: opp.accountName,
-                        stage: opp.stage,
-                        value: opp.value,
-                        price: opp.price,
-                        fleetSize: opp.fleetSize,
-                      });
-                      return;
-                    }
-                    await changeStage(id, s.value);
-                  }}
+                  onDrop={(e) => {
+                  const id = e.dataTransfer.getData("text/opp");
+                  const from = e.dataTransfer.getData("text/stage");
+                  if (!id || from === s.value) return;
+                  const opp = opportunities.find((o) => o.id === id);
+                  if (!opp) return;
+                  // The stages that ask for something get their sheet, open
+                  // on that stage's form — the same as the stage button.
+                  if (
+                    s.value === "closed_won" ||
+                    s.value === "closed_lost" ||
+                    s.value === "contracting"
+                  ) {
+                    setTarget({
+                      id: opp.id,
+                      name: opp.accountName,
+                      stage: opp.stage,
+                      value: opp.value,
+                      price: opp.price,
+                      fleetSize: opp.fleetSize,
+                      deploymentDate: opp.deploymentDate,
+                      to: s.value,
+                    });
+                    return;
+                  }
+                  drop(opp, s.value);
+                }}
                 >
                   <div className="flex items-baseline justify-between px-2 py-2">
                     <div className="flex items-center gap-2">

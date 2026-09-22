@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Button, Field, Input, PickedDate, Sheet } from "@/components/ui";
+import { showToast } from "@/lib/toast";
 import { cn, inr, todayInIndia } from "@/lib/utils";
 import { createExpansion } from "@/server/actions";
 
@@ -65,6 +66,7 @@ export function ExpandDeal({
       try {
         const result = await createExpansion(source.id, formData);
         if (!result.ok) return setError(result.error);
+        showToast("Expansion created");
         setOpen(false);
         router.push(`/opportunities/${result.data!.id}`);
       } catch {

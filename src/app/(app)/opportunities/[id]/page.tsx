@@ -1,7 +1,7 @@
-import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { BackLink } from "@/components/back-link";
 import { DetailActions } from "@/components/opportunity/detail-actions";
 import { ExpandDeal } from "@/components/opportunity/expand-deal";
 import { NoteBox } from "@/components/opportunity/note-box";
@@ -57,12 +57,7 @@ export default async function OpportunityPage({
 
   return (
     <div className="mx-auto max-w-3xl">
-      <Link
-        href="/pipeline"
-        className="mb-2 inline-flex h-9 items-center gap-1 pr-3 text-[15px] font-medium text-brand-ink active:opacity-70"
-      >
-        <ArrowLeft size={18} /> Pipeline
-      </Link>
+      <BackLink fallbackHref="/pipeline" fallbackLabel="Pipeline" />
 
       <div className="mb-3 overflow-hidden rounded-2xl border border-line bg-white">
         <span className={cn("block h-1", stage.dot)} aria-hidden="true" />

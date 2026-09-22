@@ -8,10 +8,11 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/admin/users", label: "Users" },
   { href: "/admin/master-data", label: "Master data" },
+  { href: "/admin/cost-defaults", label: "Cost defaults" },
 ];
 
 /**
- * Admin's two pages.
+ * Admin's pages.
  *
  * These were plain outlined pills with no active state, so both looked
  * identical and the screen never told you which one you were on. Same switch

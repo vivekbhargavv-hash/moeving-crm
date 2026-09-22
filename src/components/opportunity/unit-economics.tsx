@@ -7,6 +7,7 @@ import * as React from "react";
 import { Button, Field, Input, Sheet } from "@/components/ui";
 import { Card, CardHeader } from "@/components/ui-server";
 import { COST_FIELDS } from "@/lib/constants";
+import { driftedFrom, type CostSuggestions } from "@/lib/cost-defaults";
 import { cn, inr } from "@/lib/utils";
 import { saveUnitEconomics } from "@/server/actions";
 import type { EconomicsSheet } from "@/server/actions";
@@ -30,6 +31,7 @@ export function UnitEconomics({
   price,
   isWon,
   sheet,
+  defaults,
 }: {
   id: string;
   fleetSize: number;
@@ -37,24 +39,41 @@ export function UnitEconomics({
   price: number | null;
   isWon: boolean;
   sheet: EconomicsSheet;
+  /** The admin's standard rates for this deal's vehicle and contract. */
+  defaults: CostSuggestions;
 }) {
   const router = useRouter();
   const [editing, setEditing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
   const [values, setValues] = React.useState<Record<string, string>>({});
+  /** Cost lines showing a standard rate rather than something typed here. */
+  const [prefilled, setPrefilled] = React.useState<string[]>([]);
 
-  // Each opening starts from what is stored, so an abandoned edit leaves
-  // nothing behind.
+  /**
+   * Each opening starts from what is stored, so an abandoned edit leaves
+   * nothing behind — and the admin's standard rates fill whatever is blank.
+   *
+   * The order matters: a figure someone typed is never replaced by a rule.
+   * The rule is where to start, not an opinion about a deal already costed.
+   */
   React.useEffect(() => {
     if (!editing) return;
     setError(null);
-    setValues(
-      Object.fromEntries(
-        Object.entries(sheet).map(([k, v]) => [k, v === null ? "" : String(v)]),
+    const next: Record<string, string> = {};
+    for (const [k, v] of Object.entries(defaults)) {
+      if (v !== undefined) next[k] = String(v);
+    }
+    for (const [k, v] of Object.entries(sheet)) {
+      if (v !== null) next[k] = String(v);
+    }
+    setValues(next);
+    setPrefilled(
+      Object.keys(defaults).filter(
+        (k) => sheet[k as keyof EconomicsSheet] === null,
       ),
     );
-  }, [editing, sheet]);
+  }, [editing, sheet, defaults]);
 
   // Revenue is the deal's price rather than an answer given here, so what is
   // "filled in" is the costs plus that price — counted the same way the
@@ -73,6 +92,8 @@ export function UnitEconomics({
   const draftMarginPct = draftRevenue ? (draftMargin / draftRevenue) * 100 : null;
 
   function set(key: string, raw: string) {
+    // Touching a figure makes it this deal's own rather than the standard one.
+    setPrefilled((p) => p.filter((k) => k !== key));
     setValues((v) => ({ ...v, [key]: raw.replace(/\D/g, "") }));
   }
 
@@ -97,6 +118,8 @@ export function UnitEconomics({
   // The deal's price is the truth; a stored revenue that predates that rule
   // only shows through on a deal with no price at all.
   const revenue = price ?? sheet.revenue;
+  // What the rules would say today, against what this deal actually carries.
+  const drifted = driftedFrom(sheet, defaults);
   const marginPerVehicle = (revenue ?? 0) - costPerVehicle;
   const marginPct = revenue ? (marginPerVehicle / revenue) * 100 : null;
 
@@ -150,6 +173,14 @@ export function UnitEconomics({
                     : "text-emerald-700"
               }
             />
+            {drifted.length > 0 ? (
+              <p className="mt-3 text-[12.5px] text-muted">
+                {drifted.map((k) => LABELS[k]).join(", ")}{" "}
+                {drifted.length === 1 ? "differs" : "differ"} from the standard
+                rate for this deal. Saved figures are never changed behind you —
+                open <strong>Edit</strong> to review them.
+              </p>
+            ) : null}
             {missing > 0 ? (
               <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">
                 {missing} {missing === 1 ? "figure is" : "figures are"} still
@@ -213,7 +244,11 @@ export function UnitEconomics({
 
           <div className="grid grid-cols-2 gap-3">
             {COST_FIELDS.map((f) => (
-              <Field key={f.key} label={f.label}>
+              <Field
+                key={f.key}
+                label={f.label}
+                hint={prefilled.includes(f.key) ? "Standard rate" : undefined}
+              >
                 <Input
                   name={f.key}
                   inputMode="numeric"
@@ -312,3 +347,8 @@ function Row({
     </div>
   );
 }
+
+/** Cost line labels, for the drift note. */
+const LABELS = Object.fromEntries(
+  COST_FIELDS.map((f) => [f.key, f.label]),
+) as Record<string, string>;

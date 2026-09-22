@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -8,6 +8,7 @@ import { db } from "@/db";
 import {
   accounts,
   cities as cityTable,
+  costDefaults,
   lostReasons,
   opportunities,
   opportunityEvents,
@@ -16,10 +17,11 @@ import {
   vehicleTypes,
 } from "@/db/schema";
 import type { SalesStage } from "@/db/schema";
-import { OPERATING_DAYS } from "@/lib/constants";
+import { COST_FIELDS, OPERATING_DAYS } from "@/lib/constants";
+import { defaultsFor, type CostSuggestions } from "@/lib/cost-defaults";
 import { inr } from "@/lib/utils";
 import { requireAdmin, requireSession } from "@/server/auth";
-import { getQuickAddData, type QuickAddData } from "@/server/queries";
+import { getCostDefaults, getQuickAddData, type QuickAddData } from "@/server/queries";
 import { sendInvitation } from "@/server/invites";
 import {
   calendarDate,
@@ -560,11 +562,108 @@ function pickEconomics(row: Partial<EconomicsSheet>): EconomicsSheet {
  */
 export async function loadUnitEconomics(
   id: string,
-): Promise<ActionResult<EconomicsSheet>> {
+): Promise<ActionResult<{ sheet: EconomicsSheet; defaults: CostSuggestions }>> {
   const session = await requireSession();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Deal not found" };
-  return { ok: true, data: pickEconomics(existing) };
+  return {
+    ok: true,
+    data: {
+      sheet: pickEconomics(existing),
+      defaults: defaultsFor(
+        {
+          vehicleTypeId: existing.vehicleTypeId,
+          chargingScope: existing.chargingScope,
+          operatingDays: existing.operatingDays,
+        },
+        await getCostDefaults(),
+      ),
+    },
+  };
+}
+
+/* --------------------------------------------------- cost defaults (admin) */
+
+/**
+ * Setting, or clearing, one cell of the defaults table.
+ *
+ * A blank amount deletes the row rather than storing a zero: zero is a real
+ * cost that says "this is free" — client-paid charging genuinely is — and
+ * "nobody has said" has to stay distinguishable from it, or the cost sheet
+ * would pre-fill a figure the business never agreed.
+ */
+export async function saveCostDefault(input: {
+  costKey: string;
+  vehicleTypeId: string | null;
+  chargingScope: "client" | "moeving" | null;
+  operatingDays: number | null;
+  amount: number | null;
+}): Promise<ActionResult> {
+  const session = await requireAdmin();
+
+  const field = COST_FIELDS.find((f) => f.key === input.costKey);
+  if (!field) return { ok: false, error: "Unknown cost line" };
+
+  // A row may only carry the dimensions its cost line actually varies by, so
+  // the lookup stays exact and a rule change cannot leave rows that still
+  // match something.
+  const dims = field.dimensions as readonly string[];
+  const row = {
+    vehicleTypeId: dims.includes("vehicleType") ? input.vehicleTypeId : null,
+    chargingScope: dims.includes("chargingScope") ? input.chargingScope : null,
+    operatingDays: dims.includes("operatingDays") ? input.operatingDays : null,
+  };
+  if (dims.includes("vehicleType") && !row.vehicleTypeId) {
+    return { ok: false, error: "Pick a vehicle type" };
+  }
+  if (row.vehicleTypeId) {
+    const vehicle = await db.query.vehicleTypes.findFirst({
+      where: and(
+        eq(vehicleTypes.id, row.vehicleTypeId),
+        eq(vehicleTypes.organizationId, session.organizationId),
+      ),
+    });
+    if (!vehicle) return { ok: false, error: "Unknown vehicle type" };
+  }
+
+  const where = and(
+    eq(costDefaults.organizationId, session.organizationId),
+    eq(costDefaults.costKey, field.key),
+    row.vehicleTypeId
+      ? eq(costDefaults.vehicleTypeId, row.vehicleTypeId)
+      : isNull(costDefaults.vehicleTypeId),
+    row.chargingScope
+      ? eq(costDefaults.chargingScope, row.chargingScope)
+      : isNull(costDefaults.chargingScope),
+    row.operatingDays
+      ? eq(costDefaults.operatingDays, row.operatingDays)
+      : isNull(costDefaults.operatingDays),
+  );
+
+  if (input.amount === null) {
+    await db.delete(costDefaults).where(where);
+  } else {
+    const parsed = z.number().int().min(0).max(2_000_000_000).safeParse(input.amount);
+    if (!parsed.success) return { ok: false, error: "That is not an amount" };
+
+    const existing = await db.select({ id: costDefaults.id }).from(costDefaults).where(where);
+    if (existing.length) {
+      await db
+        .update(costDefaults)
+        .set({ amount: parsed.data, updatedAt: new Date() })
+        .where(where);
+    } else {
+      await db.insert(costDefaults).values({
+        organizationId: session.organizationId,
+        costKey: field.key,
+        ...row,
+        amount: parsed.data,
+      });
+    }
+  }
+
+  revalidatePath("/admin/cost-defaults");
+  return { ok: true };
 }
 
 /**

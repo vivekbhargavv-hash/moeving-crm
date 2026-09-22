@@ -159,14 +159,37 @@ export const OPERATING_DAYS = [
   { value: 30, label: "30 days", hint: "Every day" },
 ] as const;
 
+/**
+ * The seven running costs of one vehicle, and what each one varies by.
+ *
+ * `dimensions` is the whole design of the defaults table: it says, in code,
+ * that a lease depends on the vehicle and nothing else, that charging depends
+ * on the vehicle AND who pays for it, that maintenance depends on nothing.
+ *
+ * Declaring it beats inferring it. A table where "the most specific matching
+ * row wins" cannot settle charging — a rule about a Tata Ace and a rule about
+ * client-paid charging are equally specific and disagree — whereas a fixed
+ * vehicle x scope grid has a row for "Ace, client pays" that is simply 0.
+ */
 export const COST_FIELDS = [
-  { key: "leaseCost", label: "Lease" },
-  { key: "driverCost", label: "Driver" },
-  { key: "chargingCost", label: "Charging" },
-  { key: "parkingCost", label: "Parking" },
-  { key: "maintenanceCost", label: "Maintenance" },
-  { key: "supervisorCost", label: "Supervisor" },
-  { key: "miscCost", label: "Miscellaneous" },
-] as const;
+  { key: "leaseCost", label: "Lease", dimensions: ["vehicleType"] },
+  { key: "driverCost", label: "Driver", dimensions: ["operatingDays"] },
+  {
+    key: "chargingCost",
+    label: "Charging",
+    dimensions: ["vehicleType", "chargingScope"],
+  },
+  { key: "parkingCost", label: "Parking", dimensions: ["chargingScope"] },
+  { key: "maintenanceCost", label: "Maintenance", dimensions: [] },
+  { key: "supervisorCost", label: "Supervisor", dimensions: [] },
+  { key: "miscCost", label: "Miscellaneous", dimensions: [] },
+] as const satisfies readonly {
+  key: string;
+  label: string;
+  dimensions: readonly CostDimension[];
+}[];
+
+/** What a cost line can vary by. Each maps to a column on the deal. */
+export type CostDimension = "vehicleType" | "chargingScope" | "operatingDays";
 
 export type CostFieldKey = (typeof COST_FIELDS)[number]["key"];

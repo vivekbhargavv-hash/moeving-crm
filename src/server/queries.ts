@@ -18,6 +18,7 @@ import { cache } from "react";
 import { db } from "@/db";
 import {
   accounts,
+  costDefaults,
   cities,
   lostReasons,
   opportunities,
@@ -28,6 +29,7 @@ import {
 } from "@/db/schema";
 import type { SalesStage } from "@/db/schema";
 import { DEFAULT_STAGE_PROBABILITY, OPEN_STAGES } from "@/lib/constants";
+import type { CostDefault } from "@/lib/cost-defaults";
 import { requireSession } from "@/server/auth";
 
 export type OpportunityCard = {
@@ -328,6 +330,26 @@ export const getQuickAddData = cache(async (): Promise<QuickAddData> => {
       .orderBy(asc(accounts.name)),
   ]);
   return { ...master, accounts: accountRows };
+});
+
+/**
+ * The defaults table, whole. It is a handful of rows — one per vehicle type
+ * for lease, two for the driver, a small grid for charging — so it is read in
+ * one go and matched in memory rather than queried per cost line.
+ */
+export const getCostDefaults = cache(async (): Promise<CostDefault[]> => {
+  const session = await requireSession();
+  const rows = await db
+    .select({
+      costKey: costDefaults.costKey,
+      vehicleTypeId: costDefaults.vehicleTypeId,
+      chargingScope: costDefaults.chargingScope,
+      operatingDays: costDefaults.operatingDays,
+      amount: costDefaults.amount,
+    })
+    .from(costDefaults)
+    .where(eq(costDefaults.organizationId, session.organizationId));
+  return rows;
 });
 
 export const getStageProbabilities = cache(async (): Promise<

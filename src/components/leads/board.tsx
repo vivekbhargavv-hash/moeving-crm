@@ -92,8 +92,12 @@ export function LeadsBoard({
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1">
+      {/* Two rows on a phone, one from `sm` up.
+          As a single wrapping row these three came to ~490px on a 390px
+          screen: the search box, the only one allowed to shrink, collapsed to
+          44px and the switch sat on top of its own placeholder. */}
+      <div className="mb-4 space-y-2 sm:flex sm:items-center sm:gap-2 sm:space-y-0">
+        <div className="relative min-w-0 sm:flex-1">
           <Search
             size={16}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
@@ -102,24 +106,33 @@ export function LeadsBoard({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Company, city, caller or number"
-            className="h-11 pl-9"
+            className="h-12 pl-9"
           />
         </div>
-        <Segmented
-          label="Which leads"
-          className="w-[190px] shrink-0"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "open", label: "Open" },
-            { value: "all", label: "All" },
-          ]}
-        />
-        {canCreate ? (
-          <Button variant="brand" size="lg" onClick={() => setAdding(true)}>
-            <Plus size={17} /> New lead
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <Segmented
+            label="Which leads"
+            className="min-w-0 flex-1 sm:w-[190px] sm:flex-none"
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: "open", label: "Open" },
+              { value: "all", label: "All" },
+            ]}
+          />
+          {canCreate ? (
+            // 48px, like the search box and the switch beside it: three
+            // controls on one row at three heights reads as an accident.
+            <Button
+              variant="brand"
+              size="lg"
+              className="shrink-0"
+              onClick={() => setAdding(true)}
+            >
+              <Plus size={17} /> New lead
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {waiting > 0 ? (
@@ -564,8 +577,11 @@ function LeadForm({ onClose }: { onClose: () => void }) {
           <Field label="Date of enquiry">
             <Input type="date" name="enquiryDate" required defaultValue={today} />
           </Field>
+          {/* Nearly every enquiry arrives off a Google search, so that is
+              what the field starts as — it is still free text, and typing
+              over it is one tap. */}
           <Field label="Found MoEVing on">
-            <Input name="foundOn" placeholder="Google search" />
+            <Input name="foundOn" defaultValue="Google search" />
           </Field>
         </div>
         <Field label="Company name">
@@ -599,6 +615,18 @@ function LeadForm({ onClose }: { onClose: () => void }) {
             <Input name="email" type="email" placeholder="name@company.com" />
           </Field>
         </div>
+        {/* What the caller actually said. The desk hears it once, on the
+            phone; without somewhere to put it here it is lost before a deal
+            owner ever opens the lead. */}
+        <Field
+          label="Remarks"
+          hint="Anything the caller said that the person ringing back should know."
+        >
+          <Textarea
+            name="remarks"
+            placeholder="Needs 6 vehicles from November for a Bangalore milk run."
+          />
+        </Field>
         {error ? (
           <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}

@@ -34,7 +34,14 @@ const COLUMNS: {
   key: SortKey;
   label: string;
   align?: "right";
-  /** Hidden on phones, where horizontal room is scarce. */
+  /**
+   * Held back until the screen is genuinely wide.
+   *
+   * Twelve columns need about 1,270px and a laptop's content area is nearer
+   * 980, so at `lg` the table simply scrolled — and what scrolled off the
+   * right was Total cost and Margin %, the two figures the pipeline is read
+   * for. These five give way instead, and come back on a large monitor.
+   */
   wide?: boolean;
 }[] = [
   { key: "accountName", label: "Customer" },
@@ -42,10 +49,14 @@ const COLUMNS: {
   { key: "city", label: "City" },
   { key: "vehicleType", label: "Vehicle" },
   { key: "fleetSize", label: "Fleet", align: "right" },
-  { key: "price", label: "Price / veh", align: "right" },
+  // Price per vehicle is Value / mo divided by Fleet, and both are right here.
+  { key: "price", label: "Price / veh", align: "right", wide: true },
   { key: "value", label: "Value / mo", align: "right" },
-  { key: "totalCost", label: "Total cost", align: "right", wide: true },
-  { key: "marginPct", label: "Margin %", align: "right", wide: true },
+  // Never behind a breakpoint. These two hid below `lg` and then scrolled off
+  // the right edge above it, so on a laptop the pipeline's margin was simply
+  // not on the screen.
+  { key: "totalCost", label: "Total cost", align: "right" },
+  { key: "marginPct", label: "Margin %", align: "right" },
   { key: "ownerName", label: "Deal Owner", wide: true },
   { key: "expectedCloseDate", label: "Expected close", align: "right" },
   { key: "updatedAt", label: "Updated", align: "right", wide: true },
@@ -180,8 +191,9 @@ export function PipelineList({
       // rather than dragging the blend towards zero.
       costedRevenue: acc.costedRevenue + (o.totalRevenue ?? 0),
       costedMargin: acc.costedMargin + (o.grossMargin ?? 0),
+      costedCost: acc.costedCost + (o.totalCost ?? 0),
     }),
-    { fleet: 0, value: 0, costedRevenue: 0, costedMargin: 0 },
+    { fleet: 0, value: 0, costedRevenue: 0, costedMargin: 0, costedCost: 0 },
   );
   const blendedMarginPct = totals.costedRevenue
     ? (totals.costedMargin / totals.costedRevenue) * 100
@@ -239,6 +251,33 @@ export function PipelineList({
           </span>
         </div>
 
+        {/* Cost and margin were desktop-only, which meant a phone — the screen
+            this app is built for first — could not see either. They are shown
+            across whatever has been costed, blended rather than averaged. */}
+        {totals.costedRevenue ? (
+          <div className="mb-3 flex items-center gap-2 rounded-xl bg-canvas px-3 py-2 text-[12.5px]">
+            <span className="text-muted">Costed deals</span>
+            <span className="tabular ml-auto">
+              cost{" "}
+              <span className="font-semibold text-ink">
+                {inrCompact(totals.costedCost)}
+              </span>
+            </span>
+            <span
+              className={cn(
+                "tabular font-semibold",
+                blendedMarginPct !== null && blendedMarginPct < 0
+                  ? "text-rose-700"
+                  : "text-emerald-700",
+              )}
+            >
+              {blendedMarginPct === null
+                ? "—"
+                : `${blendedMarginPct.toFixed(1)}% margin`}
+            </span>
+          </div>
+        ) : null}
+
         <ul className="space-y-2">
           {rows.slice(0, shown).map((o) => {
             const stage = STAGE_MAP[o.stage];
@@ -291,6 +330,24 @@ export function PipelineList({
                         {stage.label}
                       </Badge>
                     </button>
+                    {/* A costed deal says what it costs and what it earns.
+                        An uncosted one says nothing rather than printing a
+                        zero that reads as break-even. */}
+                    {o.totalCost ? (
+                      <span className="tabular text-[12px] text-muted">
+                        cost {inrCompact(o.totalCost)}
+                      </span>
+                    ) : null}
+                    {o.marginPct === null ? null : (
+                      <span
+                        className={cn(
+                          "tabular text-[12px] font-semibold",
+                          o.marginPct < 0 ? "text-rose-700" : "text-emerald-700",
+                        )}
+                      >
+                        {o.marginPct.toFixed(1)}%
+                      </span>
+                    )}
                     <span className="ml-auto text-[12px] text-muted">
                       {o.ownerName.split(" ")[0]}
                     </span>
@@ -315,7 +372,7 @@ export function PipelineList({
 
       {/* ---------------------------------------------------- desktop table */}
       <div className="hidden overflow-x-auto rounded-[14px] border border-line bg-white md:block">
-      <table className="w-full min-w-[1080px] border-collapse text-sm">
+      <table className="w-full min-w-[860px] border-collapse text-sm 2xl:min-w-[1180px]">
         <thead>
           <tr className="border-b border-line bg-canvas/60">
             {COLUMNS.map((c) => (
@@ -324,7 +381,7 @@ export function PipelineList({
                 className={cn(
                   "whitespace-nowrap px-3 py-2.5 text-left text-[12px] font-semibold uppercase tracking-wide text-muted",
                   c.align === "right" && "text-right",
-                  c.wide && "hidden lg:table-cell",
+                  c.wide && "hidden 2xl:table-cell",
                   c.key === "accountName" &&
                     "sticky left-0 z-10 bg-canvas/60 backdrop-blur",
                 )}
@@ -361,12 +418,12 @@ export function PipelineList({
                 className="cursor-pointer border-b border-line last:border-0 hover:bg-canvas/70"
               >
                 <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-2.5 font-medium">
-                  <span className="flex max-w-44 items-baseline gap-1.5">
+                  <span className="flex max-w-40 items-baseline gap-1.5">
                     <span className="truncate">{o.accountName}</span>
                     {o.parentOpportunityId ? <RepeatMark /> : null}
                   </span>
                   {o.name !== o.accountName ? (
-                    <span className="block max-w-44 truncate text-[12px] text-muted">
+                    <span className="block max-w-40 truncate text-[12px] text-muted">
                       {o.name}
                     </span>
                   ) : null}
@@ -394,7 +451,7 @@ export function PipelineList({
                 <td className="whitespace-nowrap px-3 py-2.5 text-muted">{o.city ?? "—"}</td>
                 <td className="whitespace-nowrap px-3 py-2.5">
                   {o.vehicleType ?? "—"}
-                  <span className="block max-w-52 truncate text-[12px] text-muted">
+                  <span className="block max-w-36 truncate text-[12px] text-muted">
                     {[
                       o.driverType ? DRIVER_TYPE_LABEL[o.driverType] : null,
                       o.chargingScope
@@ -406,13 +463,13 @@ export function PipelineList({
                   </span>
                 </td>
                 <td className="tabular px-3 py-2.5 text-right">{o.fleetSize}</td>
-                <td className="tabular px-3 py-2.5 text-right text-muted">
+                <td className="tabular hidden px-3 py-2.5 text-right text-muted 2xl:table-cell">
                   {o.price ? inr(o.price) : "—"}
                 </td>
                 <td className="tabular px-3 py-2.5 text-right font-semibold">
                   {o.value ? inrCompact(o.value) : "—"}
                 </td>
-                <td className="tabular hidden px-3 py-2.5 text-right text-muted lg:table-cell">
+                <td className="tabular px-3 py-2.5 text-right text-muted">
                   {/* Any costed deal, not only a won one: the sheet can be
                       filled in at any stage now, and a deal nobody has costed
                       is the one that reads as a dash. */}
@@ -420,7 +477,7 @@ export function PipelineList({
                 </td>
                 <td
                   className={cn(
-                    "tabular hidden px-3 py-2.5 text-right font-medium lg:table-cell",
+                    "tabular px-3 py-2.5 text-right font-medium",
                     o.marginPct === null
                       ? "text-muted"
                       : o.marginPct >= 0
@@ -430,11 +487,11 @@ export function PipelineList({
                 >
                   {o.marginPct === null ? "—" : `${o.marginPct.toFixed(1)}%`}
                 </td>
-                <td className="hidden whitespace-nowrap px-3 py-2.5 lg:table-cell">{o.ownerName}</td>
+                <td className="hidden whitespace-nowrap px-3 py-2.5 2xl:table-cell">{o.ownerName}</td>
                 <td className="tabular whitespace-nowrap px-3 py-2.5 text-right">
                   {formatDate(o.expectedCloseDate)}
                 </td>
-                <td className="tabular hidden px-3 py-2.5 text-right text-muted lg:table-cell">
+                <td className="tabular hidden px-3 py-2.5 text-right text-muted 2xl:table-cell">
                   {formatDate(o.updatedAt)}
                 </td>
               </tr>
@@ -442,23 +499,40 @@ export function PipelineList({
           })}
         </tbody>
         <tfoot>
+          {/* One cell per column, in the same order as COLUMNS. The totals row
+              used to close two hidden columns with a single colSpan and then
+              print the blended margin in the next cell along — which put it
+              under Deal Owner and left Total cost with no total at all. */}
           <tr className="border-t border-line bg-canvas/60 font-semibold">
+            {/* Customer */}
             <td className="sticky left-0 z-10 bg-canvas/60 px-3 py-2.5">
               {rows.length > shown ? `${shown} of ${rows.length}` : rows.length}{" "}
               deals
             </td>
+            {/* Stage · City · Vehicle */}
             <td colSpan={3} />
+            {/* Fleet */}
             <td className="tabular px-3 py-2.5 text-right">{num(totals.fleet)}</td>
-            <td />
+            {/* Price / veh — an average price would mean nothing here. */}
+            <td className="hidden 2xl:table-cell" />
+            {/* Value / mo */}
             <td className="tabular px-3 py-2.5 text-right">
               {inrCompact(totals.value)}
             </td>
-            <td className="hidden lg:table-cell" colSpan={2} />
-            <td className="tabular hidden px-3 py-2.5 text-right lg:table-cell">
+            {/* Total cost, across the deals anybody has costed. */}
+            <td className="tabular px-3 py-2.5 text-right">
+              {totals.costedCost ? inrCompact(totals.costedCost) : ""}
+            </td>
+            {/* Margin % — blended, not an average of percentages. */}
+            <td className="tabular px-3 py-2.5 text-right">
               {blendedMarginPct === null ? "" : `${blendedMarginPct.toFixed(1)}%`}
             </td>
+            {/* Deal Owner */}
+            <td className="hidden 2xl:table-cell" />
+            {/* Expected close */}
             <td />
-            <td className="hidden lg:table-cell" />
+            {/* Updated */}
+            <td className="hidden 2xl:table-cell" />
           </tr>
         </tfoot>
       </table>

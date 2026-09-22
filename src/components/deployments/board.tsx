@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Badge, Button, Segmented, Sheet } from "@/components/ui";
+import { DeploymentGridView } from "@/components/deployments/grid";
 import { groupByCity, groupByDueDate } from "@/lib/deployment-groups";
 import type { Group } from "@/lib/deployment-groups";
 import { cn, daysUntil, formatDateCompact, num } from "@/lib/utils";
@@ -28,12 +29,15 @@ import type { Deployment } from "@/server/queries";
  * - **By city** groups by place with a running total per city. It answers
  *   "what does Bangalore owe", which is how trucks are actually planned when
  *   a hub loads them.
+ * - **By month** is the Forecast's grid applied to work already sold: city
+ *   down the side, month across the top, vehicles in the cells. It answers
+ *   "how many trucks land where, and when", which a list cannot show at all.
  *
- * Completed deployments drop to the bottom in both rather than disappearing,
- * so "did we do that one" has an answer.
+ * Completed deployments drop to the bottom of the two lists rather than
+ * disappearing, so "did we do that one" has an answer.
  */
 
-type View = "date" | "city";
+type View = "date" | "city" | "month";
 
 const VIEW_KEY = "moeving.deployments.view";
 
@@ -68,7 +72,9 @@ export function DeploymentsBoard({
   React.useEffect(() => {
     try {
       const saved = localStorage.getItem(VIEW_KEY);
-      if (saved === "date" || saved === "city") setView(saved);
+      if (saved === "date" || saved === "city" || saved === "month") {
+        setView(saved);
+      }
     } catch {
       /* private mode — the default is fine */
     }
@@ -110,9 +116,11 @@ export function DeploymentsBoard({
 
   const groups = React.useMemo<Group<Deployment>[]>(
     () =>
-      view === "city"
-        ? groupByCity(outstanding)
-        : groupByDueDate(outstanding, today),
+      view === "month"
+        ? []
+        : view === "city"
+          ? groupByCity(outstanding)
+          : groupByDueDate(outstanding, today),
     [outstanding, view, today],
   );
 
@@ -146,6 +154,7 @@ export function DeploymentsBoard({
           options={[
             { value: "date", label: "By date" },
             { value: "city", label: "By city" },
+            { value: "month", label: "By month" },
           ]}
         />
         <button
@@ -154,7 +163,7 @@ export function DeploymentsBoard({
             filterCount ? `Filter — ${filterCount} applied` : "Filter"
           }
           className={cn(
-            "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border",
+            "relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border",
             filterCount
               ? "border-brand bg-brand-soft text-brand-ink"
               : "border-line bg-white text-muted",
@@ -169,7 +178,14 @@ export function DeploymentsBoard({
         </button>
       </div>
 
-      {outstanding.length === 0 ? (
+      {view === "month" ? (
+        // The grid stands for the whole page: completed deliveries included,
+        // because "what lands in November" is not answered by the trucks that
+        // have not gone yet.
+        <DeploymentGridView deployments={filtered} canOpenDeals={canOpenDeals} />
+      ) : null}
+
+      {view !== "month" && outstanding.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line bg-white/60 px-6 py-12 text-center">
           <p className="font-semibold">Nothing waiting to be deployed</p>
           <p className="mt-1 text-sm text-muted">
@@ -239,7 +255,7 @@ export function DeploymentsBoard({
         </button>
       ) : null}
 
-      {done.length ? (
+      {view !== "month" && done.length ? (
         <section className="mb-5">
           <h2 className="mb-2 px-1 text-[13px] font-semibold uppercase tracking-wide text-muted">
             Deployed

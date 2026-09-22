@@ -61,22 +61,76 @@ export function PipelineFilterSheet({
   matchCount: number;
 }) {
   if (!open) return null;
+  return (
+    <FilterSheetBody
+      // Each opening starts from the filters actually in force, so an
+      // abandoned sheet leaves nothing behind.
+      key={JSON.stringify(value)}
+      onClose={onClose}
+      value={value}
+      onChange={onChange}
+      cities={cities}
+      owners={owners}
+      vehicleTypes={vehicleTypes}
+      currentUserId={currentUserId}
+      matchCount={matchCount}
+    />
+  );
+}
+
+/**
+ * The chips are local until you press the button.
+ *
+ * Filters live in the URL, so applying one is a navigation: a server render
+ * and a query. Applying on every tap meant picking a stage, two cities and an
+ * owner cost four of them in a row, each one re-rendering the list behind the
+ * sheet you were still using. Now the sheet keeps a draft and spends a single
+ * round trip when you say you are done.
+ */
+function FilterSheetBody({
+  onClose,
+  value,
+  onChange,
+  cities,
+  owners,
+  vehicleTypes,
+  currentUserId,
+  matchCount,
+}: {
+  onClose: () => void;
+  value: Filters;
+  onChange: (next: Filters) => void;
+  cities: Option[];
+  owners: Option[];
+  vehicleTypes: Option[];
+  currentUserId: string;
+  matchCount: number;
+}) {
+  const [draft, setDraft] = React.useState<Filters>(value);
 
   /** Toggling within a group; an empty group means all of them. */
   function toggle<K extends keyof Filters>(key: K, id: string) {
-    const current = value[key] as string[];
+    const current = draft[key] as string[];
     const next = current.includes(id)
       ? current.filter((v) => v !== id)
       : [...current, id];
-    onChange({ ...value, [key]: next });
+    setDraft({ ...draft, [key]: next });
   }
 
   // Clearing returns to the default view — your own deals — not to everyone.
   function clearAll() {
-    onChange({ ...EMPTY_FILTERS, ownerIds: [currentUserId] });
+    setDraft({ ...EMPTY_FILTERS, ownerIds: [currentUserId] });
   }
 
-  const count = activeFilterCount(value);
+  const count = activeFilterCount(draft);
+  const touched = JSON.stringify(draft) !== JSON.stringify(value);
+
+  function apply() {
+    // Nothing moved, so nothing is worth a round trip.
+    if (!touched) return onClose();
+    onChange(draft);
+    onClose();
+  }
 
   return (
     <Sheet
@@ -88,8 +142,13 @@ export function PipelineFilterSheet({
           <Button type="button" variant="secondary" onClick={clearAll} disabled={!count}>
             Clear
           </Button>
-          <Button type="button" variant="brand" className="flex-1" onClick={onClose}>
-            Show {matchCount} {matchCount === 1 ? "deal" : "deals"}
+          {/* The count is what the list behind this sheet actually holds, so
+              it is only honest until a chip moves. After that the button says
+              what it will do instead of guessing a number. */}
+          <Button type="button" variant="brand" className="flex-1" onClick={apply}>
+            {touched
+              ? "Apply filters"
+              : `Show ${matchCount} ${matchCount === 1 ? "deal" : "deals"}`}
           </Button>
         </div>
       }
@@ -98,14 +157,14 @@ export function PipelineFilterSheet({
         <Group
           label="Stage"
           options={STAGES.map((s) => ({ id: s.value, label: s.label }))}
-          selected={value.stages}
+          selected={draft.stages}
           onToggle={(id) => toggle("stages", id)}
           dots={Object.fromEntries(STAGES.map((s) => [s.value, s.dot]))}
         />
         <Group
           label="City"
           options={cities}
-          selected={value.cityIds}
+          selected={draft.cityIds}
           onToggle={(id) => toggle("cityIds", id)}
         />
         <Group
@@ -113,13 +172,13 @@ export function PipelineFilterSheet({
           options={owners.map((o) =>
             o.id === currentUserId ? { ...o, label: `${o.label} (me)` } : o,
           )}
-          selected={value.ownerIds}
+          selected={draft.ownerIds}
           onToggle={(id) => toggle("ownerIds", id)}
         />
         <Group
           label="Vehicle type"
           options={vehicleTypes}
-          selected={value.vehicleTypeIds}
+          selected={draft.vehicleTypeIds}
           onToggle={(id) => toggle("vehicleTypeIds", id)}
         />
       </div>

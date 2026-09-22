@@ -74,6 +74,14 @@ export function PipelineBoard({
   const [filtering, setFiltering] = React.useState(false);
   const [pending, startTransition] = React.useTransition();
   const [target, setTarget] = React.useState<StageTarget | null>(null);
+  /**
+   * Whose deals, shown the instant it is pressed.
+   *
+   * The real answer is a server render away, and a switch that stays where it
+   * was until the list comes back reads as a missed tap — so the thumb gets
+   * its answer now and React puts the value back if the navigation fails.
+   */
+  const [optimisticMine, setOptimisticMine] = React.useOptimistic(showingMine);
   // The table is the default: it opens on what changed most recently, which is
   // what someone checking the pipeline came to see. The board is a click away.
   const [view, setView] = React.useState<"board" | "list">("list");
@@ -150,6 +158,7 @@ export function PipelineBoard({
     if (wantAll && !next.ownerIds.length) p.set("scope", "all");
     const qs = p.toString();
     startTransition(() => {
+      setOptimisticMine(!wantAll && !next.ownerIds.length);
       router.push(qs ? `/pipeline?${qs}` : "/pipeline", { scroll: false });
     });
   }
@@ -228,7 +237,7 @@ export function PipelineBoard({
           <Segmented
             label="Whose deals"
             className="min-w-0 flex-1"
-            value={showingMine ? "mine" : "all"}
+            value={optimisticMine ? "mine" : "all"}
             onChange={(v) => apply({ ...filters, ownerIds: [] }, v)}
             options={[
               { value: "mine", label: "My deals" },
@@ -328,7 +337,7 @@ export function PipelineBoard({
         <Segmented
           label="Whose deals"
           className="w-[210px] shrink-0"
-          value={showingMine ? "mine" : "all"}
+          value={optimisticMine ? "mine" : "all"}
           onChange={(v) => apply({ ...filters, ownerIds: [] }, v)}
           options={[
             { value: "mine", label: "My deals", icon: <User size={16} /> },

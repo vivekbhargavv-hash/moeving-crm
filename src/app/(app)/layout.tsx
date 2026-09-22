@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { NotProvisionedError, requireSession } from "@/server/auth";
-import { getMasterData } from "@/server/queries";
 
 export default async function AppLayout({
   children,
@@ -17,10 +16,11 @@ export default async function AppLayout({
     throw error;
   }
 
-  const master = await getMasterData();
-
+  // Deliberately nothing else fetched here: the shell wraps every page, so
+  // anything queried here is queried on every navigation. The Add deal sheet
+  // fetches its own master data when somebody opens it.
   return (
-    <AppShell session={session} master={master}>
+    <AppShell session={session}>
       {children}
     </AppShell>
   );

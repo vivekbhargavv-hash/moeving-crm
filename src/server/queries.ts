@@ -19,6 +19,7 @@ import { db } from "@/db";
 import {
   accounts,
   costDefaults,
+  leads,
   cities,
   lostReasons,
   opportunities,
@@ -27,7 +28,7 @@ import {
   users,
   vehicleTypes,
 } from "@/db/schema";
-import type { SalesStage } from "@/db/schema";
+import type { LeadStatus, SalesStage } from "@/db/schema";
 import { DEFAULT_STAGE_PROBABILITY, OPEN_STAGES } from "@/lib/constants";
 import type { CostDefault } from "@/lib/cost-defaults";
 import { requireSession } from "@/server/auth";
@@ -773,4 +774,69 @@ export async function getWinsDrilldown(ownerId: string, month: string) {
     )
     .orderBy(desc(opportunities.closedAt));
   return rows;
+}
+
+/* -------------------------------------------------------------------- leads */
+
+export type LeadRow = {
+  id: string;
+  enquiryDate: string;
+  companyName: string;
+  typeOfGoods: string | null;
+  vehicleRequirement: number | null;
+  callingCity: string | null;
+  vehicleType: string | null;
+  callerName: string | null;
+  designation: string | null;
+  mobile: string | null;
+  email: string | null;
+  foundOn: string | null;
+  status: LeadStatus;
+  remarks: string | null;
+  notQualifiedReason: string | null;
+  opportunityId: string | null;
+  actionedBy: string | null;
+  actionedAt: Date | null;
+  createdBy: string | null;
+};
+
+/**
+ * Every enquiry, newest first, with the names of the people either side of it.
+ *
+ * Unfiltered on purpose: the desk is small and a lead nobody has picked up is
+ * exactly what this screen exists to show. Narrowing happens in the browser,
+ * over a list that is counted in hundreds rather than thousands.
+ */
+export async function listLeads(): Promise<LeadRow[]> {
+  const session = await requireSession();
+  const actioner = alias(users, "actioner");
+  const creator = alias(users, "creator");
+
+  return db
+    .select({
+      id: leads.id,
+      enquiryDate: leads.enquiryDate,
+      companyName: leads.companyName,
+      typeOfGoods: leads.typeOfGoods,
+      vehicleRequirement: leads.vehicleRequirement,
+      callingCity: leads.callingCity,
+      vehicleType: leads.vehicleType,
+      callerName: leads.callerName,
+      designation: leads.designation,
+      mobile: leads.mobile,
+      email: leads.email,
+      foundOn: leads.foundOn,
+      status: leads.status,
+      remarks: leads.remarks,
+      notQualifiedReason: leads.notQualifiedReason,
+      opportunityId: leads.opportunityId,
+      actionedBy: actioner.name,
+      actionedAt: leads.actionedAt,
+      createdBy: creator.name,
+    })
+    .from(leads)
+    .leftJoin(actioner, eq(actioner.id, leads.actionedByUserId))
+    .leftJoin(creator, eq(creator.id, leads.createdByUserId))
+    .where(eq(leads.organizationId, session.organizationId))
+    .orderBy(desc(leads.enquiryDate), desc(leads.createdAt));
 }

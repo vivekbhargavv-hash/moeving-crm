@@ -98,7 +98,9 @@ async function recordSeen(userId: string, lastSeenAt: Date | null) {
 
 /** Where someone lands when they reach for a page that is not theirs. */
 export function homeFor(role: UserRole) {
-  return role === "ops" ? "/deployments" : "/dashboard";
+  if (role === "ops") return "/deployments";
+  if (role === "noc") return "/leads";
+  return "/dashboard";
 }
 
 export async function requireAdmin(): Promise<Session> {
@@ -123,7 +125,47 @@ export async function requireAdmin(): Promise<Session> {
  */
 export async function requireSales(): Promise<Session> {
   const session = await requireSession();
+  if (session.role === "ops" || session.role === "noc") {
+    redirect(homeFor(session.role));
+  }
+  return session;
+}
+
+/**
+ * The door to inbound leads: the NOC desk who take the calls, and the deal
+ * owners who ring them back.
+ *
+ * Ops are deliberately not here. They put trucks on the road for deals that
+ * already exist, and an enquiry carries a customer's name, number and email
+ * that they have no reason to hold.
+ */
+export async function requireLeads(): Promise<Session> {
+  const session = await requireSession();
   if (session.role === "ops") redirect(homeFor(session.role));
+  return session;
+}
+
+/**
+ * Turning a lead into a deal is a deal owner's act, not the phone desk's.
+ * NOC write down what was said; what it is worth is somebody else's call.
+ */
+export async function requireDealOwner(): Promise<Session> {
+  const session = await requireSession();
+  if (session.role !== "admin" && session.role !== "sales") {
+    redirect(homeFor(session.role));
+  }
+  return session;
+}
+
+/**
+ * The operations queue: ops, sales and admin.
+ *
+ * NOC are turned away. A deployment is a promise made months after the call
+ * they took, and the desk that answers the phone has no part in keeping it.
+ */
+export async function requireDeployments(): Promise<Session> {
+  const session = await requireSession();
+  if (session.role === "noc") redirect(homeFor(session.role));
   return session;
 }
 

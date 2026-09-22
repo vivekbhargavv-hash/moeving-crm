@@ -19,19 +19,21 @@ const ROLE_LABEL: Record<Row["role"], string> = {
   admin: "Admin",
   sales: "Deal Owner",
   ops: "Operations",
+  noc: "NOC",
 };
 
 const ROLE_STYLE: Record<Row["role"], string> = {
   admin: "bg-violet-100 text-violet-800",
   sales: "bg-slate-100 text-slate-700",
   ops: "bg-teal-100 text-teal-800",
+  noc: "bg-amber-100 text-amber-800",
 };
 
 type Row = {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "sales" | "ops";
+  role: "admin" | "sales" | "ops" | "noc";
   isActive: boolean;
   linked: boolean;
   invitedAt: Date | null;
@@ -261,7 +263,7 @@ export function AdminUsers({
           </Field>
           <Field
             label="Role"
-            hint="Operations sees only the Deployments page — no pipeline, no pricing."
+            hint="Operations sees only Deployments; NOC sees only Leads. Neither sees the pipeline or any pricing."
           >
             <PickerField
               label="Role"
@@ -269,6 +271,7 @@ export function AdminUsers({
               defaultValue={current?.role ?? "sales"}
               options={[
                 { value: "sales", label: "Deal Owner" },
+                { value: "noc", label: "NOC — takes inbound calls" },
                 { value: "ops", label: "Operations" },
                 { value: "admin", label: "Admin" },
               ]}

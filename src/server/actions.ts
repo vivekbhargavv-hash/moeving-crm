@@ -9,6 +9,7 @@ import {
   accounts,
   cities as cityTable,
   costDefaults,
+  leads,
   lostReasons,
   opportunities,
   opportunityEvents,
@@ -20,7 +21,12 @@ import type { SalesStage } from "@/db/schema";
 import { COST_FIELDS, OPERATING_DAYS } from "@/lib/constants";
 import { defaultsFor, type CostSuggestions } from "@/lib/cost-defaults";
 import { inr } from "@/lib/utils";
-import { requireAdmin, requireSession } from "@/server/auth";
+import {
+  requireAdmin,
+  requireDealOwner,
+  requireLeads,
+  requireSession,
+} from "@/server/auth";
 import { getCostDefaults, getQuickAddData, type QuickAddData } from "@/server/queries";
 import { sendInvitation } from "@/server/invites";
 import {
@@ -1195,4 +1201,186 @@ async function assertOrgUser(organizationId: string, userId: string) {
   });
   if (!row) throw new Error("FORBIDDEN");
   return row.id;
+}
+
+/* -------------------------------------------------------------------- leads */
+
+const leadInput = z.object({
+  enquiryDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick the date the enquiry came in"),
+  companyName: z.string().trim().min(1, "Company name is required").max(200),
+  typeOfGoods: z.string().trim().max(200).nullable().optional(),
+  vehicleRequirement: z.coerce.number().int().min(1).max(100_000).nullable().optional(),
+  callingCity: z.string().trim().max(120).nullable().optional(),
+  vehicleType: z.string().trim().max(120).nullable().optional(),
+  callerName: z.string().trim().max(160).nullable().optional(),
+  designation: z.string().trim().max(160).nullable().optional(),
+  mobile: z.string().trim().max(40).nullable().optional(),
+  email: z.string().trim().max(200).nullable().optional(),
+  foundOn: z.string().trim().max(160).nullable().optional(),
+});
+
+/**
+ * The NOC desk writing down a call.
+ *
+ * Only the company and the date are required. Somebody who rings off before
+ * giving their fleet size still happened, and a form that refuses to save
+ * that teaches people to invent numbers.
+ */
+export async function createLead(formData: FormData): Promise<ActionResult> {
+  const session = await requireLeads();
+  const parsed = leadInput.safeParse(formToObject(formData));
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  await db.insert(leads).values({
+    organizationId: session.organizationId,
+    ...parsed.data,
+    createdByUserId: session.userId,
+  });
+
+  revalidatePath("/leads");
+  return { ok: true };
+}
+
+/** Correcting what was written down. The status is not touched here. */
+export async function updateLead(
+  id: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const session = await requireLeads();
+  const parsed = leadInput.safeParse(formToObject(formData));
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const result = await db
+    .update(leads)
+    .set({ ...parsed.data, updatedAt: new Date() })
+    .where(and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)))
+    .returning();
+  if (!result.length) return { ok: false, error: "Lead not found" };
+
+  revalidatePath("/leads");
+  return { ok: true };
+}
+
+/**
+ * A deal owner, back from the call.
+ *
+ * The remark is the point of this screen, so it is required either way: a
+ * status with no sentence behind it tells the next person nothing. Saying no
+ * additionally needs a reason, which the database insists on too.
+ *
+ * `converted` is not settable here — it is what `convertLead` writes when a
+ * deal actually exists, so the word never gets ahead of the fact.
+ */
+export async function actionLead(
+  id: string,
+  input: { status: "qualified" | "not_qualified"; remarks: string; reason?: string },
+): Promise<ActionResult> {
+  const session = await requireDealOwner();
+
+  const remarks = input.remarks.trim();
+  if (!remarks) {
+    return { ok: false, error: "Say what they told you — one line is enough." };
+  }
+  const reason = input.reason?.trim() ?? "";
+  if (input.status === "not_qualified" && !reason) {
+    return { ok: false, error: "Give the reason this is not a deal." };
+  }
+
+  const existing = await db.query.leads.findFirst({
+    where: and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)),
+  });
+  if (!existing) return { ok: false, error: "Lead not found" };
+  if (existing.status === "converted") {
+    return {
+      ok: false,
+      error: "This lead is already a deal — work it in the pipeline from here.",
+    };
+  }
+
+  await db
+    .update(leads)
+    .set({
+      status: input.status,
+      remarks,
+      notQualifiedReason: input.status === "not_qualified" ? reason : null,
+      actionedByUserId: session.userId,
+      actionedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)));
+
+  revalidatePath("/leads");
+  return { ok: true };
+}
+
+/**
+ * The lead becomes a deal.
+ *
+ * The enquiry says "3W" and "Bangalore"; a deal needs a vehicle type and a
+ * city from the master lists, so the form asks rather than guessing — a deal
+ * created against the wrong model is worse than one more question.
+ *
+ * Everything the enquiry knows about the person who rang travels into the
+ * deal's notes, because a deal has nowhere else to put a phone number, and
+ * losing it at exactly the moment the deal starts would be perverse.
+ */
+export async function convertLead(
+  id: string,
+  formData: FormData,
+): Promise<ActionResult<{ id: string }>> {
+  const session = await requireDealOwner();
+
+  const existing = await db.query.leads.findFirst({
+    where: and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)),
+  });
+  if (!existing) return { ok: false, error: "Lead not found" };
+  if (existing.status === "converted" && existing.opportunityId) {
+    return { ok: false, error: "This lead is already a deal." };
+  }
+
+  const contact = [
+    existing.callerName
+      ? `Contact: ${existing.callerName}${existing.designation ? `, ${existing.designation}` : ""}`
+      : null,
+    existing.mobile ? `Mobile: ${existing.mobile}` : null,
+    existing.email ? `Email: ${existing.email}` : null,
+    existing.typeOfGoods ? `Goods: ${existing.typeOfGoods}` : null,
+    existing.foundOn ? `Found MoEVing on: ${existing.foundOn}` : null,
+    existing.callingCity ? `Calling city as given: ${existing.callingCity}` : null,
+    existing.vehicleType ? `Vehicle asked for: ${existing.vehicleType}` : null,
+    existing.remarks ? `Call remarks: ${existing.remarks}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  // The deal is raised through the ordinary path, so every rule the Quick Add
+  // sheet enforces — the city check, the owner rule, the multi-city split —
+  // applies to a converted lead exactly as it does to a typed one.
+  formData.set("accountName", existing.companyName);
+  if (!formData.get("notes")) formData.set("notes", contact);
+  const created = await createOpportunity(formData);
+  if (!created.ok) return created;
+
+  const opportunityId = created.data!.id;
+  await db
+    .update(leads)
+    .set({
+      status: "converted",
+      opportunityId,
+      notQualifiedReason: null,
+      actionedByUserId: session.userId,
+      actionedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)));
+
+  revalidatePath("/leads");
+  revalidatePath("/pipeline");
+  return { ok: true, data: { id: opportunityId } };
 }

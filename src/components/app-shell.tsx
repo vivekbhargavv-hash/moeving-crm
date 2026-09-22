@@ -5,6 +5,7 @@ import {
   BarChart3,
   CalendarRange,
   KanbanSquare,
+  PhoneCall,
   Plus,
   Settings,
   Shield,
@@ -31,12 +32,16 @@ import { cn } from "@/lib/utils";
  */
 const SALES_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
+  { href: "/leads", label: "Leads", icon: PhoneCall },
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
   { href: "/forecast", label: "Forecast", icon: CalendarRange },
   { href: "/deployments", label: "Deploy", icon: Truck },
 ];
 
 const OPS_NAV = [{ href: "/deployments", label: "Deployments", icon: Truck }];
+
+/** The desk that answers the phone. Leads in, and nothing else. */
+const NOC_NAV = [{ href: "/leads", label: "Leads", icon: PhoneCall }];
 
 /** Page titles for the mobile header, so it never says "MoEVing" vaguely. */
 const TITLES: Record<string, string> = {
@@ -48,6 +53,7 @@ const TITLES: Record<string, string> = {
   "/admin/master-data": "Master data",
   "/settings": "Settings",
   "/deployments": "Deployments",
+  "/leads": "Leads",
 };
 
 export function AppShell({
@@ -106,7 +112,10 @@ export function AppShell({
   }, [toast]);
 
   const isOps = session.role === "ops";
-  const tabs = isOps ? OPS_NAV : SALES_NAV;
+  const isNoc = session.role === "noc";
+  // The phone desk gets one screen, the way ops gets one screen: leads in,
+  // and nothing about what a deal owner did with them.
+  const tabs = isOps ? OPS_NAV : isNoc ? NOC_NAV : SALES_NAV;
 
   // Settings is everyone's — it is where the install button lives, and the
   // people who most need to install this are the ones who are not admins.
@@ -199,18 +208,22 @@ export function AppShell({
         </main>
       </div>
 
-      {/* Mobile tab bar. Ops get one tab and no Add deal — they do not sell. */}
+      {/* Mobile tab bar. Ops and NOC get their one screen and no Add deal:
+          neither of them sells. */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
         <div
           className={cn(
             "mx-auto grid max-w-md",
-            isOps ? "grid-cols-1" : "grid-cols-5",
+            // The count has to match what is rendered, or the tabs sit off
+            // centre: one screen each for ops and NOC, five sales tabs plus
+            // the Add deal button for everyone else.
+            isOps || isNoc ? "grid-cols-1" : "grid-cols-6",
           )}
         >
           {tabs.map((item) => (
             <NavTab key={item.href} {...item} pathname={pathname} />
           ))}
-          {isOps ? null : (
+          {isOps || isNoc ? null : (
             <button
               onClick={() => setAddOpen(true)}
               aria-label="Add deal"

@@ -14,7 +14,8 @@ import {
 } from "@/lib/constants";
 import { cn, formatDate, inr, inrCompact, num } from "@/lib/utils";
 import { requireSales } from "@/server/auth";
-import { getMasterData, getOpportunity } from "@/server/queries";
+import { defaultsFor } from "@/lib/cost-defaults";
+import { getCostDefaults, getMasterData, getOpportunity } from "@/server/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +25,11 @@ export default async function OpportunityPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [session, row, master] = await Promise.all([
+  const [session, row, master, defaultRows] = await Promise.all([
     requireSales(),
     getOpportunity(id),
     getMasterData(),
+    getCostDefaults(),
   ]);
   if (!row) notFound();
 
@@ -35,6 +37,16 @@ export default async function OpportunityPage({
   const stage = STAGE_MAP[opp.stage];
   const value = (opp.price ?? 0) * opp.fleetSize;
   const isWon = opp.stage === "closed_won";
+  // The standard rates for this vehicle and contract, which the cost sheet
+  // starts from and the card compares against.
+  const costDefaults = defaultsFor(
+    {
+      vehicleTypeId: opp.vehicleTypeId,
+      chargingScope: opp.chargingScope,
+      operatingDays: opp.operatingDays,
+    },
+    defaultRows,
+  );
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -224,6 +236,7 @@ export default async function OpportunityPage({
           fleetSize={opp.fleetSize}
           price={opp.price}
           isWon={isWon}
+          defaults={costDefaults}
           sheet={{
             revenue: opp.revenue,
             leaseCost: opp.leaseCost,

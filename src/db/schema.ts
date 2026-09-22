@@ -11,6 +11,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -166,6 +167,61 @@ export const stageProbabilities = pgTable(
   (t) => [
     uniqueIndex("stage_prob_org_stage_idx").on(t.organizationId, t.stage),
     check("stage_prob_range", sql`${t.probability} between 0 and 100`),
+  ],
+);
+
+/**
+ * What each cost line starts at, before anyone types.
+ *
+ * The same truck in the same city costs what it costs: a lease is a function
+ * of the vehicle, a driver of how many days a month they work, charging of the
+ * vehicle and of who pays for it. Those are facts about the business, not
+ * about a deal — so they live here, an admin owns them, and the cost sheet
+ * starts from them instead of from memory.
+ *
+ * Which dimensions a line varies by is declared in `COST_FIELDS`, not inferred
+ * from the rows. That is the whole design: a table where "the most specific
+ * matching row wins" cannot answer the charging case, where a rule about a
+ * vehicle and a rule about a charging scope are equally specific and disagree.
+ * With the dimensions fixed per line, charging is a vehicle x scope grid where
+ * "Ace, client pays" is its own row worth 0, and nothing has to be arbitrated.
+ *
+ * A dimension not used by a line is null in every one of its rows.
+ */
+export const costDefaults = pgTable(
+  "cost_defaults",
+  {
+    id: id(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** A key of `COST_FIELDS` — lease_cost, driver_cost, and so on. */
+    costKey: text("cost_key").notNull(),
+    vehicleTypeId: uuid("vehicle_type_id").references(() => vehicleTypes.id, {
+      onDelete: "cascade",
+    }),
+    chargingScope: chargingScope("charging_scope"),
+    operatingDays: integer("operating_days"),
+    /** Per vehicle per month, whole rupees. Zero is a real answer. */
+    amount: integer("amount").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // NULLS NOT DISTINCT, because a line that does not use a dimension stores
+    // null in it — and under the default rule every such row would count as
+    // unique, letting one cost line collect a dozen contradictory defaults.
+    unique("cost_defaults_combination_idx")
+      .on(
+        t.organizationId,
+        t.costKey,
+        t.vehicleTypeId,
+        t.chargingScope,
+        t.operatingDays,
+      )
+      .nullsNotDistinct(),
+    check("cost_defaults_amount_positive", sql`${t.amount} >= 0`),
   ],
 );
 

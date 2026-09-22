@@ -53,12 +53,15 @@ export function StageChanger({
   const today = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [revenue, setRevenue] = React.useState("");
   const [loadingSheet, setLoadingSheet] = React.useState(false);
+  /** Cost lines showing an admin default rather than something typed here. */
+  const [prefilled, setPrefilled] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     if (target) {
       setMode("pick");
       setError(null);
       setCosts({});
+      setPrefilled([]);
       setDeployDate("");
       setRevenue(target.price ? String(target.price) : "");
     }
@@ -80,17 +83,29 @@ export function StageChanger({
     loadUnitEconomics(id)
       .then((result) => {
         if (!live || !result.ok || !result.data) return;
-        const { revenue: storedRevenue, ...storedCosts } = result.data;
+        const { sheet, defaults } = result.data;
+        const { revenue: storedRevenue, ...storedCosts } = sheet;
         // Only where the deal carries no price at all does a stored revenue
         // still have something to say.
         if (!target?.price && storedRevenue !== null) {
           setRevenue(String(storedRevenue));
         }
-        setCosts(
-          Object.fromEntries(
-            Object.entries(storedCosts)
-              .filter(([, v]) => v !== null)
-              .map(([k, v]) => [k, String(v)]),
+        /**
+         * What the deal already carries wins; the admin's defaults fill the
+         * blanks. Nothing typed is ever overwritten by a rule — the rule is
+         * a starting point, not an opinion about a deal someone has costed.
+         */
+        const filled: Record<string, string> = {};
+        for (const [k, v] of Object.entries(defaults)) {
+          if (v !== undefined) filled[k] = String(v);
+        }
+        for (const [k, v] of Object.entries(storedCosts)) {
+          if (v !== null) filled[k] = String(v);
+        }
+        setCosts(filled);
+        setPrefilled(
+          Object.keys(defaults).filter(
+            (k) => storedCosts[k as keyof typeof storedCosts] === null,
           ),
         );
       })
@@ -192,7 +207,9 @@ export function StageChanger({
             <p className="mt-1 text-[12.5px] text-muted">
               {loadingSheet
                 ? "Loading what this deal already has…"
-                : "Anything already costed on the deal is filled in below — check it, correct it, and close."}
+                : prefilled.length
+                  ? `${prefilled.length} ${prefilled.length === 1 ? "figure is" : "figures are"} the standard rate for this vehicle and contract — check them, change what differs, and close.`
+                  : "Anything already costed on the deal is filled in below — check it, correct it, and close."}
             </p>
           </div>
 
@@ -233,19 +250,25 @@ export function StageChanger({
 
           <div className="grid grid-cols-2 gap-3">
             {COST_FIELDS.map((f) => (
-              <Field key={f.key} label={f.label}>
+              <Field
+                key={f.key}
+                label={f.label}
+                hint={prefilled.includes(f.key) ? "Standard rate" : undefined}
+              >
                 <Input
                   name={f.key}
                   inputMode="numeric"
                   required
                   placeholder="₹0"
                   value={costs[f.key] ?? ""}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    // Touching a figure makes it this deal's own.
+                    setPrefilled((p) => p.filter((k) => k !== f.key));
                     setCosts((c) => ({
                       ...c,
                       [f.key]: e.target.value.replace(/\D/g, ""),
-                    }))
-                  }
+                    }));
+                  }}
                 />
               </Field>
             ))}

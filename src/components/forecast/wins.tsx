@@ -1,10 +1,10 @@
 "use client";
 
-import { Loader2, Trophy } from "lucide-react";
+import { Building2, IndianRupee, Loader2, Trophy, Truck } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
-import { Sheet } from "@/components/ui";
+import { Segmented, Sheet } from "@/components/ui";
 import { cn, formatDate, inrCompact, monthLabel, monthLabelLong, num } from "@/lib/utils";
 import { loadWinsDrilldown } from "@/server/forecast-actions";
 import type { WinCell } from "@/server/queries";
@@ -84,28 +84,19 @@ export function WinsGrid({
 
   return (
     <div>
-      <div className="no-scrollbar mb-3 flex gap-2 overflow-x-auto pb-1">
-        <div className="flex h-12 shrink-0 rounded-2xl border border-line bg-white p-[3px]">
-          {(
-            [
-              ["deals", "Accounts"],
-              ["fleet", "Vehicles"],
-              ["value", "Value"],
-            ] as const
-          ).map(([m, label]) => (
-            <button
-              key={m}
-              onClick={() => setMetric(m)}
-              className={cn(
-                "h-full rounded-xl px-3.5 text-[13px] font-semibold transition",
-                metric === m ? "bg-ink text-white" : "text-muted",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* The same switch the pipeline and forecast use, so "what am I
+          measuring" looks identical wherever it is asked. */}
+      <Segmented
+        label="Measure"
+        className="mb-3 md:w-[300px]"
+        value={metric}
+        onChange={setMetric}
+        options={[
+          { value: "deals", label: "Accounts", icon: <Building2 size={16} /> },
+          { value: "fleet", label: "Vehicles", icon: <Truck size={16} /> },
+          { value: "value", label: "Value", icon: <IndianRupee size={16} /> },
+        ]}
+      />
 
       <div className="mb-3 flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-emerald-900">
         <Trophy size={18} />

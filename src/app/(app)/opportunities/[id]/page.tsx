@@ -5,10 +5,10 @@ import { notFound } from "next/navigation";
 import { DetailActions } from "@/components/opportunity/detail-actions";
 import { ExpandDeal } from "@/components/opportunity/expand-deal";
 import { NoteBox } from "@/components/opportunity/note-box";
+import { UnitEconomics } from "@/components/opportunity/unit-economics";
 import { Badge, Card, CardHeader } from "@/components/ui-server";
 import {
   CHARGING_SCOPE_LABEL,
-  COST_FIELDS,
   DRIVER_TYPE_LABEL,
   STAGE_MAP,
 } from "@/lib/constants";
@@ -212,42 +212,24 @@ export default async function OpportunityPage({
           </dl>
         </Card>
 
-        {isWon ? (
-          <Card>
-            <CardHeader title="Unit economics — per vehicle / month" />
-            <dl className="px-4 pb-4 text-sm">
-              <Row label="Revenue" value={inr(opp.revenue)} />
-              {COST_FIELDS.map((f) => (
-                <Row
-                  key={f.key}
-                  label={f.label}
-                  value={inr(opp[f.key] as number | null)}
-                  muted
-                />
-              ))}
-              <Row label="Cost per vehicle" value={inr(opp.costPerVehicle)} />
-              <Row
-                label="Margin per vehicle"
-                value={inr(opp.marginPerVehicle)}
-                strong
-              />
-              <Row
-                label="Margin %"
-                value={
-                  opp.marginPct === null
-                    ? "—"
-                    : `${Number(opp.marginPct).toFixed(1)}%`
-                }
-                strong
-                tone={
-                  opp.marginPct !== null && Number(opp.marginPct) < 0
-                    ? "text-rose-700"
-                    : "text-emerald-700"
-                }
-              />
-            </dl>
-          </Card>
-        ) : null}
+        {/* Shown at every stage, not only once won: costing happens while the
+            deal is being quoted, and Closed Won is where it is checked. */}
+        <UnitEconomics
+          id={opp.id}
+          fleetSize={opp.fleetSize}
+          price={opp.price}
+          isWon={isWon}
+          sheet={{
+            revenue: opp.revenue,
+            leaseCost: opp.leaseCost,
+            driverCost: opp.driverCost,
+            chargingCost: opp.chargingCost,
+            parkingCost: opp.parkingCost,
+            maintenanceCost: opp.maintenanceCost,
+            supervisorCost: opp.supervisorCost,
+            miscCost: opp.miscCost,
+          }}
+        />
 
         {isWon ? (
           <Card>

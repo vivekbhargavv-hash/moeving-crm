@@ -20,8 +20,12 @@ import { requireAdmin, requireSession } from "@/server/auth";
 import { sendInvitation } from "@/server/invites";
 import {
   calendarDate,
+  ECONOMICS_KEYS,
+  type EconomicsKey,
+  missingEconomics,
   monthToLastDay,
   planStageChange,
+  unitEconomicsSchema,
 } from "@/server/stage-change";
 
 export type ActionResult<T = undefined> =
@@ -470,6 +474,106 @@ export async function recordDeployment(
   return { ok: true };
 }
 
+/* --------------------------------------------------------- unit economics */
+
+export type EconomicsSheet = Record<EconomicsKey, number | null>;
+
+/** The eight figures off a deal row, and nothing else. */
+function pickEconomics(row: Partial<EconomicsSheet>): EconomicsSheet {
+  return Object.fromEntries(
+    ECONOMICS_KEYS.map((k) => [k, row[k] ?? null]),
+  ) as EconomicsSheet;
+}
+
+/**
+ * What the deal carries today, for the sheets that prefill from it.
+ *
+ * The pipeline card does not select these columns — it would carry eight more
+ * numbers into every row of a 250-deal table to serve one sheet — so the
+ * Closed Won sheet asks for them when it opens instead.
+ */
+export async function loadUnitEconomics(
+  id: string,
+): Promise<ActionResult<EconomicsSheet>> {
+  const session = await requireSession();
+  const existing = await loadOwned(session.organizationId, id);
+  if (!existing) return { ok: false, error: "Deal not found" };
+  return { ok: true, data: pickEconomics(existing) };
+}
+
+/**
+ * Cost the deal whenever it is known, not only when it is won.
+ *
+ * Pricing work happens at quoting, and a deal that has been costed for weeks
+ * should not arrive at Closed Won with an empty sheet and a person trying to
+ * remember numbers. So the figures can be saved and revised at any stage; the
+ * mandate lives at the one place it matters — the move into Closed Won, which
+ * still refuses to happen without all eight (`closeWonSchema`, and the
+ * `opps_won_requires_costs` check behind it).
+ *
+ * On a deal that is already won the sheet may be corrected but not emptied:
+ * blanking a figure there would fail that check, and the recorded margin for
+ * a month that has been reported should never silently become ₹0.
+ */
+export async function saveUnitEconomics(
+  id: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const session = await requireSession();
+  const existing = await loadOwned(session.organizationId, id);
+  if (!existing) return { ok: false, error: "Deal not found" };
+
+  const parsed = unitEconomicsSchema.safeParse(formToObject(formData));
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Those figures are not valid",
+    };
+  }
+
+  const next = pickEconomics(parsed.data);
+  if (existing.stage === "closed_won" && missingEconomics(next).length > 0) {
+    return {
+      ok: false,
+      error:
+        "This deal is won, so its cost sheet has to stay complete. Fill every field, or move the deal out of Closed Won first.",
+    };
+  }
+
+  const changed = ECONOMICS_KEYS.filter((k) => (existing[k] ?? null) !== next[k]);
+  if (changed.length === 0) return { ok: true };
+
+  await db
+    .update(opportunities)
+    .set({ ...next, updatedAt: new Date() })
+    .where(
+      and(
+        eq(opportunities.id, id),
+        eq(opportunities.organizationId, session.organizationId),
+      ),
+    );
+
+  const left = missingEconomics(next).length;
+  await db.insert(opportunityEvents).values({
+    organizationId: session.organizationId,
+    opportunityId: id,
+    userId: session.userId,
+    kind: "note",
+    body:
+      left === 0
+        ? "Unit economics updated — full sheet, ready to close."
+        : `Unit economics updated — ${left} ${left === 1 ? "figure" : "figures"} still to fill in.`,
+  });
+
+  // A won deal's numbers feed Wins and the dashboard; an open deal's do not,
+  // but revalidating both costs nothing and cannot go stale.
+  revalidatePath("/pipeline");
+  revalidatePath("/dashboard");
+  revalidatePath("/forecast");
+  revalidatePath(`/opportunities/${id}`);
+  return { ok: true };
+}
+
 /* ------------------------------------------------------------ stage change */
 
 /**
@@ -492,6 +596,9 @@ export async function changeStage(
     from: existing.stage,
     to: stage,
     fields: formData ? formToObject(formData) : {},
+    // Anything already costed earlier in the pipeline counts. Closed Won asks
+    // for a complete sheet, not for it to be retyped at the last step.
+    stored: pickEconomics(existing),
   });
   if (plan.type === "noop") return { ok: true };
   if (plan.type === "needs") return { ok: true, data: { needs: plan.needs } };

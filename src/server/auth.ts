@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { db } from "@/db";
+import { shouldRecordSeen } from "@/lib/last-seen";
 import { organizations, users } from "@/db/schema";
 
 export type Session = {
@@ -38,7 +39,10 @@ export const requireSession = cache(async (): Promise<Session> => {
   const byClerkId = await db.query.users.findFirst({
     where: and(eq(users.clerkUserId, clerkUserId), eq(users.isActive, true)),
   });
-  if (byClerkId) return toSession(byClerkId);
+  if (byClerkId) {
+    await recordSeen(byClerkId.id, byClerkId.lastSeenAt);
+    return toSession(byClerkId);
+  }
 
   // First sign-in: an admin created the row by email ahead of the invite.
   const clerk = await currentUser();
@@ -56,6 +60,8 @@ export const requireSession = cache(async (): Promise<Session> => {
       clerkUserId,
       // They are in; the accept link is spent and should not sit in the row.
       inviteUrl: null,
+      // The one sign-in whose moment we know exactly.
+      lastSeenAt: new Date(),
       name:
         invited.name ||
         [clerk?.firstName, clerk?.lastName].filter(Boolean).join(" ") ||
@@ -66,6 +72,29 @@ export const requireSession = cache(async (): Promise<Session> => {
 
   return toSession(linked!);
 });
+
+/**
+ * Note that this person is here.
+ *
+ * Throttled, because this guard runs on every server-rendered page and the
+ * figure is read by an admin wondering whether someone has started using the
+ * CRM — not to the minute. Anyone active costs one UPDATE by primary key
+ * every few minutes; everybody else costs nothing.
+ *
+ * A failure here is never allowed to cost someone their page: last seen is
+ * the least important thing this request is doing.
+ */
+async function recordSeen(userId: string, lastSeenAt: Date | null) {
+  if (!shouldRecordSeen(lastSeenAt)) return;
+  try {
+    await db
+      .update(users)
+      .set({ lastSeenAt: new Date() })
+      .where(eq(users.id, userId));
+  } catch {
+    /* ignored on purpose */
+  }
+}
 
 /** Where someone lands when they reach for a page that is not theirs. */
 export function homeFor(role: UserRole) {

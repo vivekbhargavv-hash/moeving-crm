@@ -93,6 +93,13 @@ export const users = pgTable(
      * that never arrives. Cleared on first sign-in — see requireSession().
      */
     inviteUrl: text("invite_url"),
+    /**
+     * The last time this person had a page rendered for them.
+     *
+     * Written by `requireSession()`, throttled — see `lib/last-seen.ts`. Null
+     * means they have never signed in, which is what Admin shows as "Invited".
+     */
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [

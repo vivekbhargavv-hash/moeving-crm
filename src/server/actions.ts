@@ -100,6 +100,11 @@ const baseOpportunity = z.object({
     .optional()
     .transform((v) => v ?? null),
   expectedCloseMonth: closeMonth,
+  /**
+   * The day the trucks are due. Optional everywhere except a won deal, which
+   * `opps_won_requires_deployment_date` will not let go null.
+   */
+  deploymentDate: calendarDate.nullable().optional(),
   notes: z.string().trim().max(4000).nullable().optional(),
   ownerUserId: uuidish,
   stage: stageEnum.optional(),
@@ -285,11 +290,23 @@ export async function updateOpportunity(
     };
   }
 
+  // A won deal ops is already planning against cannot lose its date: the
+  // `opps_won_requires_deployment_date` check would refuse it at the database,
+  // and a violation is a worse way to learn that than a sentence.
+  if (isWon && input.deploymentDate === null) {
+    return {
+      ok: false,
+      error:
+        "This deal is won, so it has to keep a deployment date — ops is planning against it.",
+    };
+  }
+
   await db
     .update(opportunities)
     .set({
       accountId,
       vehiclesDeployed,
+      deploymentDate: input.deploymentDate ?? null,
       name: input.name?.trim() || input.accountName.trim(),
       cityId: input.cityId,
       vehicleTypeId: input.vehicleTypeId,
@@ -976,33 +993,44 @@ export async function deleteOpportunity(id: string): Promise<ActionResult> {
         "This is a recorded win — deleting it changes past reported revenue. Ask an admin.",
     };
   }
-  await db.transaction(async (tx) => {
-    // Before the row goes, hand any lead that became it back to the desk.
-    await tx
-      .update(leads)
-      .set({
-        status: "qualified",
-        opportunityId: null,
-        convertedAt: null,
-        remarks: sql`coalesce(${leads.remarks} || ' · ', '') || 'The deal raised from this lead was deleted.'`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(leads.opportunityId, id),
-          eq(leads.organizationId, session.organizationId),
-        ),
-      );
+  /*
+   * Two statements, deliberately NOT a transaction.
+   *
+   * Production runs Neon over HTTP (`drizzle-orm/neon-http`), which has no
+   * transaction support at all — `db.transaction()` throws "No transactions
+   * support in neon-http driver" the moment it is called. A local Postgres
+   * uses node-postgres, where it works perfectly, so a transaction here
+   * passes every local test and fails for every real user. See HANDOFF § 6.
+   *
+   * The order is the safe one. Detaching the lead first means the worst case
+   * is a lead handed back to the desk whose deal still exists — visible,
+   * and one re-conversion away. Deleting first is not even possible: that is
+   * the constraint violation this whole function exists to avoid.
+   */
+  await db
+    .update(leads)
+    .set({
+      status: "qualified",
+      opportunityId: null,
+      convertedAt: null,
+      remarks: sql`coalesce(${leads.remarks} || ' · ', '') || 'The deal raised from this lead was deleted.'`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(leads.opportunityId, id),
+        eq(leads.organizationId, session.organizationId),
+      ),
+    );
 
-    await tx
-      .delete(opportunities)
-      .where(
-        and(
-          eq(opportunities.id, id),
-          eq(opportunities.organizationId, session.organizationId),
-        ),
-      );
-  });
+  await db
+    .delete(opportunities)
+    .where(
+      and(
+        eq(opportunities.id, id),
+        eq(opportunities.organizationId, session.organizationId),
+      ),
+    );
 
   revalidatePath("/pipeline");
   revalidatePath("/dashboard");

@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 22 September 2026 (seventh session)
+**Last updated:** 22 September 2026 (eighth session)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -11,15 +11,9 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-**Migrations 0000–0010 are applied to production. `0011_lead_funnel.sql` is
-NOT.** Apply it by hand through the Neon MCP connector **before** the code that
-needs it deploys — the Leads screen selects `converted_at` on page load, so
-deploying first gives every lead-facing page a 500. It is additive (one
-nullable column, one index, and a backfill of `converted_at` for leads already
-marked converted) and safe to run against live data.
-
-The earlier ones were applied the same way, for the same reason: the app
-queries those tables on page load.
+**Migrations 0000–0011 are all applied to production.** Nothing to run. They
+are applied by hand through the Neon MCP connector BEFORE their code deploys,
+because the app queries those tables on page load.
 
 ### Blocking somebody today
 
@@ -50,6 +44,11 @@ queries those tables on page load.
 3. **Give the phone desk the NOC role.** Admin → Users → role **NOC**. They see
    Leads and nothing else. Until somebody has it, leads can only be added by an
    admin.
+
+8. **A throwaway Neon branch `delete-fix-verify` exists.** It was a copy of
+   production used to prove the delete fix against the real schema without
+   touching live data. It costs storage and nothing reads it — delete it in
+   the Neon console, or ask and it will be removed.
 
 ### Still open from earlier sessions
 
@@ -137,6 +136,8 @@ Change these only deliberately — a lot of code assumes them.
 | **Inbound conversion is measured out of ENQUIRIES, never out of the previous step**, and the headline rate is WON, not converted. | A rate measured against the step before it flatters itself: a desk that rang two leads and converted both would report 100%. And raising a deal costs nothing — the enquiry only paid for itself when the trucks were sold. `lib/lead-funnel.ts`, free of React, so the denominators are tested. |
 | **The expected deployment date is offered at Contracting and mandated at Closed Won.** A date given at Contracting satisfies the Won sheet. | Contracting means verbally agreed with paperwork in flight — the first moment anybody can honestly say when the trucks are wanted, and weeks before the win. It is the same rule the cost sheet already follows: the answer must EXIST by Closed Won, not be typed at that moment. Optional at Contracting on purpose; a deal owner who does not know yet must not be blocked from moving the stage. |
 | **A Contracting deal with a date appears in Deployments, badged "Expected", and counts in the totals.** Recording vehicles against one is refused. | Vivek's call, over the alternative of a separate uncounted section: ops wants the forward view in the numbers they plan against. The guard that matters is still real — `recordDeployment()` checks the stage, so nothing can be marked deployed against an unsigned deal. The risk he accepted: "To deploy" includes work that is not yet owed. |
+| **No server code may call `db.transaction()`.** `tests/neon-http-driver.test.ts` fails the build if any does. | Production runs Neon over HTTP, which has NO transaction support — the call throws the moment it is reached. A local Postgres uses node-postgres, where it works perfectly. So a transaction passes every test on a developer's machine and throws for every real user, which is exactly what happened: the delete fix shipped, and the screen went on saying "check your connection". |
+| **The Pipeline is per vehicle per month, end to end** — price, cost and margin. Monthly value and whole-fleet cost appear only on a deal's own page. | One deal is comparable with another on what a truck earns and costs, not on the size of its fleet. Printing the deal-level figures beside them puts two sizes of the same number on one row, an order of magnitude apart, and invites the misreading. The deal page has the room to show both. |
 | **Deleting a deal hands its lead back to the desk** as `qualified`, with a remark saying where the deal went. | `leads.opportunity_id` is ON DELETE SET NULL and `leads_converted_requires_opportunity` forbids a converted lead holding a null one, so the cascade fought the check and Postgres refused the delete outright. The lead itself is never deleted: somebody rang that company, and the enquiry happened whatever became of the deal. |
 | **The Pipeline's headline money column is `price` — per vehicle, per month.** Deal value steps behind the `2xl` breakpoint. | It is how the business thinks about a deal ("what does a truck earn"), and it is the figure every cost line on the sheet is comparable with. Value is that times the fleet and both halves are on the same row. |
 | **Deployments has a third view, By month**: city in rows, month in columns, vehicles in the cells, tapping a city for the clients behind the number. | By date answers "what is late", By city answers "what does Bangalore owe". Neither answers "how many trucks land where, and when", which is a shape rather than a list. The arithmetic is `lib/deployment-grid.ts`, free of React, so it tests. |
@@ -198,6 +199,7 @@ tests/
   deployment-groups.test.ts     the ops queue's two groupings, runs anywhere
   deployment-grid.test.ts       the By month grid's months and cells, anywhere
   lead-funnel.test.ts           the inbound rates and their denominators
+  neon-http-driver.test.ts      no db.transaction() anywhere in src/, ever
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
   0000_*.sql          initial schema
@@ -436,6 +438,17 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   `actioned_at` alone. Leads converted BEFORE that migration cannot be
   recovered — their callback and conversion read as the same moment, and the
   backfill deliberately guesses at nothing else.
+- **`db.transaction()` throws in production and works locally.** The delete
+  fix below was shipped inside one, passed every local test, and failed for
+  every real user with *"No transactions support in neon-http driver"* — the
+  same "Could not delete that. Check your connection" message as the bug it
+  was meant to fix. `src/db/index.ts` picks node-postgres for a local database
+  and `drizzle-orm/neon-http` for Neon, and the two do not have the same
+  capabilities. **Anything verified only against a local Postgres is verified
+  against the wrong driver.** `tests/neon-http-driver.test.ts` now fails the
+  build if a transaction reappears; the Neon MCP connector plus a throwaway
+  branch (`create_branch`) is how to check real behaviour against the real
+  schema without touching live data.
 - **The Vercel deployments API reports `BUILDING` after a build is finished.**
   A deployment whose `ready` timestamp is already set keeps coming back as
   `BUILDING` on repeated `get_deployment` calls for minutes. Check
@@ -599,6 +612,10 @@ Roughly in order of value to adoption:
   October" needs parsing text. A `deployed_at` column would fix it properly.
   This is the ONE date in the deal's life that is not captured: created,
   expected close, actual close (`closed_at`) and expected deployment all are.
+- **The delete-a-deal path is two statements, not a transaction** (see § 6).
+  If the delete fails after the lead has been detached, the lead sits back in
+  the desk's queue while its deal still exists — visible, and one re-conversion
+  away, but not atomic. Real atomicity needs the Neon WebSocket driver.
 - **"To deploy" on the Deployments screen now includes Contracting deals**,
   which are not yet owed. That was a deliberate choice (§ 2) over a separate
   uncounted section; the cost is that the headline number is capacity to plan

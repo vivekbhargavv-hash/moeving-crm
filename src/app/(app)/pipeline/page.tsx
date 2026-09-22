@@ -60,7 +60,8 @@ export default async function PipelinePage({
       <div className="mb-4 hidden md:block">
         <h1 className="text-2xl font-semibold tracking-tight">Pipeline</h1>
         <p className="text-sm text-muted">
-          Drag a card to move it, or use the stage button.
+          Drag a card to move it, or use the stage button. Money here is per
+          vehicle, per month — the whole deal&apos;s figures are on its own page.
         </p>
       </div>
       <PipelineBoard

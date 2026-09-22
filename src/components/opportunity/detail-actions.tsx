@@ -12,6 +12,7 @@ import {
   ChoiceGroup,
   Field,
   Input,
+  PickedDate,
   PickerField,
   Sheet,
   Textarea,
@@ -62,6 +63,15 @@ export function DetailActions({
 }) {
   const router = useRouter();
   const [stageTarget, setStageTarget] = React.useState<StageTarget | null>(null);
+  /**
+   * The day the trucks are due.
+   *
+   * Editable here as well as on the stage sheets, because the stage sheets
+   * only appear while you are MOVING a deal — a deal that is already sitting
+   * in Contracting had no way to record one, which is exactly the hole Vivek
+   * fell into.
+   */
+  const [deployDate, setDeployDate] = React.useState(opp.deploymentDate ?? "");
   const [editing, setEditing] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -87,6 +97,7 @@ export function DetailActions({
     setChargingScope(opp.chargingScope);
     setMonth(opp.expectedCloseDate ? opp.expectedCloseDate.slice(0, 7) : "");
     setDays(opp.operatingDays);
+    setDeployDate(opp.deploymentDate ?? "");
   }, [editing, opp]);
 
   function save(formData: FormData) {
@@ -336,6 +347,23 @@ export function DetailActions({
               }))}
             />
           </div>
+
+          <Field
+            label="Expected deployment date"
+            hint={
+              opp.stage === "closed_won"
+                ? "Ops is planning against this. Changing it moves a commitment."
+                : "When the vehicles are due on the road. Optional until the deal is won."
+            }
+          >
+            <Input
+              type="date"
+              name="deploymentDate"
+              value={deployDate}
+              onChange={(e) => setDeployDate(e.target.value)}
+            />
+            <PickedDate value={deployDate} />
+          </Field>
 
           <div>
             <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">

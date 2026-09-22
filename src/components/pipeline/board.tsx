@@ -28,7 +28,7 @@ import {
 import { Avatar, Badge, EmptyState } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
-import { cn, daysUntil, formatDate, inrCompact, num } from "@/lib/utils";
+import { cn, daysUntil, formatDate, inr, inrCompact, num } from "@/lib/utils";
 import { changeStage } from "@/server/actions";
 import type { OpportunityCard } from "@/server/queries";
 
@@ -606,11 +606,15 @@ function DealCard({
               {dealLabel(opp) ? ` · ${dealLabel(opp)}` : ""}
             </p>
           </div>
+          {/* Per vehicle per month, like the list beside it. The deal-level
+              figure is the stage column's total above and the deal page
+              below; printing it on the card too put two sizes of the same
+              number on one screen. */}
           <div className="shrink-0 text-right">
             <p className="tabular text-[17px] font-bold leading-tight">
-              {opp.value ? inrCompact(opp.value) : "—"}
+              {opp.price ? inr(opp.price) : "—"}
             </p>
-            <p className="text-[11px] text-muted">per month</p>
+            <p className="text-[11px] text-muted">per veh / month</p>
           </div>
         </div>
 

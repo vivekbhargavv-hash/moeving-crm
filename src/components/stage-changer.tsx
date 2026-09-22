@@ -27,11 +27,23 @@ export type StageTarget = {
   /** Rent for one vehicle per month — seeds revenue on Closed Won. */
   price: number | null;
   fleetSize: number;
+  /**
+   * The day the trucks are due, if anyone has said yet. Offered at
+   * Contracting and required at Closed Won, so the Won sheet arrives already
+   * filled for a deal that pencilled one in weeks earlier.
+   */
+  deploymentDate?: string | null;
 };
 
 /**
  * Two taps: open, pick. Won and Lost then ask for the one extra block the
- * business needs, and nothing more.
+ * business needs; Contracting is *offered* one, which is a different thing.
+ *
+ * Contracting means verbally agreed with paperwork in flight — the first
+ * moment anybody can honestly say when the trucks are wanted, and weeks
+ * before the win. Asking then is worth a lot to ops and must not become a
+ * gate: a deal owner who does not know yet moves the stage and says nothing.
+ * By Closed Won it is mandatory, and a date given here satisfies it.
  */
 export function StageChanger({
   target,
@@ -44,7 +56,9 @@ export function StageChanger({
 }) {
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
-  const [mode, setMode] = React.useState<"pick" | "won" | "lost">("pick");
+  const [mode, setMode] = React.useState<
+    "pick" | "won" | "lost" | "contracting"
+  >("pick");
   const [error, setError] = React.useState<string | null>(null);
   const [costs, setCosts] = React.useState<Record<string, string>>({});
   // Ops plans against this. It is asked here because winning the deal is the
@@ -62,7 +76,7 @@ export function StageChanger({
       setError(null);
       setCosts({});
       setPrefilled([]);
-      setDeployDate("");
+      setDeployDate(target.deploymentDate ?? "");
       setRevenue(target.price ? String(target.price) : "");
     }
   }, [target]);
@@ -137,6 +151,7 @@ export function StageChanger({
     if (stage === target!.stage) return onClose();
     if (stage === "closed_won") return setMode("won");
     if (stage === "closed_lost") return setMode("lost");
+    if (stage === "contracting") return setMode("contracting");
     commit(stage);
   }
 
@@ -146,7 +161,11 @@ export function StageChanger({
       const result = await changeStage(target!.id, stage, formData);
       if (!result.ok) return setError(result.error);
       if (result.data?.needs) {
-        setError("Fill in the fields below to close this deal.");
+        setError(
+          result.data.needs === "contracting"
+            ? "That is not a real date — check it and try again."
+            : "Fill in the fields below to close this deal.",
+        );
         return;
       }
       onClose();
@@ -159,7 +178,9 @@ export function StageChanger({
       ? "Close as Won"
       : mode === "lost"
         ? "Close as Lost"
-        : "Move stage";
+        : mode === "contracting"
+          ? "Move to Contracting"
+          : "Move stage";
 
   return (
     <Sheet open onClose={onClose} title={title}>
@@ -309,6 +330,51 @@ export function StageChanger({
               disabled={pending || !deployDate}
             >
               {pending ? "Saving…" : "Mark Won"}
+            </Button>
+          </div>
+        </form>
+      ) : null}
+
+      {mode === "contracting" ? (
+        <form action={(fd) => commit("contracting", fd)} className="space-y-4">
+          <div className="rounded-xl bg-brand-soft/60 px-4 py-3 text-sm">
+            <p className="font-medium text-brand-ink">
+              When are the vehicles wanted?
+            </p>
+            <p className="mt-0.5 text-muted">
+              Optional. Paperwork is in flight, so this is the first point
+              anybody can say — and it gives ops weeks of warning instead of
+              finding out the day the deal is won. You are asked again, and
+              required to answer, at Closed Won.
+            </p>
+          </div>
+
+          <Field
+            label="Expected deployment date"
+            hint="Leave it blank if nobody has said yet."
+          >
+            <Input
+              type="date"
+              name="deploymentDate"
+              min={today}
+              value={deployDate}
+              onChange={(e) => setDeployDate(e.target.value)}
+            />
+            <PickedDate value={deployDate} />
+          </Field>
+
+          {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" onClick={() => setMode("pick")}>
+              Back
+            </Button>
+            <Button variant="brand" className="flex-1" disabled={pending}>
+              {pending
+                ? "Saving…"
+                : deployDate
+                  ? "Move to Contracting"
+                  : "Move without a date"}
             </Button>
           </div>
         </form>

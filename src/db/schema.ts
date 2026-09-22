@@ -309,7 +309,21 @@ export const leads = pgTable(
     actionedByUserId: uuid("actioned_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    /**
+     * When a deal owner rang back and said yes or no.
+     *
+     * Deliberately NOT touched by conversion any more. Converting used to
+     * overwrite it, which erased the one timestamp that says how long an
+     * enquiry waited for its call — the number the desk is actually measured
+     * on — and replaced it with a moment we already record below.
+     */
     actionedAt: timestamp("actioned_at", { withTimezone: true }),
+    /**
+     * When the lead became a deal. `created_at` → `actioned_at` →
+     * `converted_at` is the funnel: how fast we call back, and how many of
+     * those calls turn into something.
+     */
+    convertedAt: timestamp("converted_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -317,6 +331,7 @@ export const leads = pgTable(
   },
   (t) => [
     index("leads_org_status_idx").on(t.organizationId, t.status),
+    index("leads_org_created_idx").on(t.organizationId, t.createdAt),
     index("leads_org_date_idx").on(t.organizationId, t.enquiryDate),
     // A no has to carry its reason, and a lead that became a deal has to know
     // which one — enforced here so no code path can write a half-answer.

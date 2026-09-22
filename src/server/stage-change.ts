@@ -107,6 +107,19 @@ export const unitEconomicsSchema = z.object({
 
 export type UnitEconomics = z.infer<typeof unitEconomicsSchema>;
 
+/**
+ * The expected deployment date, asked for on the way into Contracting.
+ *
+ * Contracting means verbally agreed with paperwork in flight, which is the
+ * first moment anybody can honestly say when the trucks are wanted — and it
+ * is weeks before the win. Optional here and mandatory at Closed Won, the
+ * same shape the cost sheet already has: the rule is that the answer must
+ * EXIST by the time the deal is won, not that it is typed at that moment.
+ */
+export const contractingSchema = z.object({
+  deploymentDate: calendarDate.nullable().optional(),
+});
+
 /** The eight keys, in the order the sheet asks for them. */
 export const ECONOMICS_KEYS = [
   "revenue",
@@ -137,15 +150,15 @@ export type StagePatch = {
   stage: SalesStage;
   updatedAt: Date;
   closedAt: Date | null;
-  /** Set only on the way into closed_won. */
-  deploymentDate?: string;
+  /** Set on the way into contracting or closed_won; null clears it. */
+  deploymentDate?: string | null;
 } & Partial<Omit<z.infer<typeof closeWonSchema>, "deploymentDate">>;
 
 export type StagePlan =
   /** Already in that stage — nothing to write. */
   | { type: "noop" }
-  /** The caller must collect the Closed Won sheet or the Closed Lost reason. */
-  | { type: "needs"; needs: "won" | "lost" }
+  /** The caller must collect the sheet this stage needs. */
+  | { type: "needs"; needs: "won" | "lost" | "contracting" }
   | {
       type: "move";
       patch: StagePatch;
@@ -174,7 +187,10 @@ export function planStageChange({
    * was costed at Proposal is not made to type it all again — the rule is that
    * the figures must *exist* by Closed Won, not that they are typed there.
    */
-  stored?: Partial<Record<EconomicsKey, number | null>>;
+  stored?: Partial<Record<EconomicsKey, number | null>> & {
+    /** A date set earlier, at Contracting, stands in for the Won sheet's. */
+    deploymentDate?: string | null;
+  };
   now?: Date;
 }): StagePlan {
   if (from === to) return { type: "noop" };
@@ -196,11 +212,32 @@ export function planStageChange({
         merged[key] = stored[key];
       }
     }
+    // A date pencilled in at Contracting answers the Won sheet's question, so
+    // winning a deal that already has one does not ask for it again.
+    if (
+      (merged.deploymentDate === undefined ||
+        merged.deploymentDate === null ||
+        merged.deploymentDate === "") &&
+      stored?.deploymentDate
+    ) {
+      merged.deploymentDate = stored.deploymentDate;
+    }
     const parsed = closeWonSchema.safeParse(merged);
     if (!parsed.success) return { type: "needs", needs: "won" };
     const { deploymentDate, ...costs } = parsed.data;
     Object.assign(patch, costs);
     patch.deploymentDate = deploymentDate;
+    return { type: "move", patch, lostReason: null };
+  }
+
+  if (to === "contracting") {
+    const parsed = contractingSchema.safeParse(fields ?? {});
+    // The date is optional, so a bad one is the only thing worth stopping
+    // for — an unanswered question here is a perfectly good Contracting deal.
+    if (!parsed.success) return { type: "needs", needs: "contracting" };
+    if (parsed.data.deploymentDate !== undefined) {
+      patch.deploymentDate = parsed.data.deploymentDate;
+    }
     return { type: "move", patch, lostReason: null };
   }
 

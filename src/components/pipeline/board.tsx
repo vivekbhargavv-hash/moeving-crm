@@ -647,6 +647,7 @@ function DealCard({
             value: opp.value,
             price: opp.price,
             fleetSize: opp.fleetSize,
+            deploymentDate: opp.deploymentDate,
           })
         }
         className="mt-3 flex w-full items-center justify-between border-t border-line py-3 pl-4 pr-3.5 text-left transition active:bg-canvas"

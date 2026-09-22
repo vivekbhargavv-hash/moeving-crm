@@ -4,6 +4,7 @@ import { ArrowRight, Check, Phone, Plus, Search, ThumbsDown } from "lucide-react
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
+import { LeadFunnel } from "@/components/leads/funnel";
 import type { MasterData } from "@/components/quick-add";
 import {
   Badge,
@@ -92,6 +93,11 @@ export function LeadsBoard({
 
   return (
     <div>
+      {/* Deal outcomes are deal information, so the funnel is for the people
+          who work deals. The NOC desk writes leads down and sees nothing
+          else — a won/lost count is the pipeline by another name. */}
+      {canAction ? <LeadFunnel leads={leads} /> : null}
+
       {/* Two rows on a phone, one from `sm` up.
           As a single wrapping row these three came to ~490px on a 390px
           screen: the search box, the only one allowed to shrink, collapsed to

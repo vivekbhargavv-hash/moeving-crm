@@ -221,7 +221,8 @@ export function DeploymentGridView({
       ) : null}
 
       <p className="mt-3 px-1 text-xs text-muted">
-        Vehicles owed on won deals, in the month they are due. {num(grid.total.remaining)} of{" "}
+        Vehicles due in the month they are wanted — won deals, plus deals at
+        Contracting that have pencilled in a date and are marked Expected. {num(grid.total.remaining)} of{" "}
         {num(grid.total.vehicles)} are still to go out.
         {grid.undated.length
           ? ` ${num(grid.undated.length)} ${grid.undated.length === 1 ? "deal has" : "deals have"} no deployment date and cannot be placed in a month — they are in the By date view under “No date set”.`
@@ -250,6 +251,12 @@ function ClientRow({
         <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
           {d.accountName}
         </span>
+        {/* Still at Contracting: planned for, not owed. */}
+        {d.isExpected ? (
+          <span className="shrink-0 rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">
+            Expected
+          </span>
+        ) : null}
         <span
           className={cn(
             "tabular shrink-0 whitespace-nowrap text-[13px] font-semibold",

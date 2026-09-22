@@ -848,8 +848,8 @@ export async function saveUnitEconomics(
 /* ------------------------------------------------------------ stage change */
 
 /**
- * The one-tap path from the pipeline. Won and Lost need their extra block;
- * every other stage moves with no questions asked.
+ * The one-tap path from the pipeline. Won and Lost need their extra block,
+ * Contracting is offered one; every other stage moves with no questions asked.
  *
  * The decision — noop, ask for the block, or here is the patch — lives in
  * `stage-change.ts` so it can be tested without Next, Clerk or a database.
@@ -858,7 +858,7 @@ export async function changeStage(
   id: string,
   stage: SalesStage,
   formData?: FormData,
-): Promise<ActionResult<{ needs?: "won" | "lost" }>> {
+): Promise<ActionResult<{ needs?: "won" | "lost" | "contracting" }>> {
   const session = await requireSession();
   const existing = await loadOwned(session.organizationId, id);
   if (!existing) return { ok: false, error: "Opportunity not found" };
@@ -867,9 +867,10 @@ export async function changeStage(
     from: existing.stage,
     to: stage,
     fields: formData ? formToObject(formData) : {},
-    // Anything already costed earlier in the pipeline counts. Closed Won asks
-    // for a complete sheet, not for it to be retyped at the last step.
-    stored: pickEconomics(existing),
+    // Anything already costed earlier in the pipeline counts, and so does a
+    // deployment date pencilled in at Contracting. Closed Won asks for a
+    // complete answer, not for it to be retyped at the last step.
+    stored: { ...pickEconomics(existing), deploymentDate: existing.deploymentDate },
   });
   if (plan.type === "noop") return { ok: true };
   if (plan.type === "needs") return { ok: true, data: { needs: plan.needs } };
@@ -949,6 +950,17 @@ export async function addNote(id: string, body: string): Promise<ActionResult> {
  *
  * Follow-on deployments are left standing (`parent_opportunity_id` is ON
  * DELETE SET NULL); the caller is told how many so it is not a surprise.
+ *
+ * A deal that came from a lead has to be unpicked first. `leads.opportunity_id`
+ * is ON DELETE SET NULL, and `leads_converted_requires_opportunity` forbids a
+ * converted lead from holding a null one — so the cascade fought the check and
+ * Postgres refused the whole delete. Every deal raised from the Leads screen
+ * was undeletable, and the page could only say "check your connection".
+ *
+ * The lead goes back to `qualified`, which is what it was the moment before
+ * somebody converted it, and keeps a remark saying where its deal went. It is
+ * not deleted with the deal: somebody rang that company, and the enquiry
+ * happened whatever became of the deal afterwards.
  */
 export async function deleteOpportunity(id: string): Promise<ActionResult> {
   const session = await requireSession();
@@ -964,17 +976,38 @@ export async function deleteOpportunity(id: string): Promise<ActionResult> {
         "This is a recorded win — deleting it changes past reported revenue. Ask an admin.",
     };
   }
-  await db
-    .delete(opportunities)
-    .where(
-      and(
-        eq(opportunities.id, id),
-        eq(opportunities.organizationId, session.organizationId),
-      ),
-    );
+  await db.transaction(async (tx) => {
+    // Before the row goes, hand any lead that became it back to the desk.
+    await tx
+      .update(leads)
+      .set({
+        status: "qualified",
+        opportunityId: null,
+        convertedAt: null,
+        remarks: sql`coalesce(${leads.remarks} || ' · ', '') || 'The deal raised from this lead was deleted.'`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(leads.opportunityId, id),
+          eq(leads.organizationId, session.organizationId),
+        ),
+      );
+
+    await tx
+      .delete(opportunities)
+      .where(
+        and(
+          eq(opportunities.id, id),
+          eq(opportunities.organizationId, session.organizationId),
+        ),
+      );
+  });
+
   revalidatePath("/pipeline");
   revalidatePath("/dashboard");
   revalidatePath("/forecast");
+  revalidatePath("/leads");
   return { ok: true };
 }
 
@@ -1466,15 +1499,20 @@ export async function convertLead(
   if (!created.ok) return created;
 
   const opportunityId = created.data!.id;
+  const now = new Date();
   await db
     .update(leads)
     .set({
       status: "converted",
       opportunityId,
       notQualifiedReason: null,
-      actionedByUserId: session.userId,
-      actionedAt: new Date(),
-      updatedAt: new Date(),
+      convertedAt: now,
+      // `actionedAt` is deliberately left alone. It marks the callback — how
+      // long the enquiry waited for somebody to ring it — and overwriting it
+      // here erased exactly the number the desk is measured on. A lead
+      // converted on the same call still has both: `actionedAt` from the
+      // qualifying, or null if it went straight from new to a deal.
+      updatedAt: now,
     })
     .where(and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)));
 

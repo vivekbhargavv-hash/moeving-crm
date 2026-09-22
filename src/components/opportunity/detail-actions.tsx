@@ -38,6 +38,8 @@ type Editable = {
   fleetSize: number;
   price: number | null;
   expectedCloseDate: string | null;
+  /** Pencilled in at Contracting, committed at Closed Won. */
+  deploymentDate: string | null;
   operatingDays: number | null;
   notes: string | null;
   ownerUserId: string;
@@ -133,6 +135,7 @@ export function DetailActions({
               value: opp.value,
               price: opp.price,
               fleetSize: opp.fleetSize,
+              deploymentDate: opp.deploymentDate,
             })
           }
         >

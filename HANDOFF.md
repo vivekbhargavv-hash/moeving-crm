@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 21 September 2026 (fourth session)
+**Last updated:** 22 September 2026 (fifth session)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -11,21 +11,48 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-**Migrations 0000–0007 are all applied to production.** Nothing to run.
+**Migrations 0000–0010 are all applied to production.** Nothing to run. The
+last three were applied by hand through the Neon MCP connector before their
+code deployed, because the app queries those tables on page load.
 
-1. **Rotate the Clerk secret key.** `sk_live_…` was pasted into a chat
+### Blocking somebody today
+
+1. **Clerk Organizations is switched on, and it traps invited users.** After
+   setting a password, a new joiner lands on Clerk's own "Setup your
+   organization" screen and cannot get past it: Clerk matches the verified
+   `moeving.com` domain, finds an organization already exists, and says "join
+   by invitation" — an invitation this app never sends. **This app does not use
+   Clerk organizations at all** (`requireSession()` reads only `userId`; the
+   organization comes from our own tables), so the fix is to turn the
+   requirement off: Clerk Dashboard → Organizations → Settings → membership
+   **optional** (or disable Organizations entirely). One toggle, no deploy.
+2. **Fill in the blank cost defaults.** Admin → Cost defaults is live and
+   seeded with what was known on 22 Sep: Maintenance 2000, Supervisor 2000,
+   Miscellaneous 0, Charging 5000 (1T Tata Ace) and 7000 (1.7T Eicher) when
+   MoEVing pays, 0 for every vehicle when the client pays. **Lease, Driver,
+   Parking and charging for Switch iev4 / Ultra E7 / Ultra E9 are deliberately
+   blank** — nobody gave those figures, and a blank means the cost sheet leaves
+   that line alone rather than inventing one.
+3. **Give the phone desk the NOC role.** Admin → Users → role **NOC**. They see
+   Leads and nothing else. Until somebody has it, leads can only be added by an
+   admin.
+
+### Still open from earlier sessions
+
+4. **Rotate the Clerk secret key.** `sk_live_…` was pasted into a chat
    transcript. Clerk → API Keys → regenerate. A live secret can read and
-   modify the entire user store.
-2. **The GitHub repo is public.** Settings → General → Change visibility →
+   modify the entire user store. (Unverified — do it if it has not been done.)
+5. **The GitHub repo is public.** Settings → General → Change visibility →
    Private. Nothing secret is committed (`.env.local` is gitignored), but the
    schema and pipeline logic are readable by anyone.
-3. **The production database is live and empty of demo data.** On 21 Sep every
-   deal, deal event and customer was deleted — the 36 demo ones and the 9 real
-   ones — and the team is now entering live data. Users, cities, vehicle types,
-   lost reasons and stage probabilities were kept. A Neon snapshot,
-   `before-live-data-wipe-21sep2026`, holds the state from just before.
-   `drizzle/demo-data.sql` is still in the repo: running it now would put fake
-   deals into live data.
+6. **Neon scale-to-zero cannot be changed on this plan.** The compute suspends
+   after ~5 minutes idle, so the first screen after a pause waits for the
+   database to wake. The API refuses the change — *"modifying the suspend
+   interval is not permitted on this account"* — so it needs a Neon plan
+   upgrade, after which it is a one-line change.
+7. **The production database holds live data.** Deals, 26 imported leads, and
+   the master data. `drizzle/demo-data.sql` is still in the repo: running it now
+   would put fake deals into live data.
 
 ---
 
@@ -38,9 +65,9 @@ deal you can move in two taps from a phone.
 Next.js 15 (App Router) · TypeScript · Tailwind v4 · Neon Postgres · Drizzle ·
 Clerk · installable PWA · Vercel.
 
-**Screens:** Dashboard · Pipeline (board + list) · Forecast (forecast + wins) ·
-Deal detail · Quick Add · Deployments (the ops queue) · Settings (install) ·
-Admin (users, master data).
+**Screens:** Dashboard · Leads (the inbound desk) · Pipeline (board + list) ·
+Forecast (forecast + wins) · Deal detail · Quick Add · Deployments (the ops
+queue) · Settings (install) · Admin (users, master data, cost defaults).
 
 ---
 
@@ -77,6 +104,18 @@ Change these only deliberately — a lot of code assumes them.
 | **A screen never loads more than it can show.** Pipeline filters, owner scope and SEARCH are all a WHERE clause (URL-driven, `?scope=&stage=&city=&vehicle=&owner=&q=`), capped at 250 rows; long lists render a window with "Show more". | It used to select every deal the organization had ever had and hide the rest in the browser: 1,476 deals was 1 MB of HTML on a phone to show the thirty that were yours. Search is in SQL specifically so the cap can never hide a deal from the feature whose job is to find one. |
 | **The Deployments query keeps all outstanding work plus 90 days of finished work**, not every deployment ever made. | Outstanding is bounded by what is owed; history is bounded by nothing at all, and all of it was being sent to a phone, oldest first. |
 | **Vercel functions are pinned to `sin1`** in `vercel.json`. | Neon is in `ap-southeast-1`. They were in Washington DC; every query crossed the Pacific twice. |
+| **`price` and `revenue` are the same figure.** The deal's price per vehicle IS its revenue per vehicle; `revenue` is written from `price` and never asked for separately. The Closed Won sheet asks for the price and writes it back. | They were one number asked twice, free to disagree, and nobody could say which was right. Editing the price of a won deal now carries revenue and margin with it, and posts a before/after note to the deal's timeline — that restates a month already reported, so it is never silent. |
+| **Unit economics can be filled in at ANY stage; Closed Won is where they are mandated.** A partly costed open deal is fine; the move into `closed_won` still needs all eight figures, and now counts anything costed earlier. | Pricing is worked out while quoting. Asking for the whole cost sheet at the moment of winning put it on the one screen where somebody is busiest and least able to go and ask. |
+| **`operating_days` (26 or 30) is recorded, never multiplied.** `price` is the monthly rate under either. | The same monthly rent is a different day rate at 26 days than at 30, and that is the first thing anyone asks comparing two deals. Making it arithmetic would have changed the meaning of every existing deal's value. |
+| **Each cost line declares what it varies by** (`COST_FIELDS[].dimensions`), and Admin → Cost defaults builds its grids from that same declaration. | A table where "the most specific matching row wins" cannot settle charging: a rule about a Tata Ace and a rule about client-paid charging are equally specific and disagree. With dimensions fixed per line, charging is a vehicle × scope grid where "Ace, client pays" is its own row worth 0. |
+| **A blank default is not a zero.** Blank means nobody has said, and the cost sheet leaves that line alone; 0 means the business says it is free. | Client-paid charging genuinely is 0. If blank meant 0, every unset line would quietly claim a cost of nothing. |
+| **Defaults fill blanks and never overwrite a typed figure.** When a deal's vehicle or contract changes later, saved figures stay saved and the card notes which now differ from the standard rate. | A rule is where to start, not an opinion about a deal somebody has already costed — least of all a won one, whose margin has been reported. |
+| **Leads are their own table, not a pipeline stage.** Inbound enquiries live in `leads`; a qualified one is converted into a deal, which links back. | Most enquiries never become deals, and a pipeline that fills with unqualified calls stops being a forecast. |
+| **Four roles: admin, sales, ops, noc.** NOC writes leads down and sees nothing else. Ops sees Deployments and nothing else — deliberately including leads, which carry a caller's name, mobile and email. | Each desk sees the screen it works and no more. `requireLeads()`, `requireDealOwner()` and `requireDeployments()` sit next to the data, like every other guard. |
+| **Every lead action takes a remark; saying no takes a reason.** Both are check constraints. `converted` is never typed — the app sets it when the deal exists. | A status with no sentence behind it tells the next person nothing, and a word that can get ahead of the fact it describes will. |
+| **Converting a lead asks for the city and vehicle type.** The enquiry says "3W" and a typed city; a deal needs a real model and a city from the master list. | A deal raised against the wrong vehicle is worse than one more question. The caller's details travel into the deal's notes, because a deal has nowhere else to hold a phone number. |
+| **Every screen has a `loading.tsx`.** | Every page is `force-dynamic`, so a tap used to leave you on the page you were leaving, frozen, until the whole next page came back. A loading boundary also lets Next prefetch the shape of the next screen. |
+| **Filters draft locally and apply once.** The pipeline's filter sheet keeps a draft; the button says what it will do. | Filters live in the URL, so each chip was its own navigation: a stage, two cities and an owner cost four server renders in a row. |
 
 ---
 
@@ -85,18 +124,24 @@ Change these only deliberately — a lot of code assumes them.
 ```
 src/
   app/
-    (app)/            dashboard · pipeline · forecast · opportunities/[id]
-                      deployments (everyone) · settings (everyone)
-                      admin (admins)
+    (app)/            dashboard · leads · pipeline · forecast · opportunities/[id]
+                      deployments (ops, sales, admin) · settings (everyone)
+                      admin/users · admin/master-data · admin/cost-defaults
+                      every route has a loading.tsx beside its page.tsx
     api/export/deals  CSV export (org-scoped, UTF-8 BOM for Excel)
     sign-in, sign-up, no-access, offline
   components/
     app-shell.tsx     mobile header + tab bar + desktop rail + toast
     quick-add.tsx     the 30-second create sheet
     stage-changer.tsx stage picker + Closed Won cost sheet + Closed Lost reason
+    leads/board.tsx   the inbound desk: list, new-lead form, qualify /
+                      not-qualify sheets, and the convert-to-deal sheet
     pipeline/         board.tsx (kanban) · table.tsx (list + table) · filters.tsx
     forecast/         grid.tsx (city × month) · wins.tsx (owner × month) · tabs.tsx
-    opportunity/      detail-actions.tsx · note-box.tsx · expand-deal.tsx
+    opportunity/      detail-actions.tsx · note-box.tsx · expand-deal.tsx ·
+                      unit-economics.tsx (the cost sheet, editable at any stage)
+    admin/            master-data.tsx · users.tsx · cost-defaults.tsx
+    skeletons.tsx     the shapes every loading.tsx is built from
     deployments/      board.tsx — the ops queue, partial counts and all
     install-app.tsx   PWA install: a real button on Android, steps on iOS
     ui/               Button, Input, Select, Sheet, Field, ChoiceGroup
@@ -113,8 +158,11 @@ src/
   lib/
     deployment-groups.ts  how the ops queue is cut into sections (by due
                       date, or by city) — no React, so it tests
+    cost-defaults.ts  which standard rate applies to a deal, and which stored
+                      figures have drifted from it — no React, so it tests
 tests/
   stage-change.test.ts          planStageChange, runs anywhere
+  cost-defaults.test.ts         the standard-rate matching rules, runs anywhere
   invite-url.test.ts            the absolute-redirect rule, runs anywhere
   deployment-groups.test.ts     the ops queue's two groupings, runs anywhere
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
@@ -127,6 +175,10 @@ drizzle/
   0005_*.sql          the ops role — ALTER TYPE alone, see § 6
   0006_*.sql          deployment_date, vehicles_deployed, their constraints
   0007_*.sql          users.last_seen_at — who has actually signed in
+  0008_*.sql          opportunities.operating_days — 26 or 30, recorded only
+  0009_*.sql          cost_defaults — the standard rate per cost line
+  0010_*.sql          the noc role, lead_status, and the leads table
+  meta/               drizzle's journal. Repaired on 22 Sep — see § 6
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
 ```
@@ -144,13 +196,25 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. Forty-nine
+`node --test` with `tsx` — no test framework, no new dependencies. Fifty-two
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
-decision), six on the invitation redirect URL, eight on the Deployments
-groupings (where "this week" stops, and which city leads), and twenty-five on
-what Postgres itself refuses — the two check
-constraints, the generated margin columns, the stage order, and the expansion
-link surviving the deletion of its parent.
+decision) plus seven more on costing a deal before it is won, six on the
+invitation redirect URL, eight on the Deployments groupings (where "this week"
+stops, and which city leads), eleven on the cost-default matching rules, and
+twenty-five on what Postgres itself refuses — the check constraints, the
+generated margin columns, the stage order, and the expansion link surviving the
+deletion of its parent.
+
+The cost-default tests are worth reading as the specification of that feature:
+the full grid, client-paid charging landing on 0, the driver varying by days
+alone, a deal that cannot answer what a line varies by, an amount the admin has
+not set, a stale row carrying a dimension its line no longer uses, and a real
+zero surviving as an answer rather than being read as "unset".
+
+**Leads and the cost-defaults Admin screen have no test coverage** — they are
+guards and forms rather than pure functions. The pattern to extend is the two
+files above: put the decision in `lib/` or `server/`, free of React, and test
+it directly.
 
 Writing them found a real hole: `z.coerce.number()` reads both `null` and `""`
 as 0, and `formToObject()` turns every blank field into `null` — so a Closed Won
@@ -273,6 +337,38 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
 - **`ALTER TYPE ... ADD VALUE` cannot be used in the same transaction that adds
   it.** That is why `0002` adds the Contracting stage and nothing else, and
   `0003` seeds its probability.
+- **Drizzle's migration journal was stale for nine migrations, and
+  `db:generate` was dangerous because of it.** `meta/_journal.json` listed only
+  `0000`; every migration since was hand-written and never registered. So
+  `drizzle-kit generate` diffed the live schema against the *initial* snapshot
+  and produced a migration that replayed everything — including **dropping and
+  recreating the generated margin columns**. Anyone who ran it and trusted the
+  output would have done real damage. Repaired on 22 Sep: the journal now lists
+  all eleven migrations with the dates their commits landed, and
+  `meta/0010_snapshot.json` describes the current schema, so the next
+  `db:generate` emits only true deltas. Verified — it now says *"No schema
+  changes, nothing to migrate"*. Only `0000` and `0010` snapshots exist; the
+  intermediate ones were never written and cannot be reconstructed honestly.
+  **`db:migrate` is not used in this project** (migrations are applied by hand
+  or through `bootstrap.sql`), which is why that gap is harmless.
+- **Clerk's organization "session task" traps invited users.** With
+  Organizations enabled, Clerk holds a new session as *pending* until the
+  person picks or creates an organization — showing its own screen before the
+  app ever loads. Because Clerk matches the verified email domain, a second
+  `moeving.com` user is told an organization already exists and to "join by
+  invitation", which this app never sends. See § 0.
+- **`beforeinstallprompt` is Chromium-only.** Firefox does not implement it on
+  any platform and Mozilla has said it will not, so the PWA install button can
+  never appear there. Firefox for Android can still install from its own ⋮
+  menu; desktop Firefox cannot install web apps at all. `install-app.tsx` now
+  says so per browser instead of showing a Chrome instruction to a Firefox
+  user.
+- **The Vercel deployments API reports `BUILDING` after a build is finished.**
+  A deployment whose `ready` timestamp is already set keeps coming back as
+  `BUILDING` on repeated `get_deployment` calls for minutes. Check
+  `list_deployments` with `state=READY` — if the newest READY production
+  deployment is still the previous commit, the build genuinely has not landed;
+  if `ready` is stamped, it has.
 
 ---
 
@@ -312,11 +408,19 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
 ## 8. Master data (admin-editable, seeded)
 
 - **Roles:** Admin (everything), Deal Owner (sales), Operations (Deployments
-  and Settings only — no pipeline, no pricing).
+  and Settings only — no pipeline, no pricing, no leads), NOC (Leads and
+  Settings only — the desk that answers the phone).
 - **Cities**, in review order: Delhi NCR, Bangalore, Hyderabad, Mumbai, Pune,
   Kolkata. Chennai and Ahmedabad exist but are switched off.
-- **Vehicle types:** 1 Tonne, 1.7 Tonne, Ultra E7, Ultra E9. The order is
-  admin-controlled (Admin → Master data) and is the order Quick Add shows.
+- **Vehicle types**, in order: 1T Tata Ace, 1.7T Switch iev4, 1.7T Eicher,
+  Ultra E7, Ultra E9. The order is admin-controlled (Admin → Master data) and
+  is the order Quick Add shows.
+- **Operating days:** 26 (six-day week) or 30 (every day), on the deal. Recorded
+  only — nothing computes from it.
+- **Cost defaults** (Admin → Cost defaults): Lease varies by vehicle type;
+  Driver by operating days; Charging by vehicle type × charging scope; Parking
+  by charging scope; Maintenance, Supervisor and Miscellaneous are flat. Seeded
+  values and the deliberate blanks are listed in § 0.
 - **Stages:** First Contact → Solutioning → Proposal → Negotiation →
   Contracting → Closed Won / Closed Lost / Dormant. Contracting means verbally
   agreed with paperwork in flight.
@@ -325,6 +429,9 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
 - **Driver types:** Driver Only, Driver + Helper, Driver-cum-Delivery.
   **Charging:** Client, MoEVing. Both are icon tiles, not dropdowns.
 - **Lost reasons:** 8 seeded, admin-editable.
+- **Lead statuses:** New → Qualified / Not qualified → Converted. Not
+  admin-editable — they are a database enum, and the deal's sales stages carry
+  the detail once a lead becomes a deal.
 
 Team members are **"Deal Owner"** everywhere in the UI. Never "Salesperson",
 never "Sales User", never "SPOC".
@@ -364,18 +471,23 @@ the old icon until the cache name changes.
 
 Roughly in order of value to adoption:
 
-1. **Stale-deal nudges.** `opportunity_events` already records every stage
-   change, so "nothing has moved in 14 days" is one query. This is what
-   actually drives CRM usage — everything else is reporting.
-2. **Offline write queue.** The service worker deliberately caches no pipeline
+1. **Uncalled-lead nudges, and stale-deal nudges.** A lead sitting in `new`
+   for two days and a deal that has not moved in fourteen are the same query
+   shape, and `opportunity_events` already records every stage change. This is
+   what actually drives CRM usage — everything else is reporting.
+2. **A CSV import for leads.** The 26 rows from the SharePoint sheet went in
+   by hand through the Neon connector on 22 Sep. If the desk ever collects
+   leads anywhere else again, an admin-facing upload beats a session like that
+   one.
+3. **Offline write queue.** The service worker deliberately caches no pipeline
    data today. Field reps in basements will want a queued "move stage".
-3. **Push notifications** for deals closing this week (the PWA manifest and
+4. **Push notifications** for deals closing this week (the PWA manifest and
    service worker are already in place).
-4. **Attachments** on a deal — quotes, signed LOIs. Needs blob storage.
-5. **Won-deal handover** to ops: the moment a deal is won, someone has to
+5. **Attachments** on a deal — quotes, signed LOIs. Needs blob storage.
+6. **Won-deal handover** to ops: the moment a deal is won, someone has to
    actually deliver the trucks. `parent_opportunity_id` already models the
    chain of deployments for one customer, so a handover view has its spine.
-6. **A customer page.** Repeat business is now linked deal-to-deal, but there
+7. **A customer page.** Repeat business is now linked deal-to-deal, but there
    is no screen that says "everything we have ever done with Berger Paints".
    `accounts` plus the expansion chain is most of the query.
 
@@ -384,8 +496,8 @@ Roughly in order of value to adoption:
 - The top header is translucent glass; the bottom tab bar is solid. Vivek asked
   for the tab bar to be solid specifically. If the mismatch ever annoys him, the
   `glass` utility in `globals.css` comes off the header in one line.
-- The Pipeline loads every deal for the organization. Fine at tens or hundreds;
-  it will need pagination in the thousands.
+- The Pipeline is capped at 250 rows per query, filtered and searched in SQL.
+  Past that cap it needs real pagination, not a bigger cap.
 - Desktop drag-and-drop between kanban columns has no touch equivalent — phones
   use the Move stage button instead, which is deliberate.
 - Test coverage is the stage-change path and the database rules (§ 4). Quick
@@ -397,10 +509,6 @@ Roughly in order of value to adoption:
 - **An expansion can be moved to a different city while the costs stay the
   parent's.** The sheet warns when the city differs, but nothing stops it; if
   driver or parking rates differ materially by city, that margin is optimistic.
-- Pipeline filters are applied in the browser over the deals already loaded.
-  Right at the scale where the Pipeline needs pagination, they need to move to
-  the query — the `OpportunityFilters` type in `queries.ts` already has the
-  shape for it.
 - Only vehicle types are reorderable in Admin. Cities and lost reasons have the
   same `sort_order` column; it is one `orderable` prop each to switch on.
 - **Expansions raised before 21 Sep 2026 are dated the old way** — `closed_at`
@@ -416,8 +524,31 @@ Roughly in order of value to adoption:
 - **Nothing records WHEN a deployment completed**, only how many are out. The
   count is in `opportunity_events` as a note, so "what did we deploy in
   October" needs parsing text. A `deployed_at` column would fix it properly.
-- Ops users are kept out of commercial pages by a `requireSales()` call at the
-  top of each one. That is four call sites plus the CSV route, and a new page
-  has to remember to add it — greppable, but not automatic.
+- Role guards are a call at the top of each page — `requireSales()`,
+  `requireLeads()`, `requireDealOwner()`, `requireDeployments()`. There are now
+  four of them across a dozen call sites plus the CSV route, and a new page has
+  to remember to add the right one. Greppable, but not automatic, and picking
+  the wrong one is a silent widening rather than an error.
 - Nothing runs the tests automatically — there is no CI workflow, so `npm test`
   is a thing a person remembers to type.
+- **The Leads list loads every lead and filters in the browser.** Right for a
+  desk taking a few enquiries a day; wrong at a few thousand, where it becomes
+  the same WHERE-clause job the Pipeline already had done to it.
+- **A lead keeps one remark, not a history.** Each action overwrites the last,
+  with who and when. Two calls on the same lead leave one sentence. A
+  `lead_events` table is the honest fix if the desk starts working leads over
+  weeks.
+- **A deal still has no contact fields.** The caller's name, number and email
+  are written into the deal's notes at conversion, which means they are
+  searchable but not structured — no click-to-call from the deal, no way to
+  list every contact at an account.
+- **The imported leads carry the sheet's typos**, because importing them
+  verbatim was the honest thing: Medi Link's calling city reads "Dlehi", and
+  ZYRKON's goods read "Buildinh Material". Fix them in the app if they bother
+  anyone.
+- **Leads are not de-duplicated.** Two enquiries from the same company are two
+  leads, by design — but nothing warns the desk that the number they are about
+  to type was already rung last week.
+- **Only `0000` and `0010` drizzle snapshots exist** (see § 6). `db:generate`
+  is safe again, but the journal cannot tell you what the schema looked like
+  between those two points; git history of `drizzle/*.sql` is the record.

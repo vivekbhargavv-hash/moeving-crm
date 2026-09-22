@@ -1,5 +1,5 @@
 import { DeploymentsBoard } from "@/components/deployments/board";
-import { requireSession } from "@/server/auth";
+import { requireDeployments } from "@/server/auth";
 import { getMasterData, listDeployments } from "@/server/queries";
 
 export const dynamic = "force-dynamic";
@@ -7,12 +7,14 @@ export const dynamic = "force-dynamic";
 /**
  * The operations queue.
  *
- * Open to everyone signed in — this is the one page the ops role can reach,
- * and sales seeing it is useful: it is what they promised the customer.
+ * Open to ops, sales and admin — this is the one page the ops role can reach,
+ * and sales seeing it is useful: it is what they promised the customer. The
+ * NOC desk is not here; they take enquiries, and a deployment is a promise
+ * made long after the call they took.
  */
 export default async function DeploymentsPage() {
   const [session, deployments, master] = await Promise.all([
-    requireSession(),
+    requireDeployments(),
     listDeployments(),
     getMasterData(),
   ]);

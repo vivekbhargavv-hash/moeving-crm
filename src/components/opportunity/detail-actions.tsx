@@ -17,6 +17,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
+import type { UserRole } from "@/server/auth";
 import { CHARGING_SCOPES, DRIVER_TYPES, OPERATING_DAYS } from "@/lib/constants";
 import { monthLabelShort, upcomingMonths } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -51,7 +52,7 @@ export function DetailActions({
 }: {
   opp: Editable;
   master: MasterData;
-  role: "admin" | "sales" | "ops";
+  role: UserRole;
   /** False when this is a recorded win and the viewer is not an admin. */
   canDelete: boolean;
   /** Follow-on deployments, which survive but lose their link. */

@@ -32,6 +32,26 @@ export const userRole = pgEnum("user_role", [
   // The operations team. They see Deployments and nothing else — not the
   // pipeline, not a margin.
   "ops",
+  // The desk that answers the phone. They write down inbound enquiries and
+  // see nothing else: not the pipeline, not a margin, and not what a deal
+  // owner eventually did with the lead.
+  "noc",
+]);
+
+/**
+ * How far an inbound enquiry got.
+ *
+ * Four words, because the sales stages on a deal already carry the detail and
+ * a lead is only ever answering one question: is there a deal here? A lead
+ * that is `qualified` has been spoken to and is worth pursuing; `converted`
+ * is set by the app itself when the deal is actually raised, so nobody has to
+ * remember to tick it.
+ */
+export const leadStatus = pgEnum("lead_status", [
+  "new",
+  "qualified",
+  "not_qualified",
+  "converted",
 ]);
 
 export const salesStage = pgEnum("sales_stage", [
@@ -222,6 +242,92 @@ export const costDefaults = pgTable(
       )
       .nullsNotDistinct(),
     check("cost_defaults_amount_positive", sql`${t.amount} >= 0`),
+  ],
+);
+
+/**
+ * An inbound enquiry, before anybody knows whether it is a deal.
+ *
+ * The NOC desk takes the call and writes down what was said — the columns are
+ * the ones the team already kept in a shared spreadsheet, because that sheet
+ * was the real specification. A deal owner then rings back, leaves a remark,
+ * and either says why it is not a deal or turns it into one.
+ *
+ * It is a table of its own rather than a pipeline stage: most of these never
+ * become deals, and a pipeline that fills up with enquiries nobody has
+ * qualified stops being a forecast.
+ */
+export type LeadStatus = (typeof leadStatus.enumValues)[number];
+
+export const leads = pgTable(
+  "leads",
+  {
+    id: id(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+
+    /** The day the enquiry came in, which is not the day it was typed up. */
+    enquiryDate: date("enquiry_date").notNull(),
+    companyName: text("company_name").notNull(),
+    typeOfGoods: text("type_of_goods"),
+    /** How many vehicles they asked about. A count, not a commitment. */
+    vehicleRequirement: integer("vehicle_requirement"),
+    /** Free text, as the caller said it — the city list is for deals. */
+    callingCity: text("calling_city"),
+    /** "3W", "4W", or whatever the caller called it. */
+    vehicleType: text("vehicle_type"),
+
+    /* --- who rang --- */
+    callerName: text("caller_name"),
+    designation: text("designation"),
+    mobile: text("mobile"),
+    email: text("email"),
+    /** Google search, referral, LinkedIn — where they found MoEVing. */
+    foundOn: text("found_on"),
+
+    status: leadStatus("status").notNull().default("new"),
+    /**
+     * What the deal owner learned on the call. Every lead gets one, which is
+     * the point of the screen: a status with no sentence behind it tells the
+     * next person nothing.
+     */
+    remarks: text("remarks"),
+    /** Why it is not a deal. Required to say no, so a no is never a shrug. */
+    notQualifiedReason: text("not_qualified_reason"),
+
+    /** The deal this became, once somebody converted it. */
+    opportunityId: uuid("opportunity_id").references(
+      (): AnyPgColumn => opportunities.id,
+      { onDelete: "set null" },
+    ),
+
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** Who last rang the lead, and when — the desk's accountability. */
+    actionedByUserId: uuid("actioned_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    actionedAt: timestamp("actioned_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("leads_org_status_idx").on(t.organizationId, t.status),
+    index("leads_org_date_idx").on(t.organizationId, t.enquiryDate),
+    // A no has to carry its reason, and a lead that became a deal has to know
+    // which one — enforced here so no code path can write a half-answer.
+    check(
+      "leads_not_qualified_requires_reason",
+      sql`${t.status} <> 'not_qualified' or ${t.notQualifiedReason} is not null`,
+    ),
+    check(
+      "leads_converted_requires_opportunity",
+      sql`${t.status} <> 'converted' or ${t.opportunityId} is not null`,
+    ),
   ],
 );
 

@@ -904,6 +904,20 @@ function ConvertSheet({
         c.name.toLowerCase().includes(lead.callingCity.trim().toLowerCase()),
     )?.id ?? "";
 
+  // Same rule as New deal: "Company - City", until somebody types their own.
+  const [cityId, setCityId] = React.useState(guessedCity);
+  const [dealName, setDealName] = React.useState("");
+  const [nameTyped, setNameTyped] = React.useState(false);
+  const suggestedName = [
+    lead.companyName,
+    master.cities.find((c) => c.id === cityId)?.name,
+  ]
+    .filter(Boolean)
+    .join(" - ");
+  React.useEffect(() => {
+    if (!nameTyped) setDealName(suggestedName);
+  }, [suggestedName, nameTyped]);
+
   function submit(formData: FormData) {
     setError(null);
     startTransition(async () => {
@@ -939,16 +953,14 @@ function ConvertSheet({
           </p>
         </div>
 
-        <Field label="Deal name">
-          <Input name="name" required defaultValue={lead.companyName} />
-        </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="City" hint={lead.callingCity ?? undefined}>
-            <PickerField
+            <Picker
               label="City"
               name="cityId"
-              defaultValue={guessedCity}
+              value={cityId}
+              onChange={setCityId}
               options={master.cities.map((c) => ({ value: c.id, label: c.name }))}
             />
           </Field>
@@ -975,6 +987,19 @@ function ConvertSheet({
             <Input name="price" inputMode="numeric" placeholder="₹" />
           </Field>
         </div>
+
+        <Field label="Deal name">
+          <Input
+            name="name"
+            required
+            value={dealName}
+            onChange={(e) => {
+              setDealName(e.target.value);
+              setNameTyped(e.target.value.trim() !== "");
+            }}
+            autoComplete="off"
+          />
+        </Field>
 
         <div>
           <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">

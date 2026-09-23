@@ -80,6 +80,11 @@ export function QuickAdd({
   // Anything typed into a text field — the customer, the name, the notes —
   // which the state above does not hold.
   const [typed, setTyped] = React.useState(false);
+  const [customer, setCustomer] = React.useState("");
+  // The deal name writes itself — "Customer - City" — until somebody types
+  // their own ("Flipkart - GGN"), after which it is theirs and stays put.
+  const [dealName, setDealName] = React.useState("");
+  const [nameTyped, setNameTyped] = React.useState(false);
 
   const months = React.useMemo(() => upcomingMonths(6), []);
 
@@ -96,7 +101,21 @@ export function QuickAdd({
     setMonth("");
     setShowMore(false);
     setTyped(false);
+    setCustomer("");
+    setDealName("");
+    setNameTyped(false);
   }, [open]);
+
+  // Several cities make several deals, and the server adds each one's city to
+  // this name — so the suggestion is then the customer alone.
+  const cityName =
+    cityIds.length === 1
+      ? master?.cities.find((c) => c.id === cityIds[0])?.name
+      : undefined;
+  const suggestedName = [customer.trim(), cityName].filter(Boolean).join(" - ");
+  React.useEffect(() => {
+    if (!nameTyped) setDealName(suggestedName);
+  }, [suggestedName, nameTyped]);
 
   const fleetCount = Number(fleet || 0);
   const perDeal = Number(price || 0) * fleetCount;
@@ -192,6 +211,8 @@ export function QuickAdd({
         <Field label="Customer">
           <Input
             name="accountName"
+            value={customer}
+            onChange={(e) => setCustomer(e.target.value)}
             list="account-options"
             required
             autoFocus
@@ -204,25 +225,6 @@ export function QuickAdd({
               <option key={a.id} value={a.name} />
             ))}
           </datalist>
-        </Field>
-
-        {/* Required: "Flipkart" alone does not say which of three Flipkart
-            deals this is. */}
-        <Field
-          label="Deal name"
-          hint={
-            cityIds.length > 1
-              ? "Each city's deal gets the city added to this name."
-              : undefined
-          }
-        >
-          <Input
-            name="name"
-            required
-            autoComplete="off"
-            placeholder="e.g. Flipkart - GGN"
-            enterKeyHint="next"
-          />
         </Field>
 
         <div>
@@ -258,6 +260,33 @@ export function QuickAdd({
             <input key={id} type="hidden" name="cityIds" value={id} />
           ))}
         </div>
+
+        {/* Filled in from the customer and city; required, because "Flipkart"
+            alone does not say which of three Flipkart deals this is. */}
+        <Field
+          label="Deal name"
+          hint={
+            cityIds.length > 1
+              ? "Each city's deal gets its city added to this name."
+              : nameTyped
+                ? undefined
+                : "Filled in from the customer and city. Change it if you like."
+          }
+        >
+          <Input
+            name="name"
+            required
+            value={dealName}
+            onChange={(e) => {
+              setDealName(e.target.value);
+              // Clearing the box hands it back to the suggestion.
+              setNameTyped(e.target.value.trim() !== "");
+            }}
+            autoComplete="off"
+            placeholder="Customer - City"
+            enterKeyHint="next"
+          />
+        </Field>
 
         <Field label="Vehicle">
           <Picker

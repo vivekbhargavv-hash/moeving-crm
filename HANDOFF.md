@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 23 September 2026 (ninth session)
+**Last updated:** 23 September 2026 (ninth session, second pass)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -150,7 +150,7 @@ Change these only deliberately — a lot of code assumes them.
 | **Deployments has a third view, By month**: city in rows, month in columns, vehicles in the cells, tapping a city for the clients behind the number. | By date answers "what is late", By city answers "what does Bangalore owe". Neither answers "how many trucks land where, and when", which is a shape rather than a list. The arithmetic is `lib/deployment-grid.ts`, free of React, so it tests. |
 | **The Deployments grid's detail panel sits UNDER the table**, not inside a row of it. | The Forecast tucks its drill-down into a table cell held to the viewport width by hand. Here the client rows landed beneath the fade that hints at sideways scroll: legible, and looking cut off. Below the table they get the full page width and no hack. |
 | **The Deployments grid spans the data's own months with no gaps.** | A fixed window hides a delivery that slipped past its end; dropping empty months prints "Sep, Nov, Jan", which reads as a stride rather than a calendar. The blank October column is itself the answer to "what does October look like". |
-| **A lead card says loudly what a deal owner did with it**: a coloured left edge (amber waiting, green qualified or a deal, red not qualified) and a panel naming who acted, when, the reason and the remark. | The NOC desk cannot see the pipeline, so this is the only way it learns whether anybody rang back. A lead has one `remarks` column: before a deal owner acts it is the desk's note, after it is theirs, so the label follows `actioned_by`, not the status. |
+| **A lead card says loudly what a deal owner did with it**: a coloured left edge (amber waiting, green qualified or a deal, red not qualified) and, once somebody has acted, a green or red panel naming who, when, the reason and the remark. An unactioned lead gets the amber edge and NO panel (Vivek: the sentence on every waiting card was noise) — only the desk's note, if any, in plain grey. The calling city sits on its own line under the company, bold with a pin. | The NOC desk cannot see the pipeline, so this is the only way it learns whether anybody rang back. A lead has one `remarks` column: before a deal owner acts it is the desk's note, after it is theirs, so the label follows `actioned_by`, not the status. |
 | **The desktop rail ends with a Pricing Tool link** (https://moeving-pricing.vercel.app/, new tab) for admin and deal owners, not ops or NOC. | Deal owners quote from that calculator; it is a separate app, so it is a link, not a screen. |
 
 ---

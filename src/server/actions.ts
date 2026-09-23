@@ -1642,8 +1642,9 @@ export async function assignLead(
     })
     .where(and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)));
 
-  // Nobody needs a notification for a lead they handed to themselves.
-  if (assignee && assignee.id !== session.userId) {
+  // Including a lead an admin hands to themselves: they assign at a laptop
+  // and ring from a phone, and the phone is what the notification is for.
+  if (assignee) {
     try {
       // "New lead: ZYRKON · Hyderabad · 2 × 3W", and who to ring. A Call
       // button rides along when there is a number (see public/sw.js).

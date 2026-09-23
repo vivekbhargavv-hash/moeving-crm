@@ -4,7 +4,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
-  Clock,
+  MapPin,
   Phone,
   Plus,
   Search,
@@ -258,16 +258,22 @@ function LeadCard({
             <p className="truncate text-[15px] font-semibold">{lead.companyName}</p>
             <Badge className={status.chip}>{status.short}</Badge>
           </div>
+          {/* The city decides who rings back, so it reads before the rest. */}
+          {lead.callingCity ? (
+            <p className="mt-1 flex items-center gap-1 text-[14px] font-semibold text-ink">
+              <MapPin size={15} className="shrink-0 text-brand-ink" />
+              <span className="truncate">{lead.callingCity}</span>
+            </p>
+          ) : null}
           <p className="mt-0.5 truncate text-[13px] text-muted">
             {[
-              lead.callingCity,
               lead.vehicleRequirement
                 ? `${num(lead.vehicleRequirement)} × ${lead.vehicleType ?? "vehicle"}`
                 : lead.vehicleType,
               lead.typeOfGoods,
             ]
               .filter(Boolean)
-              .join(" · ") || "No details given"}
+              .join(" · ") || (lead.callingCity ? "" : "No details given")}
           </p>
         </div>
         <span className="tabular shrink-0 text-[12.5px] text-muted">
@@ -354,8 +360,8 @@ const OUTCOME_EDGE: Record<LeadStatus, string> = {
  *
  * The desk that wrote the lead down cannot see the pipeline, so this panel is
  * the only way it learns whether anybody rang back: who, when, which way it
- * went, and what they said. Green for qualified or a deal, red for no, amber
- * while nobody has called.
+ * went, and what they said. Green for qualified or a deal, red for no; while
+ * nobody has called, the card's amber edge says so and no panel is drawn.
  *
  * A lead keeps one `remarks` column. Before a deal owner acts it holds what
  * the desk wrote; afterwards it holds the deal owner's remark — so the label
@@ -367,16 +373,13 @@ function LeadOutcome({ lead }: { lead: LeadRow }) {
 
   if (lead.status === "new" && !who) {
     return (
-      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
-        <p className="flex items-center gap-1.5 font-semibold">
-          <Clock size={15} /> No deal owner has reached out yet
+      // The amber edge already says nobody has rung; only the desk's own
+      // note, if there is one, needs saying.
+      lead.remarks ? (
+        <p className="mt-2.5 rounded-xl bg-canvas px-3 py-2 text-[13px]">
+          <span className="font-medium text-muted">Desk note:</span> {lead.remarks}
         </p>
-        {lead.remarks ? (
-          <p className="mt-1 text-amber-900/80">
-            <span className="font-medium">Desk note:</span> {lead.remarks}
-          </p>
-        ) : null}
-      </div>
+      ) : null
     );
   }
 

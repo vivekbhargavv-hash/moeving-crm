@@ -431,7 +431,10 @@ function LeadCard({
   const status = LEAD_STATUS[lead.status];
   const canAct = canActOn(viewer, lead);
   const forMe = awaitsMe(viewer, lead);
-  // The call is the job, so it is the first button — for whoever may make it.
+  // The call is the job, so it is the first button — for whoever may make it,
+  // on a device that can make it. Touch screens only (`pointer-coarse`), not
+  // narrow ones: a laptop has no dialer, while a phone on its side or a
+  // tablet still does. The number above stays a tel: link everywhere.
   const callable = canAct && isOpenLead(lead) && Boolean(lead.mobile);
 
   return (
@@ -527,7 +530,7 @@ function LeadCard({
             <a
               href={`tel:${lead.mobile}`}
               className={cn(
-                "inline-flex h-11 items-center justify-center gap-2 rounded-xl font-semibold transition active:scale-[0.98]",
+                "hidden h-11 items-center justify-center gap-2 rounded-xl font-semibold transition active:scale-[0.98] pointer-coarse:inline-flex",
                 lead.status === "new"
                   ? "bg-brand text-white"
                   : "border border-line bg-white text-ink",

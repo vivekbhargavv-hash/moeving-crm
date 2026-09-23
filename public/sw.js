@@ -81,10 +81,17 @@ self.addEventListener("push", (event) => {
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
       data: { url: data.url || "/leads", callUrl: data.callUrl },
-      actions: data.callUrl ? [{ action: "call", title: "Call" }] : [],
+      // Call only where there is a dialer: a laptop cannot ring anyone.
+      actions: data.callUrl && onPhone() ? [{ action: "call", title: "Call" }] : [],
     }),
   );
 });
+
+function onPhone() {
+  const nav = self.navigator;
+  if (nav.userAgentData) return nav.userAgentData.mobile;
+  return /Android|iPhone|iPad|Mobile/i.test(nav.userAgent);
+}
 
 // A tap opens the app on the page the notification is about, reusing a
 // window that is already open rather than starting another.

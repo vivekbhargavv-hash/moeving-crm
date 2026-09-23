@@ -206,6 +206,25 @@ export function QuickAdd({
           </datalist>
         </Field>
 
+        {/* Required: "Flipkart" alone does not say which of three Flipkart
+            deals this is. */}
+        <Field
+          label="Deal name"
+          hint={
+            cityIds.length > 1
+              ? "Each city's deal gets the city added to this name."
+              : undefined
+          }
+        >
+          <Input
+            name="name"
+            required
+            autoComplete="off"
+            placeholder="e.g. Flipkart - GGN"
+            enterKeyHint="next"
+          />
+        </Field>
+
         <div>
           <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
             City
@@ -389,9 +408,6 @@ export function QuickAdd({
 
         {showMore ? (
           <div className="space-y-4 border-t border-line pt-4">
-            <Field label="Deal name" hint="Defaults to the customer name.">
-              <Input name="name" placeholder="Optional" />
-            </Field>
             {session.role === "admin" ? (
               <Field label="Deal Owner">
                 <PickerField
@@ -415,7 +431,7 @@ export function QuickAdd({
             onClick={() => setShowMore(true)}
             className="text-sm font-medium text-brand-ink"
           >
-            + Deal name, notes
+            {session.role === "admin" ? "+ Deal owner, notes" : "+ Notes"}
           </button>
         )}
 

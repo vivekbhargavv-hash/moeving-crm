@@ -566,6 +566,10 @@ function ConvertSheet({
           </p>
         </div>
 
+        <Field label="Deal name">
+          <Input name="name" required defaultValue={lead.companyName} />
+        </Field>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="City" hint={lead.callingCity ?? undefined}>
             <PickerField

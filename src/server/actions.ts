@@ -82,9 +82,13 @@ const closeMonth = z
 
 const baseOpportunity = z.object({
   accountName: z.string().trim().min(1, "Customer is required").max(160),
-  // Optional in the form: a blank box reaches here as null (formToObject), so
-  // it must be nullable, or every deal raised without a name is refused.
-  name: z.string().trim().max(160).nullable().optional(),
+  // Required. formToObject() turns a blank box into null, so the type error
+  // needs the same plain message as an empty string does.
+  name: z
+    .string({ error: "Deal name is required" })
+    .trim()
+    .min(1, "Deal name is required")
+    .max(160),
   cityId: uuidish,
   vehicleTypeId: uuidish,
   driverType: z
@@ -192,7 +196,7 @@ export async function createOpportunity(
     }
   }
 
-  const baseName = input.name?.trim() || input.accountName.trim();
+  const baseName = input.name;
   const created = await db
     .insert(opportunities)
     .values(
@@ -310,7 +314,7 @@ export async function updateOpportunity(
       accountId,
       vehiclesDeployed,
       deploymentDate: input.deploymentDate ?? null,
-      name: input.name?.trim() || input.accountName.trim(),
+      name: input.name,
       cityId: input.cityId,
       vehicleTypeId: input.vehicleTypeId,
       driverType: input.driverType ?? null,

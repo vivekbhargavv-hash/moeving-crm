@@ -459,10 +459,13 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   branch (`create_branch`) is how to check real behaviour against the real
   schema without touching live data.
 - **New deal refused with "Invalid input: expected string, received null".**
-  The Deal name box is optional, `formToObject()` posts a blank one as null,
-  and the schema said `.optional()` without `.nullable()` — so every deal
-  raised without a name was refused. Any optional text field fed through
-  `formToObject()` must be `.nullable().optional()`.
+  `formToObject()` posts a blank box as null, and a schema that says
+  `.optional()` without `.nullable()` refuses it with Zod's raw message. Any
+  optional text field fed through `formToObject()` must be
+  `.nullable().optional()`. **Deal name is now REQUIRED** (Vivek, 23 Sep): it
+  sits under Customer on New deal, is asked on Convert to deal (pre-filled with
+  the company) and on Edit, and the server refuses a blank with "Deal name is
+  required". There is no fallback to the customer name any more.
   **The root cause was React 19's form reset.** A `<form action={fn}>` clears
   every uncontrolled field as soon as the action returns, and ours return at
   once (they start their own transition). So any refused save came back with

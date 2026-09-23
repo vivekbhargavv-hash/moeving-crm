@@ -244,7 +244,7 @@ export function DetailActions({
             <Input name="accountName" required defaultValue={opp.accountName} />
           </Field>
           <Field label="Opportunity name">
-            <Input name="name" defaultValue={opp.dealName} />
+            <Input name="name" required defaultValue={opp.dealName} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="City">

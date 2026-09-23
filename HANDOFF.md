@@ -463,6 +463,14 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   and the schema said `.optional()` without `.nullable()` — so every deal
   raised without a name was refused. Any optional text field fed through
   `formToObject()` must be `.nullable().optional()`.
+  **The root cause was React 19's form reset.** A `<form action={fn}>` clears
+  every uncontrolled field as soon as the action returns, and ours return at
+  once (they start their own transition). So any refused save came back with
+  Customer, Deal name and Notes wiped; the person retyped the customer, missed
+  the name, and the retry failed on the blank. `Sheet` now submits through
+  `onSubmit` + `preventDefault()`, which keeps what was typed and still lets
+  the browser's `required` checks run first. Reproduced in the browser, fixed,
+  and re-checked.
 - **The Vercel deployments API reports `BUILDING` after a build is finished.**
   A deployment whose `ready` timestamp is already set keeps coming back as
   `BUILDING` on repeated `get_deployment` calls for minutes. Check

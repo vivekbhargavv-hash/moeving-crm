@@ -55,3 +55,59 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+/*
+ * "New lead: ZYRKON · Hyderabad · 2 × 3W". The server sends { title, body,
+ * url, callUrl?, tag }; one tag per lead, so reassigning the same lead
+ * replaces its notification rather than stacking a second one.
+ *
+ * With a number, the notification carries a Call button (Chrome on Android
+ * and desktop; iOS shows no buttons, so a tap opens the lead instead). A
+ * notification cannot dial by itself — browsers do not open tel: from a
+ * service worker — so Call opens the lead with ?call=1 and the page hands
+ * the number to the dialer, the card's Call button beneath it if refused.
+ */
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Good Deal", {
+      body: data.body || "",
+      tag: data.tag,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { url: data.url || "/leads", callUrl: data.callUrl },
+      // Call only where there is a dialer: a laptop cannot ring anyone.
+      actions: data.callUrl && onPhone() ? [{ action: "call", title: "Call" }] : [],
+    }),
+  );
+});
+
+function onPhone() {
+  const nav = self.navigator;
+  if (nav.userAgentData) return nav.userAgentData.mobile;
+  return /Android|iPhone|iPad|Mobile/i.test(nav.userAgent);
+}
+
+// A tap opens the app on the page the notification is about, reusing a
+// window that is already open rather than starting another.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+  const target = event.action === "call" && data.callUrl ? data.callUrl : data.url || "/leads";
+  const url = new URL(target, self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      for (const win of wins) {
+        if (new URL(win.url).origin === self.location.origin && "focus" in win) {
+          return win.navigate(url).then((w) => (w || win).focus());
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
+});

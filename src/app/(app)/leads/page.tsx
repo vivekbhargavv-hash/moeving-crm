@@ -4,11 +4,19 @@ import { getMasterData, listLeads } from "@/server/queries";
 
 export const dynamic = "force-dynamic";
 
-export default async function LeadsPage() {
+export default async function LeadsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ lead?: string; call?: string }>;
+}) {
   // Ops are turned away here: they put trucks on the road for deals that
   // exist, and an enquiry carries a caller's name, number and email.
   const session = await requireLeads();
-  const [leads, master] = await Promise.all([listLeads(), getMasterData()]);
+  const [leads, master, { lead, call }] = await Promise.all([
+    listLeads(),
+    getMasterData(),
+    searchParams,
+  ]);
 
   const canAction = session.role === "admin" || session.role === "sales";
   const canCreate = session.role === "admin" || session.role === "noc";
@@ -27,8 +35,10 @@ export default async function LeadsPage() {
       <LeadsBoard
         leads={leads}
         master={master}
-        canAction={canAction}
+        viewer={{ userId: session.userId, role: session.role }}
         canCreate={canCreate}
+        focusLeadId={lead}
+        dial={call === "1"}
       />
     </div>
   );

@@ -9,6 +9,7 @@ import {
   Plus,
   Search,
   ThumbsDown,
+  UserRound,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +24,7 @@ import {
   EmptyState,
   Field,
   Input,
+  Picker,
   PickerField,
   Segmented,
   Sheet,
@@ -36,7 +38,20 @@ import {
   formatDate,
   formatDateTimeInIndia,
   monthLabelShort, num, todayInIndia, upcomingMonths } from "@/lib/utils";
-import { actionLead, convertLead, createLead } from "@/server/actions";
+import { EnableNotifications } from "@/components/enable-notifications";
+import {
+  awaitsMe,
+  canActOn,
+  isDealOwnerRole,
+  isOpenLead,
+  type Viewer,
+} from "@/lib/lead-assignment";
+import {
+  actionLead,
+  assignLead,
+  convertLead,
+  createLead,
+} from "@/server/actions";
 import type { LeadRow } from "@/server/queries";
 
 export const LEAD_STATUS: Record<
@@ -68,21 +83,70 @@ export const LEAD_STATUS: Record<
 /** Lead cards drawn per tap of "Show more". */
 const PAGE = 40;
 
+type View = "mine" | "open" | "unassigned" | "all";
+
+/**
+ * The views each desk gets, first one the default.
+ *
+ * A deal owner opens on MY LEADS: the ones assigned to them, then the ones
+ * nobody has yet — never a colleague's, which are no longer theirs to ring.
+ * An admin opens on everything open and can narrow to leads with no owner.
+ * The desk sees open and all.
+ */
+function viewsFor(role: Viewer["role"]): { value: View; label: string }[] {
+  if (role === "sales") {
+    return [
+      { value: "mine", label: "My leads" },
+      { value: "all", label: "All" },
+    ];
+  }
+  if (role === "admin") {
+    return [
+      { value: "open", label: "Open" },
+      { value: "unassigned", label: "No owner" },
+      { value: "all", label: "All" },
+    ];
+  }
+  return [
+    { value: "open", label: "Open" },
+    { value: "all", label: "All" },
+  ];
+}
+
+function matches(l: LeadRow, q: string) {
+  return [l.companyName, l.callingCity, l.callerName, l.mobile, l.email]
+    .filter(Boolean)
+    .some((v) => v!.toLowerCase().includes(q));
+}
+
+/** Not rung yet before already qualified; otherwise newest first, as sent. */
+const byUrgency = (a: LeadRow, b: LeadRow) =>
+  Number(b.status === "new") - Number(a.status === "new");
+
 export function LeadsBoard({
   leads,
   master,
-  canAction,
+  viewer,
   canCreate,
+  focusLeadId,
+  dial,
 }: {
   leads: LeadRow[];
   master: MasterData;
-  /** Deal owners and admins ring leads back and convert them. */
-  canAction: boolean;
+  /** Who is looking. Decides who may assign and act on each card. */
+  viewer: Viewer;
   /** The NOC desk and admins write them down. */
   canCreate: boolean;
+  /** `?lead=` — a notification opens the app on the lead it is about. */
+  focusLeadId?: string;
+  /** `?call=1` — the notification's Call button: ring the caller at once. */
+  dial?: boolean;
 }) {
+  // Deal owners and admins ring leads back and convert them.
+  const canAction = isDealOwnerRole(viewer.role);
+  const views = viewsFor(viewer.role);
   const [query, setQuery] = React.useState("");
-  const [filter, setFilter] = React.useState<"open" | "all">("open");
+  const [filter, setFilter] = React.useState<View>(views[0]!.value);
   const [adding, setAdding] = React.useState(false);
   const [acting, setActing] = React.useState<{
     lead: LeadRow;
@@ -90,23 +154,37 @@ export function LeadsBoard({
   } | null>(null);
   const [converting, setConverting] = React.useState<LeadRow | null>(null);
 
-  const shown = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return leads.filter((l) => {
-      // "Open" is everything still waiting on somebody: the calls not made,
-      // and the qualified ones nobody has turned into a deal yet.
-      if (
-        filter === "open" &&
-        (l.status === "not_qualified" || l.status === "converted")
-      ) {
-        return false;
-      }
-      if (!q) return true;
-      return [l.companyName, l.callingCity, l.callerName, l.mobile, l.email]
-        .filter(Boolean)
-        .some((v) => v!.toLowerCase().includes(q));
+  const q = query.trim().toLowerCase();
+
+  /**
+   * What is drawn, as sections. Only "My leads" has two; every other view is
+   * one list. A search looks through EVERY lead, whatever the view — its job
+   * is to find one, and a view that hid the match would defeat it.
+   */
+  const sections = React.useMemo(() => {
+    if (q) {
+      return [{ key: "search", title: null, leads: leads.filter((l) => matches(l, q)) }];
+    }
+    if (filter === "mine") {
+      const open = leads.filter(isOpenLead);
+      const mine = open.filter((l) => l.assignedToUserId === viewer.userId).sort(byUrgency);
+      const pool = open.filter((l) => !l.assignedToUserId);
+      return [
+        { key: "mine", title: "Assigned to you", leads: mine },
+        { key: "pool", title: "No owner yet", leads: pool },
+      ];
+    }
+    const list = leads.filter((l) => {
+      if (filter !== "all" && !isOpenLead(l)) return false;
+      if (filter === "unassigned" && l.assignedToUserId) return false;
+      return true;
     });
-  }, [leads, query, filter]);
+    // Anything waiting on me first, whatever the view (sort is stable).
+    list.sort((a, b) => Number(awaitsMe(viewer, b)) - Number(awaitsMe(viewer, a)));
+    return [{ key: filter, title: null, leads: list }];
+  }, [leads, q, filter, viewer]);
+
+  const total = sections.reduce((n, sec) => n + sec.leads.length, 0);
 
   /**
    * How many cards are in the DOM. Every lead still arrives and search and
@@ -116,21 +194,73 @@ export function LeadsBoard({
   const [limit, setLimit] = React.useState(PAGE);
   React.useEffect(() => setLimit(PAGE), [query, filter]);
 
+  // Opened from a notification: bring that lead into view, mark it, and —
+  // from the Call button — hand the number to the phone's dialer. A browser
+  // that refuses to dial without a tap still leaves the card's Call button
+  // under the person's thumb.
+  const [flash, setFlash] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!focusLeadId) return;
+    const lead = leads.find((l) => l.id === focusLeadId);
+    window.history.replaceState(null, "", "/leads");
+    if (!lead) return;
+    setLimit(Math.max(PAGE, leads.length));
+    setFlash(lead.id);
+    requestAnimationFrame(() =>
+      document
+        .getElementById(`lead-${lead.id}`)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" }),
+    );
+    if (dial && lead.mobile && canActOn(viewer, lead)) {
+      window.location.href = `tel:${lead.mobile}`;
+    }
+    const t = setTimeout(() => setFlash(null), 2500);
+    return () => clearTimeout(t);
+    // Once, on arrival — not every time the list refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const waiting = leads.filter((l) => l.status === "new").length;
+  const deskOwners = React.useMemo(
+    () =>
+      master.users
+        .filter((u) => isDealOwnerRole(u.role as Viewer["role"]))
+        .map((u) => ({ value: u.id, label: u.name })),
+    [master.users],
+  );
+
+  // Cards are windowed across sections in order, so "Show more" continues
+  // wherever the drawing stopped.
+  let budget = limit;
+  const card = (lead: LeadRow) => (
+    <LeadCard
+      key={lead.id}
+      lead={lead}
+      viewer={viewer}
+      owners={deskOwners}
+      showOwnerForMine={filter === "all" || Boolean(q)}
+      flash={flash === lead.id}
+      onQualify={() => setActing({ lead, mode: "qualified" })}
+      onReject={() => setActing({ lead, mode: "not_qualified" })}
+      onConvert={() => setConverting(lead)}
+    />
+  );
 
   return (
     <div>
       {/* Deal outcomes are deal information, so the funnel is for the people
           who work deals. The NOC desk writes leads down and sees nothing
           else — a won/lost count is the pipeline by another name. */}
-      {canAction ? <LeadFunnel leads={leads} /> : null}
+      {viewer.role === "admin" ? <LeadFunnel leads={leads} /> : null}
 
-      {/* Two rows on a phone, one from `sm` up.
-          As a single wrapping row these three came to ~490px on a 390px
-          screen: the search box, the only one allowed to shrink, collapsed to
-          44px and the switch sat on top of its own placeholder. */}
-      <div className="mb-4 space-y-2 sm:flex sm:items-center sm:gap-2 sm:space-y-0">
-        <div className="relative min-w-0 sm:flex-1">
+      {/* Two rows on a phone, one from `sm` up: search and New lead on the
+          first, the view switch on its own full-width row below — it has up
+          to four options (an admin's), which do not fit beside anything on a
+          390px screen. On a phone New lead is a "+" for the same reason.
+          As a single wrapping row these once came to ~490px and the search
+          box collapsed to 44px with the switch on top of its placeholder. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 sm:flex-nowrap">
+        <div className="relative order-1 min-w-0 flex-1">
           <Search
             size={16}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
@@ -142,33 +272,41 @@ export function LeadsBoard({
             className="h-12 pl-9"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Segmented
-            label="Which leads"
-            className="min-w-0 flex-1 sm:w-[190px] sm:flex-none"
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { value: "open", label: "Open" },
-              { value: "all", label: "All" },
-            ]}
-          />
-          {canCreate ? (
-            // 48px, like the search box and the switch beside it: three
-            // controls on one row at three heights reads as an accident.
-            <Button
-              variant="brand"
-              size="lg"
-              className="shrink-0"
-              onClick={() => setAdding(true)}
-            >
-              <Plus size={17} /> New lead
-            </Button>
-          ) : null}
-        </div>
+        <Segmented
+          label="Which leads"
+          className={cn(
+            "order-3 basis-full sm:order-2 sm:basis-auto sm:flex-none",
+            // Four options on a 390px phone: a little less padding each, so
+            // "No owner" is read rather than guessed from "No own…".
+            views.length > 3 && "[&_button]:px-1",
+            views.length > 3
+              ? "sm:w-[380px]"
+              : views.length > 2
+                ? "sm:w-[250px]"
+                : "sm:w-[190px]",
+          )}
+          value={filter}
+          onChange={setFilter}
+          options={views}
+        />
+        {canCreate ? (
+          // 48px, like the search box and the switch beside it: controls on
+          // one row at different heights read as an accident.
+          <Button
+            variant="brand"
+            size="lg"
+            aria-label="New lead"
+            className="order-2 w-12 shrink-0 px-0 sm:order-3 sm:w-auto sm:px-5"
+            onClick={() => setAdding(true)}
+          >
+            <Plus size={17} /> <span className="hidden sm:inline">New lead</span>
+          </Button>
+        ) : null}
       </div>
 
-      {waiting > 0 ? (
+      {/* A deal owner's own count is on the tab and in the section heading;
+          the desk-wide count is for the people watching the whole desk. */}
+      {viewer.role !== "sales" && waiting > 0 ? (
         <p className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-[13px] text-amber-900">
           <Phone size={15} />
           {waiting} {waiting === 1 ? "enquiry has" : "enquiries have"} not been
@@ -176,40 +314,71 @@ export function LeadsBoard({
         </p>
       ) : null}
 
-      {shown.length === 0 ? (
+      {canAction ? <EnableNotifications compact /> : null}
+
+      {total === 0 && sections.length === 1 ? (
         <EmptyState
-          title={query ? "No leads match" : "No open leads"}
+          title={
+            q
+              ? "No leads match"
+              : filter === "unassigned"
+                ? "Every open lead has an owner"
+                : "No open leads"
+          }
           body={
-            query
-              ? "Clear the search to see the rest."
-              : "Enquiries the desk writes down appear here."
+            q ? "Clear the search to see the rest." : "Enquiries the desk writes down appear here."
           }
         />
       ) : (
-        <div className="space-y-2">
-          {shown.slice(0, limit).map((lead) => (
-            <LeadCard
-              key={lead.id}
-              lead={lead}
-              canAction={canAction}
-              onQualify={() => setActing({ lead, mode: "qualified" })}
-              onReject={() => setActing({ lead, mode: "not_qualified" })}
-              onConvert={() => setConverting(lead)}
-            />
-          ))}
-          {shown.length > limit ? (
+        <div className="space-y-5">
+          {sections.map((sec) => {
+            const drawn = sec.leads.slice(0, Math.max(0, budget));
+            budget -= drawn.length;
+            return (
+              <section key={sec.key} className="space-y-2">
+                {sec.title ? (
+                  <h2 className="flex items-baseline gap-2 px-1 text-[13px] font-semibold uppercase tracking-wide text-muted">
+                    {sec.title}
+                    <span className="tabular font-normal normal-case tracking-normal">
+                      {sec.leads.length}
+                      {sec.key === "mine" && sec.leads.some((l) => l.status === "new")
+                        ? ` · ${sec.leads.filter((l) => l.status === "new").length} not called yet`
+                        : ""}
+                    </span>
+                  </h2>
+                ) : null}
+                {sec.title && sec.leads.length === 0 ? (
+                  <p className="rounded-[14px] border border-dashed border-line px-4 py-3 text-[13px] text-muted">
+                    {sec.key === "mine"
+                      ? "Nothing assigned to you right now."
+                      : "Every open lead has an owner."}
+                  </p>
+                ) : null}
+                {drawn.map(card)}
+              </section>
+            );
+          })}
+          {total > limit ? (
             <button
               onClick={() => setLimit((n) => n + PAGE)}
               className="h-12 w-full rounded-2xl border border-line bg-white text-[14px] font-semibold text-brand-ink active:bg-canvas"
             >
-              Show {Math.min(PAGE, shown.length - limit)} more
+              Show {Math.min(PAGE, total - limit)} more
               <span className="ml-1 font-normal text-muted">
-                ({shown.length - limit} left)
+                ({total - limit} left)
               </span>
             </button>
           ) : null}
         </div>
       )}
+
+      {/* A deal owner came here to ring people; how the inbound converts is
+          worth a look, below the work rather than in front of it. */}
+      {viewer.role === "sales" ? (
+        <div className="mt-6">
+          <LeadFunnel leads={leads} />
+        </div>
+      ) : null}
 
       {adding ? <LeadForm onClose={() => setAdding(false)} /> : null}
       {acting ? (
@@ -217,6 +386,13 @@ export function LeadsBoard({
           lead={acting.lead}
           mode={acting.mode}
           onClose={() => setActing(null)}
+          // Qualified and ready to raise the deal: straight on, no second hunt
+          // for the card's Convert button.
+          onConvert={() => {
+            const lead = acting.lead;
+            setActing(null);
+            setConverting(lead);
+          }}
         />
       ) : null}
       {converting ? (
@@ -232,24 +408,44 @@ export function LeadsBoard({
 
 function LeadCard({
   lead,
-  canAction,
+  viewer,
+  owners,
+  showOwnerForMine,
+  flash,
   onQualify,
   onReject,
   onConvert,
 }: {
   lead: LeadRow;
-  canAction: boolean;
+  viewer: Viewer;
+  /** Who an admin may assign to: active deal owners and admins. */
+  owners: { value: string; label: string }[];
+  /** "Assigned to you" is noise under a heading that already says so. */
+  showOwnerForMine: boolean;
+  /** Just opened from a notification: mark it so the eye lands on it. */
+  flash: boolean;
   onQualify: () => void;
   onReject: () => void;
   onConvert: () => void;
 }) {
   const status = LEAD_STATUS[lead.status];
+  const canAct = canActOn(viewer, lead);
+  const forMe = awaitsMe(viewer, lead);
+  // The call is the job, so it is the first button — for whoever may make it,
+  // on a device that can make it. Touch screens only (`pointer-coarse`), not
+  // narrow ones: a laptop has no dialer, while a phone on its side or a
+  // tablet still does. The number above stays a tel: link everywhere.
+  const callable = canAct && isOpenLead(lead) && Boolean(lead.mobile);
 
   return (
     <div
+      id={`lead-${lead.id}`}
       className={cn(
-        "rounded-[14px] border border-l-4 border-line bg-white p-4",
+        "scroll-mt-24 rounded-[14px] border border-l-4 border-line bg-white p-4 transition-shadow",
         OUTCOME_EDGE[lead.status],
+        // Mine and not rung yet: the one card on the page that is my job.
+        forMe && "ring-2 ring-rose-300",
+        flash && "ring-4 ring-brand/60",
       )}
     >
       <div className="flex items-start gap-3">
@@ -313,25 +509,44 @@ function LeadCard({
 
       <LeadOutcome lead={lead} />
 
-      {canAction && lead.status !== "converted" ? (
-        <div className="mt-3 flex flex-wrap gap-2">
+      <LeadOwner
+        lead={lead}
+        viewer={viewer}
+        owners={owners}
+        showMine={showOwnerForMine}
+      />
+
+      {canAct ? (
+        // One row of equal buttons at any width: the next step first — Call
+        // while nobody has rung, Convert once qualified — then the answers.
+        // Icons on the answers wait for `sm`, so three fit a 390px phone.
+        <div className="mt-3 grid auto-cols-fr grid-flow-col gap-2 [&>*]:whitespace-nowrap [&>*]:px-1.5 [&>*]:text-[13.5px] sm:[&>*]:text-[14px]">
           {lead.status === "qualified" ? (
             <Button variant="brand" onClick={onConvert}>
-              <ArrowRight size={16} /> Convert to deal
-            </Button>
-          ) : (
-            <Button variant="secondary" onClick={onQualify}>
-              <Check size={16} /> Qualified
-            </Button>
-          )}
-          <Button variant="secondary" onClick={onReject}>
-            <ThumbsDown size={16} /> Not qualified
-          </Button>
-          {lead.status === "qualified" ? (
-            <Button variant="secondary" onClick={onQualify}>
-              Add a remark
+              <ArrowRight size={16} /> Convert<span className="hidden sm:inline"> to deal</span>
             </Button>
           ) : null}
+          {callable ? (
+            <a
+              href={`tel:${lead.mobile}`}
+              className={cn(
+                "hidden h-11 items-center justify-center gap-2 rounded-xl font-semibold transition active:scale-[0.98] pointer-coarse:inline-flex",
+                lead.status === "new"
+                  ? "bg-brand text-white"
+                  : "border border-line bg-white text-ink",
+              )}
+            >
+              <Phone size={16} /> Call
+            </a>
+          ) : null}
+          {lead.status !== "qualified" ? (
+            <Button variant="secondary" onClick={onQualify}>
+              <Check size={16} className="hidden sm:block" /> Qualified
+            </Button>
+          ) : null}
+          <Button variant="secondary" onClick={onReject}>
+            <ThumbsDown size={16} className="hidden sm:block" /> Not qualified
+          </Button>
         </div>
       ) : null}
 
@@ -345,6 +560,81 @@ function LeadCard({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Whose lead this is.
+ *
+ * An admin gets a picker on every open lead. Everybody else sees a name only
+ * where it tells them something: a colleague's lead (why there are no
+ * buttons), or — for the desk — that nobody has it yet. There is no Take
+ * button: a deal owner who qualifies or rejects an unowned lead has taken it.
+ */
+function LeadOwner({
+  lead,
+  viewer,
+  owners,
+  showMine,
+}: {
+  lead: LeadRow;
+  viewer: Viewer;
+  owners: { value: string; label: string }[];
+  showMine: boolean;
+}) {
+  const [pending, startTransition] = React.useTransition();
+  const open = isOpenLead(lead);
+  const mine = lead.assignedToUserId === viewer.userId;
+  const since = lead.assignedAt ? formatDateTimeInIndia(lead.assignedAt) : null;
+
+  if (viewer.role === "admin" && open) {
+    return (
+      <div className="mt-3 flex items-center gap-2">
+        <span className="shrink-0 text-[13px] font-medium text-muted">Owner</span>
+        <Picker
+          label="Assign to"
+          value={lead.assignedToUserId ?? ""}
+          disabled={pending}
+          className="h-10 min-w-0 flex-1 text-[14px] sm:max-w-[260px]"
+          options={[{ value: "", label: "No owner" }, ...owners]}
+          onChange={(userId) =>
+            startTransition(async () => {
+              try {
+                const result = await assignLead(lead.id, userId || null);
+                showToast(
+                  !result.ok
+                    ? result.error
+                    : userId
+                      ? `Assigned to ${owners.find((o) => o.value === userId)?.label ?? "them"}`
+                      : "Owner removed",
+                );
+              } catch {
+                showToast("Could not save that. Check your connection and try again.");
+              }
+            })
+          }
+        />
+        {since ? (
+          <span className="hidden shrink-0 text-[12px] text-muted sm:inline">since {since}</span>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (lead.assignedTo && (!mine || showMine)) {
+    return (
+      <p className="mt-3 flex flex-wrap items-center gap-x-1.5 text-[13px] text-muted">
+        <UserRound size={15} className="shrink-0" />
+        {mine ? "Assigned to you" : `Assigned to ${lead.assignedTo}`}
+        {since ? <span className="opacity-80">· {since}</span> : null}
+      </p>
+    );
+  }
+
+  if (open && !lead.assignedTo && viewer.role === "noc") {
+    return <p className="mt-3 text-[13px] text-muted">No deal owner yet</p>;
+  }
+
+  return null;
 }
 
 /** The card's left edge: the outcome, readable from across the list. */
@@ -426,30 +716,60 @@ function LeadOutcome({ lead }: { lead: LeadRow }) {
   );
 }
 
-/** Qualifying, or saying why not. Both need a sentence. */
+/**
+ * The reasons a lead is not a deal, one tap each. Typing stays open for the
+ * one that is not here; these are what the desk hears most.
+ */
+const NOT_A_DEAL = [
+  "Budget",
+  "Wrong vehicle type",
+  "City we don't serve",
+  "Already has a vendor",
+  "Not reachable",
+  "Just enquiring",
+];
+
+/**
+ * Qualifying, or saying why not. Both need a sentence.
+ *
+ * Qualified offers "Save & convert", because a lead qualified on the call is
+ * usually raised as a deal in the same breath — that is one sheet instead of
+ * finding the card again for its Convert button.
+ */
 function ActionSheet({
   lead,
   mode,
   onClose,
+  onConvert,
 }: {
   lead: LeadRow;
   mode: "qualified" | "not_qualified";
   onClose: () => void;
+  onConvert: () => void;
 }) {
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
-  const [remarks, setRemarks] = React.useState(lead.remarks ?? "");
+  // Only a deal owner's own earlier remark is a starting point. The desk's
+  // note is shown above instead: pre-filling it here meant a quick Save
+  // recorded the desk's words as what the deal owner heard.
+  const [remarks, setRemarks] = React.useState(lead.actionedBy ? (lead.remarks ?? "") : "");
   const [reason, setReason] = React.useState(lead.notQualifiedReason ?? "");
+  const deskNote = !lead.actionedBy ? lead.remarks : null;
 
-  function save() {
+  function save(thenConvert = false) {
     setError(null);
     startTransition(async () => {
-      const result = await actionLead(lead.id, { status: mode, remarks, reason });
-      if (!result.ok) return setError(result.error);
-      showToast(
-        `${lead.companyName} marked ${mode === "qualified" ? "qualified" : "not qualified"}`,
-      );
-      onClose();
+      try {
+        const result = await actionLead(lead.id, { status: mode, remarks, reason });
+        if (!result.ok) return setError(result.error);
+        if (thenConvert) return onConvert();
+        showToast(
+          `${lead.companyName} marked ${mode === "qualified" ? "qualified" : "not qualified"}`,
+        );
+        onClose();
+      } catch {
+        setError("Could not save that. Check your connection and try again.");
+      }
     });
   }
 
@@ -459,39 +779,89 @@ function ActionSheet({
       onClose={onClose}
       title={mode === "qualified" ? "Qualified" : "Not qualified"}
       footer={
-        <Button
-          variant="brand"
-          size="lg"
-          className="w-full"
-          disabled={pending}
-          onClick={save}
-        >
-          {pending ? "Saving…" : "Save"}
-        </Button>
+        mode === "qualified" ? (
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="lg"
+              className="flex-1"
+              disabled={pending}
+              onClick={() => save()}
+            >
+              Save
+            </Button>
+            <Button
+              variant="brand"
+              size="lg"
+              className="flex-[1.4]"
+              disabled={pending}
+              onClick={() => save(true)}
+            >
+              {pending ? "Saving…" : "Save & convert"}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="brand"
+            size="lg"
+            className="w-full"
+            disabled={pending}
+            onClick={() => save()}
+          >
+            {pending ? "Saving…" : "Save"}
+          </Button>
+        )
       }
     >
       <p className="-mt-1 mb-4 truncate text-sm text-muted">{lead.companyName}</p>
       <div className="space-y-4">
+        {deskNote ? (
+          <p className="rounded-xl bg-canvas px-3 py-2 text-[13px]">
+            <span className="font-medium text-muted">Desk note:</span> {deskNote}
+          </p>
+        ) : null}
+        {mode === "not_qualified" ? (
+          <Field label="Why is this not a deal?">
+            <div className="mb-2 flex flex-wrap gap-2">
+              {NOT_A_DEAL.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  aria-pressed={reason === r}
+                  onClick={() => setReason(r)}
+                  className={cn(
+                    "h-10 rounded-full border px-3.5 text-[13.5px] font-medium transition active:scale-[0.98]",
+                    reason === r
+                      ? "border-rose-400 bg-rose-50 text-rose-800"
+                      : "border-line bg-white text-muted",
+                  )}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <Input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Or type the reason"
+            />
+          </Field>
+        ) : null}
         <Field
           label="What did they say?"
           hint="One line is enough. Whoever picks this up next reads this first."
         >
           <Textarea
             value={remarks}
-            autoFocus
+            autoFocus={mode === "qualified"}
             onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Wants 12 vehicles from November, comparing us with two others."
+            placeholder={
+              mode === "qualified"
+                ? "Wants 12 vehicles from November, comparing us with two others."
+                : "Has their own fleet; asked us to call again next quarter."
+            }
           />
         </Field>
-        {mode === "not_qualified" ? (
-          <Field label="Why is this not a deal?">
-            <Input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Budget, wrong vehicle, already contracted…"
-            />
-          </Field>
-        ) : null}
         {error ? (
           <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}

@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 23 September 2026 (ninth session, second pass)
+**Last updated:** 23 September 2026 (ninth session, lead assignment)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -11,9 +11,25 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-**Migrations 0000–0011 are all applied to production.** Nothing to run. They
-are applied by hand through the Neon MCP connector BEFORE their code deploys,
-because the app queries those tables on page load.
+**Migrations 0000–0012 are all applied to production** (0012, lead
+assignment, on 23 Sep before its code deployed). Migrations are applied by
+hand through the Neon MCP connector BEFORE their code deploys, because the app
+queries those tables on page load — 0012 is read by the shell on EVERY page,
+for the Leads badge.
+
+### Blocking push notifications (added 23 Sep)
+
+0. **Add the three Web Push keys in Vercel, then Redeploy.** The Vercel MCP
+   connector cannot write env vars (403), so this is a dashboard job: Vercel
+   → good-deal-crm → Settings → Environment Variables, all three environments:
+   `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (mark Sensitive),
+   `VAPID_SUBJECT` = `mailto:vivekbhargav.v@gmail.com`. The values were handed
+   to Vivek in the session, not committed. Then Deployments → latest →
+   Redeploy — `NEXT_PUBLIC_` values are baked in at build time, so adding them
+   without a rebuild changes nothing. Until then assignment, the badge and the
+   Call button all work; Settings says notifications are not switched on yet.
+   **Never regenerate these keys once people have turned notifications on**
+   (see § 7).
 
 ### Blocking somebody today
 
@@ -149,6 +165,13 @@ Change these only deliberately — a lot of code assumes them.
 | **The Pipeline's headline money column is `price` — per vehicle, per month.** Deal value steps behind the `2xl` breakpoint. | It is how the business thinks about a deal ("what does a truck earn"), and it is the figure every cost line on the sheet is comparable with. Value is that times the fleet and both halves are on the same row. |
 | **Deployments has a third view, By month**: city in rows, month in columns, vehicles in the cells, tapping a city for the clients behind the number. | By date answers "what is late", By city answers "what does Bangalore owe". Neither answers "how many trucks land where, and when", which is a shape rather than a list. The arithmetic is `lib/deployment-grid.ts`, free of React, so it tests. |
 | **The Deployments grid's detail panel sits UNDER the table**, not inside a row of it. | The Forecast tucks its drill-down into a table cell held to the viewport width by hand. Here the client rows landed beneath the fade that hints at sideways scroll: legible, and looking cut off. Below the table they get the full page width and no hack. |
+| **Leads have an owner** (`assigned_to_user_id`). Only an admin assigns; an assigned lead is its assignee's and the admins' alone to qualify, reject or convert. There is NO Take button: a deal owner who qualifies or rejects an unowned lead has taken it; an admin doing so has not. | Vivek's rules, 23 Sep. `lib/lead-assignment.ts` holds them free of React, and both the actions and the cards call it, so the screen cannot offer what the server refuses. |
+| **"Waiting on me" = assigned to me AND status `new`.** It drives a red count on the Leads tab (rail, phone bar, menu) and a rose ring on the card. | A qualified lead waiting to be converted is not a phone call somebody owes. The count is one indexed query in `(app)/layout.tsx` — the one exception to "the shell fetches nothing" — so it is fresh on every navigation, not live on an open page. |
+| **An assignment pushes a notification to the assignee's devices**, never email: title "New lead: ZYRKON · Hyderabad · 2 × 3W", body the caller and number, and a **Call** button when there is a number. Web Push with VAPID keys; one `push_subscriptions` row per browser; a 404/410 deletes the row. Best effort — never fails the assignment. | Vivek: in-app plus push, no email. Assigning to yourself sends nothing. A notification cannot dial by itself (a service worker cannot open `tel:`), so Call opens `/leads?lead=<id>&call=1`: the page scrolls to the card, rings it green, and hands the number to the dialer; where a browser refuses to dial without a tap, the card's Call button is under the thumb. A plain tap opens `/leads?lead=<id>`. iOS shows no notification buttons at all. |
+| **The Leads screen per desk.** Deal owner: **My leads** (default) = "Assigned to you", then "No owner yet" — never a colleague's — and **All**; the funnel sits BELOW the list. Admin: **Open · No owner · All**, funnel on top, an Owner picker on each open card. NOC: **Open · All**. A search looks through every lead whatever the view. | Vivek: "My leads first and unassigned after that". A deal owner opens the screen to ring people; four tiles of conversion rates in front of the list pushed their first lead below the fold on a phone. |
+| **One row of buttons per card, next step first**: new → Call · Qualified · Not qualified; qualified → Convert · Call · Not qualified. **Call appears on touch devices only** (`pointer-coarse`, not a width breakpoint), and the notification's Call action only on a phone (`userAgentData.mobile` in the service worker) — Vivek: a Call button is useless on a desktop. The number stays a tel: link everywhere. Qualified offers **Save & convert**. Not qualified offers one-tap reasons (Budget, Wrong vehicle type, City we don't serve, Already has a vendor, Not reachable, Just enquiring) with typing still open. | Fewest taps from notification to outcome: Call → talk → Qualified → Save & convert. The sheet no longer pre-fills the DESK's note as the deal owner's remark (a quick Save used to record the desk's words as theirs); the desk note is shown above the box instead. "Add a remark" on a qualified card is gone — Qualified/Not qualified reopen the sheet with the remark in it. |
+| **Notifications are opt-in by a tap** — a dismissable prompt on Leads (deal owners and admins) and an **Enable notifications** button in Settings → Notifications. | Browsers refuse a permission prompt nobody asked for, and a prompt on page load teaches people to press Block, after which only browser settings can undo it. |
+| **Suspending someone returns their open leads to the pool.** | While a lead is theirs nobody else may act on it, and a suspended person rings nobody. |
 | **The Deployments grid spans the data's own months with no gaps.** | A fixed window hides a delivery that slipped past its end; dropping empty months prints "Sep, Nov, Jan", which reads as a stride rather than a calendar. The blank October column is itself the answer to "what does October look like". |
 | **A lead card says loudly what a deal owner did with it**: a coloured left edge (amber waiting, green qualified or a deal, red not qualified) and, once somebody has acted, a green or red panel naming who, when, the reason and the remark. An unactioned lead gets the amber edge and NO panel (Vivek: the sentence on every waiting card was noise) — only the desk's note, if any, in plain grey. The calling city sits on its own line under the company, bold with a pin. | The NOC desk cannot see the pipeline, so this is the only way it learns whether anybody rang back. A lead has one `remarks` column: before a deal owner acts it is the desk's note, after it is theirs, so the label follows `actioned_by`, not the status. |
 | **The desktop rail ends with a Pricing Tool link** (https://moeving-pricing.vercel.app/, new tab) for admin and deal owners, not ops or NOC. | Deal owners quote from that calculator; it is a separate app, so it is a link, not a screen. |
@@ -172,7 +195,9 @@ src/
     stage-changer.tsx stage picker + Closed Won cost sheet + Closed Lost reason
     leads/funnel.tsx  inbound conversion, by period
     leads/board.tsx   the inbound desk: list, new-lead form, qualify /
-                      not-qualify sheets, and the convert-to-deal sheet
+                      not-qualify sheets, the convert-to-deal sheet, and the
+                      owner row (admin picker / "Assigned to")
+    enable-notifications.tsx  the push opt-in: compact on Leads, full in Settings
     pipeline/         board.tsx (kanban) · table.tsx (list + table) · filters.tsx
     forecast/         grid.tsx (city × month) · wins.tsx (owner × month) · tabs.tsx
     opportunity/      detail-actions.tsx · note-box.tsx · expand-deal.tsx ·
@@ -192,11 +217,14 @@ src/
     stage-change.ts   the stage-move decision, free of Next/Clerk/db so it tests
     invites.ts        asks Clerk to email a new joiner a sign-up link
     invite-url.ts     that link's landing URL — absolute, or not at all
+    push.ts           Web Push to one user's browsers; off without VAPID keys
   lib/
     deployment-groups.ts  how the ops queue is cut into sections (by due
                       date, or by city) — no React, so it tests
     lead-funnel.ts    the inbound funnel and its denominators — no React,
                       so the rates are tested
+    lead-assignment.ts  who may assign and act on a lead — no React,
+                      so the rules are tested
     cost-defaults.ts  which standard rate applies to a deal, and which stored
                       figures have drifted from it — no React, so it tests
     deployment-grid.ts  the Deployments By month grid: which months get a
@@ -208,6 +236,7 @@ tests/
   deployment-groups.test.ts     the ops queue's two groupings, runs anywhere
   deployment-grid.test.ts       the By month grid's months and cells, anywhere
   lead-funnel.test.ts           the inbound rates and their denominators
+  lead-assignment.test.ts       who may assign and act on a lead
   neon-http-driver.test.ts      no db.transaction() anywhere in src/, ever
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
@@ -222,8 +251,8 @@ drizzle/
   0008_*.sql          opportunities.operating_days — 26 or 30, recorded only
   0009_*.sql          cost_defaults — the standard rate per cost line
   0010_*.sql          the noc role, lead_status, and the leads table
-  0011_*.sql          leads.converted_at — the funnel's third timestamp.
-                      NOT YET APPLIED to production, see § 0
+  0011_*.sql          leads.converted_at — the funnel's third timestamp
+  0012_*.sql          leads.assigned_to/by/at + push_subscriptions, see § 0
   meta/               drizzle's journal. Repaired on 22 Sep — see § 6
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
@@ -242,7 +271,7 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. Eighty-two
+`node --test` with `tsx` — no test framework, no new dependencies. A hundred and twelve (eight of them on lead assignment — who may assign and act); the older ones:
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"
@@ -493,7 +522,15 @@ DATABASE_URL                        Neon pooled connection string
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY   pk_test_… (development instance)
 CLERK_SECRET_KEY                    sk_test_… (development instance)
 NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
+NEXT_PUBLIC_VAPID_PUBLIC_KEY        Web Push public key (safe to ship to browsers)
+VAPID_PRIVATE_KEY                   Web Push private key — a secret
+VAPID_SUBJECT                       mailto: contact the push services may use
 ```
+
+- **VAPID keys are generated once** (`npx web-push generate-vapid-keys`) and
+  must never change: every browser subscription is bound to the public key, so
+  a new pair silently orphans every phone that turned notifications on, and
+  each person has to turn them on again.
 
 - **Neon project:** `sparkling-heart-21480913` ("Moeving CRM"),
   `aws-ap-southeast-1`, Postgres 18. Free tier scales to zero, so the first
@@ -603,6 +640,23 @@ Roughly in order of value to adoption:
    `accounts` plus the expansion chain is most of the query.
 
 ## 10. Known rough edges
+
+- **Push on an iPhone works only from the installed app** (Add to Home
+  Screen, iOS 16.4+). In Safari the Settings switch says so. Android Chrome,
+  desktop Chrome/Edge/Firefox work in the browser.
+- **Push delivery was verified against a stand-in push service locally**
+  (encrypted aes128gcm payload, VAPID-signed, 410 deletes the row), not
+  against a real phone — headless Chromium cannot hold a real subscription.
+  The first real test is an admin assigning a lead to someone whose phone has
+  notifications on.
+- **The Leads badge is fresh on navigation, not live.** A lead assigned while
+  somebody sits on one page shows when they next move; the push is what tells
+  them in the meantime.
+- **Changing someone's role from Deal Owner to ops/NOC leaves their leads
+  assigned** (suspending releases them; a role change does not). An admin can
+  reassign from the card.
+- **Assignment keeps no history** — who holds it now, who assigned it and
+  when, like the single remark. A `lead_events` table would cover both.
 
 - The top header is translucent glass; the bottom tab bar is solid. Vivek asked
   for the tab bar to be solid specifically. If the mismatch ever annoys him, the

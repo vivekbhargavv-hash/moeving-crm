@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { NotProvisionedError, requireSession } from "@/server/auth";
+import { countLeadsAwaitingMe } from "@/server/queries";
 
 export default async function AppLayout({
   children,
@@ -16,11 +17,14 @@ export default async function AppLayout({
     throw error;
   }
 
-  // Deliberately nothing else fetched here: the shell wraps every page, so
-  // anything queried here is queried on every navigation. The Add deal sheet
-  // fetches its own master data when somebody opens it.
+  // The shell wraps every page, so anything queried here is queried on every
+  // navigation. The one exception is the Leads badge — a single indexed count
+  // that is the whole point of assigning somebody a lead. Everything else
+  // (the Add deal sheet's master data included) is fetched where it is used.
+  const leadsAwaiting = await countLeadsAwaitingMe();
+
   return (
-    <AppShell session={session}>
+    <AppShell session={session} leadsAwaiting={leadsAwaiting}>
       {children}
     </AppShell>
   );

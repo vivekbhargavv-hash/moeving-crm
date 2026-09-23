@@ -13,6 +13,7 @@ import {
   lostReasons,
   opportunities,
   opportunityEvents,
+  pushSubscriptions,
   salesStage,
   users,
   vehicleTypes,
@@ -27,7 +28,15 @@ import {
   requireDeployments,
   requireLeads,
   requireSales,
+  requireSession,
 } from "@/server/auth";
+import {
+  canActOn,
+  canAssign,
+  isDealOwnerRole,
+  takesOnAction,
+} from "@/lib/lead-assignment";
+import { pushToUser } from "@/server/push";
 import { getCostDefaults, getQuickAddData, type QuickAddData } from "@/server/queries";
 import { sendInvitation } from "@/server/invites";
 import {
@@ -1159,6 +1168,21 @@ export async function setUserActive(
     .where(
       and(eq(users.id, id), eq(users.organizationId, session.organizationId)),
     );
+  // A suspended person cannot ring anybody back, and while a lead is theirs
+  // no other deal owner may act on it. Their open leads go back to the pool.
+  if (!isActive) {
+    await db
+      .update(leads)
+      .set({ assignedToUserId: null, assignedByUserId: null, assignedAt: null })
+      .where(
+        and(
+          eq(leads.organizationId, session.organizationId),
+          eq(leads.assignedToUserId, id),
+          inArray(leads.status, ["new", "qualified"]),
+        ),
+      );
+    revalidatePath("/leads");
+  }
   revalidatePath("/admin/users");
   revalidatePath("/pipeline");
   return { ok: true };
@@ -1468,7 +1492,9 @@ export async function actionLead(
       error: "This lead is already a deal — work it in the pipeline from here.",
     };
   }
+  if (!canActOn(session, existing)) return notYourLead();
 
+  const now = new Date();
   await db
     .update(leads)
     .set({
@@ -1476,8 +1502,10 @@ export async function actionLead(
       remarks,
       notQualifiedReason: input.status === "not_qualified" ? reason : null,
       actionedByUserId: session.userId,
-      actionedAt: new Date(),
-      updatedAt: new Date(),
+      actionedAt: now,
+      // Ringing an unassigned lead is picking it up.
+      ...(takesOnAction(session, existing) ? selfAssigned(session.userId, now) : {}),
+      updatedAt: now,
     })
     .where(and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)));
 
@@ -1509,6 +1537,7 @@ export async function convertLead(
   if (existing.status === "converted" && existing.opportunityId) {
     return { ok: false, error: "This lead is already a deal." };
   }
+  if (!canActOn(session, existing)) return notYourLead();
 
   const contact = [
     existing.callerName
@@ -1542,6 +1571,7 @@ export async function convertLead(
       opportunityId,
       notQualifiedReason: null,
       convertedAt: now,
+      ...(takesOnAction(session, existing) ? selfAssigned(session.userId, now) : {}),
       // `actionedAt` is deliberately left alone. It marks the callback — how
       // long the enquiry waited for somebody to ring it — and overwriting it
       // here erased exactly the number the desk is measured on. A lead
@@ -1554,4 +1584,146 @@ export async function convertLead(
   revalidatePath("/leads");
   revalidatePath("/pipeline");
   return { ok: true, data: { id: opportunityId } };
+}
+
+/* ---------------------------------------------------------- lead ownership */
+
+function notYourLead(): { ok: false; error: string } {
+  return {
+    ok: false,
+    error: "This lead is assigned to another deal owner. Ask an admin to reassign it.",
+  };
+}
+
+function selfAssigned(userId: string, at: Date) {
+  return { assignedToUserId: userId, assignedByUserId: userId, assignedAt: at };
+}
+
+/**
+ * An admin hands a lead to a deal owner, or takes it back (`userId` null).
+ *
+ * The assignee's browsers are told at once; a push that fails to arrive never
+ * undoes the assignment, and the badge on their Leads tab says it either way.
+ */
+export async function assignLead(
+  id: string,
+  userId: string | null,
+): Promise<ActionResult> {
+  const session = await requireAdmin();
+
+  const existing = await db.query.leads.findFirst({
+    where: and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)),
+  });
+  if (!existing) return { ok: false, error: "Lead not found" };
+  if (!canAssign(session, existing)) {
+    return { ok: false, error: "Only an open lead can be assigned." };
+  }
+  if (existing.assignedToUserId === userId) return { ok: true };
+
+  let assignee: { id: string; name: string } | null = null;
+  if (userId) {
+    const row = await db.query.users.findFirst({
+      where: and(eq(users.id, userId), eq(users.organizationId, session.organizationId)),
+    });
+    if (!row || !row.isActive || !isDealOwnerRole(row.role)) {
+      return { ok: false, error: "Pick an active deal owner." };
+    }
+    assignee = { id: row.id, name: row.name };
+  }
+
+  const now = new Date();
+  await db
+    .update(leads)
+    .set({
+      assignedToUserId: assignee?.id ?? null,
+      assignedByUserId: assignee ? session.userId : null,
+      assignedAt: assignee ? now : null,
+      updatedAt: now,
+    })
+    .where(and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)));
+
+  // Nobody needs a notification for a lead they handed to themselves.
+  if (assignee && assignee.id !== session.userId) {
+    try {
+      // "New lead: ZYRKON · Hyderabad · 2 × 3W", and who to ring. A Call
+      // button rides along when there is a number (see public/sw.js).
+      const headline = [
+        existing.companyName,
+        existing.callingCity,
+        existing.vehicleRequirement
+          ? `${existing.vehicleRequirement} × ${existing.vehicleType ?? "vehicle"}`
+          : existing.vehicleType,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      await pushToUser(session.organizationId, assignee.id, {
+        title: `New lead: ${headline}`,
+        body:
+          [existing.callerName, existing.mobile].filter(Boolean).join(" · ") ||
+          `Assigned by ${session.name.split(" ")[0]}`,
+        url: `/leads?lead=${existing.id}`,
+        callUrl: existing.mobile ? `/leads?lead=${existing.id}&call=1` : undefined,
+        tag: `lead-${existing.id}`,
+      });
+    } catch {
+      /* Delivery is best effort; the lead is theirs regardless. */
+    }
+  }
+
+  revalidatePath("/leads");
+  return { ok: true };
+}
+
+/* ---------------------------------------------------------- notifications */
+
+const pushSubscriptionInput = z.object({
+  endpoint: z.string().url().max(2000),
+  keys: z.object({
+    p256dh: z.string().min(1).max(500),
+    auth: z.string().min(1).max(500),
+  }),
+});
+
+/**
+ * This browser agreed to notifications. Stored against whoever is signed in
+ * now — the same phone passed to a colleague re-registers under them.
+ */
+export async function savePushSubscription(input: unknown): Promise<ActionResult> {
+  const session = await requireSession();
+  const parsed = pushSubscriptionInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "That subscription is not valid." };
+  const { endpoint, keys } = parsed.data;
+
+  await db
+    .insert(pushSubscriptions)
+    .values({
+      organizationId: session.organizationId,
+      userId: session.userId,
+      endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+    })
+    .onConflictDoUpdate({
+      target: pushSubscriptions.endpoint,
+      set: {
+        organizationId: session.organizationId,
+        userId: session.userId,
+        p256dh: keys.p256dh,
+        auth: keys.auth,
+      },
+    });
+  return { ok: true };
+}
+
+export async function removePushSubscription(endpoint: string): Promise<ActionResult> {
+  const session = await requireSession();
+  await db
+    .delete(pushSubscriptions)
+    .where(
+      and(
+        eq(pushSubscriptions.endpoint, endpoint),
+        eq(pushSubscriptions.userId, session.userId),
+      ),
+    );
+  return { ok: true };
 }

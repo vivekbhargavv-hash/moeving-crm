@@ -82,7 +82,9 @@ const closeMonth = z
 
 const baseOpportunity = z.object({
   accountName: z.string().trim().min(1, "Customer is required").max(160),
-  name: z.string().trim().max(160).optional(),
+  // Optional in the form: a blank box reaches here as null (formToObject), so
+  // it must be nullable, or every deal raised without a name is refused.
+  name: z.string().trim().max(160).nullable().optional(),
   cityId: uuidish,
   vehicleTypeId: uuidish,
   driverType: z

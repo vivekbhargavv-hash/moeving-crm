@@ -3,7 +3,9 @@
 import { UserButton } from "@clerk/nextjs";
 import {
   BarChart3,
+  Calculator,
   CalendarRange,
+  ExternalLink,
   KanbanSquare,
   Menu,
   PhoneCall,
@@ -41,6 +43,8 @@ const SALES_NAV = [
   { href: "/forecast", label: "Forecast", icon: CalendarRange },
   { href: "/deployments", label: "Deploy", icon: Truck },
 ];
+
+const PRICING_TOOL_URL = "https://moeving-pricing.vercel.app/";
 
 const OPS_NAV = [{ href: "/deployments", label: "Deployments", icon: Truck }];
 
@@ -224,7 +228,26 @@ export function AppShell({
             <Plus size={18} /> New deal
           </button>
         )}
-        <div className="mt-auto flex items-center gap-3 rounded-xl px-3 py-2">
+        {/* The pricing calculator is a separate app; deal owners quote from
+            it, so it sits at the foot of their rail. Not for ops or NOC. */}
+        {isOps || isNoc ? null : (
+          <a
+            href={PRICING_TOOL_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-auto flex items-center gap-3 rounded-xl border border-line px-3 py-2.5 text-[15px] font-medium text-ink transition hover:bg-canvas"
+          >
+            <Calculator size={18} strokeWidth={2} />
+            <span className="flex-1">Pricing Tool</span>
+            <ExternalLink size={14} className="text-muted" />
+          </a>
+        )}
+        <div
+          className={cn(
+            "flex items-center gap-3 rounded-xl px-3 py-2",
+            isOps || isNoc ? "mt-auto" : "mt-3",
+          )}
+        >
           <UserButton />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{session.name}</p>

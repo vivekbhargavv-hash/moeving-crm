@@ -55,3 +55,43 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+/*
+ * "A lead has been assigned to you." The server sends { title, body, url,
+ * tag }; one tag per lead, so reassigning the same lead replaces its
+ * notification rather than stacking a second one.
+ */
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Good Deal", {
+      body: data.body || "",
+      tag: data.tag,
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { url: data.url || "/leads" },
+    }),
+  );
+});
+
+// A tap opens the app on the page the notification is about, reusing a
+// window that is already open rather than starting another.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || "/leads", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      for (const win of wins) {
+        if (new URL(win.url).origin === self.location.origin && "focus" in win) {
+          return win.navigate(url).then((w) => (w || win).focus());
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
+});

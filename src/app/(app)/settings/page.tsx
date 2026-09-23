@@ -1,6 +1,7 @@
 import { ChevronRight, Database, Users } from "lucide-react";
 import Link from "next/link";
 
+import { EnableNotifications } from "@/components/enable-notifications";
 import { InstallApp } from "@/components/install-app";
 import { Card, CardHeader } from "@/components/ui-server";
 import { requireSession } from "@/server/auth";
@@ -33,6 +34,16 @@ export default async function SettingsPage() {
           <InstallApp />
         </div>
       </Card>
+
+      {/* Only the people leads are assigned to have anything to be told. */}
+      {session.role === "admin" || session.role === "sales" ? (
+        <Card className="mt-3">
+          <CardHeader title="Notifications" />
+          <div className="px-4 pb-4">
+            <EnableNotifications />
+          </div>
+        </Card>
+      ) : null}
 
       {session.role === "admin" ? (
         <Card className="mt-3">

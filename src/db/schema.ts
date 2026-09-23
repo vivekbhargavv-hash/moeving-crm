@@ -305,6 +305,18 @@ export const leads = pgTable(
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    /**
+     * The deal owner this lead is for. An admin assigns it, or a deal owner
+     * takes an unassigned one; only that person (and admins) may then act on
+     * it. Null means nobody's yet — any deal owner may pick it up.
+     */
+    assignedToUserId: uuid("assigned_to_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    assignedByUserId: uuid("assigned_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }),
     /** Who last rang the lead, and when — the desk's accountability. */
     actionedByUserId: uuid("actioned_by_user_id").references(() => users.id, {
       onDelete: "set null",
@@ -333,6 +345,9 @@ export const leads = pgTable(
     index("leads_org_status_idx").on(t.organizationId, t.status),
     index("leads_org_created_idx").on(t.organizationId, t.createdAt),
     index("leads_org_date_idx").on(t.organizationId, t.enquiryDate),
+    // "How many leads are waiting on me" is asked on every page a deal owner
+    // opens, for the badge on the Leads tab.
+    index("leads_org_assignee_idx").on(t.organizationId, t.assignedToUserId, t.status),
     // A no has to carry its reason, and a lead that became a deal has to know
     // which one — enforced here so no code path can write a half-answer.
     check(
@@ -343,6 +358,34 @@ export const leads = pgTable(
       "leads_converted_requires_opportunity",
       sql`${t.status} <> 'converted' or ${t.opportunityId} is not null`,
     ),
+  ],
+);
+
+/* --------------------------------------------------------------------- push */
+
+/**
+ * One row per browser that agreed to notifications. A person with the app on
+ * a phone and a laptop has two. The endpoint is the push service's address for
+ * that browser; the keys encrypt what is sent to it.
+ */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: id(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("push_subscriptions_endpoint_idx").on(t.endpoint),
+    index("push_subscriptions_user_idx").on(t.userId),
   ],
 );
 

@@ -845,6 +845,10 @@ export type LeadRow = {
   opportunityId: string | null;
   actionedBy: string | null;
   actionedAt: Date | null;
+  /** The deal owner it is for; null while nobody has it. */
+  assignedToUserId: string | null;
+  assignedTo: string | null;
+  assignedAt: Date | null;
   createdBy: string | null;
   /** When the enquiry was written down — not the day it came in. */
   createdAt: Date;
@@ -869,6 +873,7 @@ export async function listLeads(): Promise<LeadRow[]> {
   const session = await requireSession();
   const actioner = alias(users, "actioner");
   const creator = alias(users, "creator");
+  const assignee = alias(users, "assignee");
 
   return db
     .select({
@@ -890,6 +895,9 @@ export async function listLeads(): Promise<LeadRow[]> {
       opportunityId: leads.opportunityId,
       actionedBy: actioner.name,
       actionedAt: leads.actionedAt,
+      assignedToUserId: leads.assignedToUserId,
+      assignedTo: assignee.name,
+      assignedAt: leads.assignedAt,
       createdBy: creator.name,
       createdAt: leads.createdAt,
       convertedAt: leads.convertedAt,
@@ -898,9 +906,31 @@ export async function listLeads(): Promise<LeadRow[]> {
     .from(leads)
     .leftJoin(actioner, eq(actioner.id, leads.actionedByUserId))
     .leftJoin(creator, eq(creator.id, leads.createdByUserId))
+    .leftJoin(assignee, eq(assignee.id, leads.assignedToUserId))
     // Left, not inner: most leads never became a deal, and those are the rows
     // the funnel is mostly about.
     .leftJoin(opportunities, eq(opportunities.id, leads.opportunityId))
     .where(eq(leads.organizationId, session.organizationId))
     .orderBy(desc(leads.enquiryDate), desc(leads.createdAt));
 }
+
+/**
+ * Leads assigned to this person that nobody has rung yet — the number on
+ * their Leads tab. Asked on every page a deal owner opens, so it is one
+ * indexed count (`leads_org_assignee_idx`) and nothing else.
+ */
+export const countLeadsAwaitingMe = cache(async (): Promise<number> => {
+  const session = await requireSession();
+  if (session.role !== "admin" && session.role !== "sales") return 0;
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(leads)
+    .where(
+      and(
+        eq(leads.organizationId, session.organizationId),
+        eq(leads.assignedToUserId, session.userId),
+        eq(leads.status, "new"),
+      ),
+    );
+  return row?.n ?? 0;
+});

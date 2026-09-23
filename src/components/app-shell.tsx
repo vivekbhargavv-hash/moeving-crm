@@ -85,9 +85,12 @@ const TITLES: Record<string, string> = {
 
 export function AppShell({
   session,
+  leadsAwaiting,
   children,
 }: {
   session: Session;
+  /** Leads assigned to this person that nobody has rung yet. */
+  leadsAwaiting: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -214,7 +217,8 @@ export function AppShell({
                 )}
               >
                 <item.icon size={18} strokeWidth={2} />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.href === "/leads" ? <CountBadge n={leadsAwaiting} /> : null}
               </Link>
             );
           })}
@@ -306,7 +310,12 @@ export function AppShell({
           )}
         >
           {phoneTabs.map((item) => (
-            <NavTab key={item.href} {...item} pathname={pathname} />
+            <NavTab
+              key={item.href}
+              {...item}
+              pathname={pathname}
+              badge={item.href === "/leads" ? leadsAwaiting : 0}
+            />
           ))}
           {isOps || isNoc ? null : (
             <button
@@ -363,7 +372,8 @@ export function AppShell({
                     >
                       <item.icon size={18} strokeWidth={active ? 2.5 : 2} />
                     </span>
-                    {item.label}
+                    <span className="flex-1">{item.label}</span>
+                    {item.href === "/leads" ? <CountBadge n={leadsAwaiting} /> : null}
                   </Link>
                 </li>
               );
@@ -404,16 +414,34 @@ export function AppShell({
   );
 }
 
+/** A red count, for work waiting on the person looking at it. */
+function CountBadge({ n, className }: { n: number; className?: string }) {
+  if (n <= 0) return null;
+  return (
+    <span
+      aria-label={`${n} waiting`}
+      className={cn(
+        "tabular inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 text-[11px] font-bold leading-none text-white",
+        className,
+      )}
+    >
+      {n > 99 ? "99+" : n}
+    </span>
+  );
+}
+
 function NavTab({
   href,
   label,
   icon: Icon,
   pathname,
+  badge = 0,
 }: {
   href: string;
   label: string;
   icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
   pathname: string;
+  badge?: number;
 }) {
   const active = pathname.startsWith(href);
   return (
@@ -427,11 +455,12 @@ function NavTab({
     >
       <span
         className={cn(
-          "flex h-7 w-12 items-center justify-center rounded-full transition",
+          "relative flex h-7 w-12 items-center justify-center rounded-full transition",
           active && "bg-brand-soft",
         )}
       >
         <Icon size={20} strokeWidth={active ? 2.5 : 2} />
+        <CountBadge n={badge} className="absolute -right-1 -top-1.5 ring-2 ring-white" />
       </span>
       {label}
     </Link>

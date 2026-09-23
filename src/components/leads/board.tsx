@@ -2,13 +2,16 @@
 
 import {
   ArrowRight,
+  BellRing,
   Check,
   CheckCircle2,
   MapPin,
+  Hand,
   Phone,
   Plus,
   Search,
   ThumbsDown,
+  UserRound,
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +26,7 @@ import {
   EmptyState,
   Field,
   Input,
+  Picker,
   PickerField,
   Segmented,
   Sheet,
@@ -36,7 +40,22 @@ import {
   formatDate,
   formatDateTimeInIndia,
   monthLabelShort, num, todayInIndia, upcomingMonths } from "@/lib/utils";
-import { actionLead, convertLead, createLead } from "@/server/actions";
+import { EnableNotifications } from "@/components/enable-notifications";
+import {
+  awaitsMe,
+  canActOn,
+  canTake,
+  isDealOwnerRole,
+  isOpenLead,
+  type Viewer,
+} from "@/lib/lead-assignment";
+import {
+  actionLead,
+  assignLead,
+  convertLead,
+  createLead,
+  takeLead,
+} from "@/server/actions";
 import type { LeadRow } from "@/server/queries";
 
 export const LEAD_STATUS: Record<
@@ -68,21 +87,37 @@ export const LEAD_STATUS: Record<
 /** Lead cards drawn per tap of "Show more". */
 const PAGE = 40;
 
+type View = "mine" | "open" | "unassigned" | "all";
+
 export function LeadsBoard({
   leads,
   master,
-  canAction,
+  viewer,
   canCreate,
+  initialView,
 }: {
   leads: LeadRow[];
   master: MasterData;
-  /** Deal owners and admins ring leads back and convert them. */
-  canAction: boolean;
+  /** Who is looking. Decides who may assign, take and act on each card. */
+  viewer: Viewer;
   /** The NOC desk and admins write them down. */
   canCreate: boolean;
+  /** `?view=` — a push notification opens straight onto "Mine". */
+  initialView?: string;
 }) {
+  // Deal owners and admins ring leads back and convert them.
+  const canAction = isDealOwnerRole(viewer.role);
+  const isAdmin = viewer.role === "admin";
+  const views: { value: View; label: string }[] = [
+    ...(canAction ? [{ value: "mine" as const, label: "Mine" }] : []),
+    { value: "open", label: "Open" },
+    ...(isAdmin ? [{ value: "unassigned" as const, label: "No owner" }] : []),
+    { value: "all", label: "All" },
+  ];
   const [query, setQuery] = React.useState("");
-  const [filter, setFilter] = React.useState<"open" | "all">("open");
+  const [filter, setFilter] = React.useState<View>(
+    views.some((v) => v.value === initialView) ? (initialView as View) : "open",
+  );
   const [adding, setAdding] = React.useState(false);
   const [acting, setActing] = React.useState<{
     lead: LeadRow;
@@ -92,21 +127,23 @@ export function LeadsBoard({
 
   const shown = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    return leads.filter((l) => {
+    const list = leads.filter((l) => {
       // "Open" is everything still waiting on somebody: the calls not made,
       // and the qualified ones nobody has turned into a deal yet.
-      if (
-        filter === "open" &&
-        (l.status === "not_qualified" || l.status === "converted")
-      ) {
-        return false;
-      }
+      if (filter !== "all" && !isOpenLead(l)) return false;
+      if (filter === "mine" && l.assignedToUserId !== viewer.userId) return false;
+      if (filter === "unassigned" && l.assignedToUserId) return false;
       if (!q) return true;
       return [l.companyName, l.callingCity, l.callerName, l.mobile, l.email]
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(q));
     });
-  }, [leads, query, filter]);
+    // What is waiting on me comes first, whatever the view; otherwise the
+    // server's newest-first order stands (sort is stable).
+    return list.sort(
+      (a, b) => Number(awaitsMe(viewer, b)) - Number(awaitsMe(viewer, a)),
+    );
+  }, [leads, query, filter, viewer]);
 
   /**
    * How many cards are in the DOM. Every lead still arrives and search and
@@ -117,6 +154,14 @@ export function LeadsBoard({
   React.useEffect(() => setLimit(PAGE), [query, filter]);
 
   const waiting = leads.filter((l) => l.status === "new").length;
+  const mine = leads.filter((l) => awaitsMe(viewer, l)).length;
+  const deskOwners = React.useMemo(
+    () =>
+      master.users
+        .filter((u) => isDealOwnerRole(u.role as Viewer["role"]))
+        .map((u) => ({ value: u.id, label: u.name })),
+    [master.users],
+  );
 
   return (
     <div>
@@ -125,12 +170,14 @@ export function LeadsBoard({
           else — a won/lost count is the pipeline by another name. */}
       {canAction ? <LeadFunnel leads={leads} /> : null}
 
-      {/* Two rows on a phone, one from `sm` up.
-          As a single wrapping row these three came to ~490px on a 390px
-          screen: the search box, the only one allowed to shrink, collapsed to
-          44px and the switch sat on top of its own placeholder. */}
-      <div className="mb-4 space-y-2 sm:flex sm:items-center sm:gap-2 sm:space-y-0">
-        <div className="relative min-w-0 sm:flex-1">
+      {/* Two rows on a phone, one from `sm` up: search and New lead on the
+          first, the view switch on its own full-width row below — it has up
+          to four options (an admin's), which do not fit beside anything on a
+          390px screen. On a phone New lead is a "+" for the same reason.
+          As a single wrapping row these once came to ~490px and the search
+          box collapsed to 44px with the switch on top of its placeholder. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 sm:flex-nowrap">
+        <div className="relative order-1 min-w-0 flex-1">
           <Search
             size={16}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
@@ -142,33 +189,53 @@ export function LeadsBoard({
             className="h-12 pl-9"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Segmented
-            label="Which leads"
-            className="min-w-0 flex-1 sm:w-[190px] sm:flex-none"
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { value: "open", label: "Open" },
-              { value: "all", label: "All" },
-            ]}
-          />
-          {canCreate ? (
-            // 48px, like the search box and the switch beside it: three
-            // controls on one row at three heights reads as an accident.
-            <Button
-              variant="brand"
-              size="lg"
-              className="shrink-0"
-              onClick={() => setAdding(true)}
-            >
-              <Plus size={17} /> New lead
-            </Button>
-          ) : null}
-        </div>
+        <Segmented
+          label="Which leads"
+          className={cn(
+            "order-3 basis-full sm:order-2 sm:basis-auto sm:flex-none",
+            // Four options on a 390px phone: a little less padding each, so
+            // "No owner" is read rather than guessed from "No own…".
+            views.length > 3 && "[&_button]:px-1",
+            views.length > 3
+              ? "sm:w-[380px]"
+              : views.length > 2
+                ? "sm:w-[250px]"
+                : "sm:w-[190px]",
+          )}
+          value={filter}
+          onChange={setFilter}
+          options={views}
+        />
+        {canCreate ? (
+          // 48px, like the search box and the switch beside it: controls on
+          // one row at different heights read as an accident.
+          <Button
+            variant="brand"
+            size="lg"
+            aria-label="New lead"
+            className="order-2 w-12 shrink-0 px-0 sm:order-3 sm:w-auto sm:px-5"
+            onClick={() => setAdding(true)}
+          >
+            <Plus size={17} /> <span className="hidden sm:inline">New lead</span>
+          </Button>
+        ) : null}
       </div>
 
-      {waiting > 0 ? (
+      {mine > 0 ? (
+        // Tapping it is the shortest way to the work: it opens "Mine".
+        <button
+          type="button"
+          onClick={() => setFilter("mine")}
+          className="mb-3 flex w-full items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-left text-[14px] font-semibold text-rose-900 active:opacity-80"
+        >
+          <BellRing size={17} className="shrink-0" />
+          <span className="flex-1">
+            {mine} {mine === 1 ? "lead is" : "leads are"} assigned to you and
+            {mine === 1 ? " needs" : " need"} a call.
+          </span>
+          {filter !== "mine" ? <span className="text-[13px] font-medium">Show</span> : null}
+        </button>
+      ) : waiting > 0 ? (
         <p className="mb-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-[13px] text-amber-900">
           <Phone size={15} />
           {waiting} {waiting === 1 ? "enquiry has" : "enquiries have"} not been
@@ -176,13 +243,25 @@ export function LeadsBoard({
         </p>
       ) : null}
 
+      {canAction ? <EnableNotifications compact /> : null}
+
       {shown.length === 0 ? (
         <EmptyState
-          title={query ? "No leads match" : "No open leads"}
+          title={
+            query
+              ? "No leads match"
+              : filter === "mine"
+                ? "Nothing assigned to you"
+                : filter === "unassigned"
+                  ? "Every open lead has an owner"
+                  : "No open leads"
+          }
           body={
             query
               ? "Clear the search to see the rest."
-              : "Enquiries the desk writes down appear here."
+              : filter === "mine"
+                ? "Leads an admin assigns you, or that you take, appear here."
+                : "Enquiries the desk writes down appear here."
           }
         />
       ) : (
@@ -191,7 +270,8 @@ export function LeadsBoard({
             <LeadCard
               key={lead.id}
               lead={lead}
-              canAction={canAction}
+              viewer={viewer}
+              owners={deskOwners}
               onQualify={() => setActing({ lead, mode: "qualified" })}
               onReject={() => setActing({ lead, mode: "not_qualified" })}
               onConvert={() => setConverting(lead)}
@@ -232,24 +312,31 @@ export function LeadsBoard({
 
 function LeadCard({
   lead,
-  canAction,
+  viewer,
+  owners,
   onQualify,
   onReject,
   onConvert,
 }: {
   lead: LeadRow;
-  canAction: boolean;
+  viewer: Viewer;
+  /** Who an admin may assign to: active deal owners and admins. */
+  owners: { value: string; label: string }[];
   onQualify: () => void;
   onReject: () => void;
   onConvert: () => void;
 }) {
   const status = LEAD_STATUS[lead.status];
+  const canAct = canActOn(viewer, lead);
+  const forMe = awaitsMe(viewer, lead);
 
   return (
     <div
       className={cn(
         "rounded-[14px] border border-l-4 border-line bg-white p-4",
         OUTCOME_EDGE[lead.status],
+        // Mine and not rung yet: the one card on the page that is my job.
+        forMe && "ring-2 ring-rose-300",
       )}
     >
       <div className="flex items-start gap-3">
@@ -313,7 +400,9 @@ function LeadCard({
 
       <LeadOutcome lead={lead} />
 
-      {canAction && lead.status !== "converted" ? (
+      <LeadOwner lead={lead} viewer={viewer} owners={owners} />
+
+      {canAct ? (
         <div className="mt-3 flex flex-wrap gap-2">
           {lead.status === "qualified" ? (
             <Button variant="brand" onClick={onConvert}>
@@ -342,6 +431,99 @@ function LeadCard({
         >
           Open the deal <ArrowRight size={15} />
         </Link>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Whose lead this is, and the controls that change it.
+ *
+ * An admin gets a picker on every open lead. A deal owner sees who has it, or
+ * — when nobody does — a Take button. The desk sees the name, which answers
+ * "has anyone picked this up" before anybody rings back.
+ */
+function LeadOwner({
+  lead,
+  viewer,
+  owners,
+}: {
+  lead: LeadRow;
+  viewer: Viewer;
+  owners: { value: string; label: string }[];
+}) {
+  const [pending, startTransition] = React.useTransition();
+  const open = isOpenLead(lead);
+  const mine = lead.assignedToUserId === viewer.userId;
+  const since = lead.assignedAt ? formatDateTimeInIndia(lead.assignedAt) : null;
+
+  function run(work: () => Promise<{ ok: boolean; error?: string }>, done: string) {
+    startTransition(async () => {
+      try {
+        const result = await work();
+        showToast(result.ok ? done : (result.error ?? "Could not save that"));
+      } catch {
+        showToast("Could not save that. Check your connection and try again.");
+      }
+    });
+  }
+
+  if (!open && !lead.assignedTo) return null;
+
+  if (viewer.role === "admin" && open) {
+    return (
+      <div className="mt-3 flex items-center gap-2">
+        <span className="shrink-0 text-[13px] font-medium text-muted">Owner</span>
+        <Picker
+          label="Assign to"
+          value={lead.assignedToUserId ?? ""}
+          disabled={pending}
+          className="h-10 min-w-0 flex-1 text-[14px] sm:max-w-[260px]"
+          options={[{ value: "", label: "No owner" }, ...owners]}
+          onChange={(userId) =>
+            run(
+              () => assignLead(lead.id, userId || null),
+              userId
+                ? `Assigned to ${owners.find((o) => o.value === userId)?.label ?? "them"}`
+                : "Owner removed",
+            )
+          }
+        />
+        {since ? (
+          <span className="hidden shrink-0 text-[12px] text-muted sm:inline">since {since}</span>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (lead.assignedTo) {
+    const needsCall = mine && lead.status === "new";
+    return (
+      <p
+        className={cn(
+          "mt-3 flex flex-wrap items-center gap-x-1.5 text-[13px]",
+          needsCall ? "font-semibold text-rose-800" : "text-muted",
+        )}
+      >
+        <UserRound size={15} className="shrink-0" />
+        {mine ? "Assigned to you" : `Assigned to ${lead.assignedTo}`}
+        {since ? <span className="font-normal opacity-80">· {since}</span> : null}
+        {needsCall ? <span>· needs your call</span> : null}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <span className="text-[13px] text-muted">No owner yet</span>
+      {canTake(viewer, lead) ? (
+        <Button
+          variant="secondary"
+          disabled={pending}
+          onClick={() => run(() => takeLead(lead.id), `${lead.companyName} is yours`)}
+        >
+          <Hand size={16} /> {pending ? "Taking…" : "Take this lead"}
+        </Button>
       ) : null}
     </div>
   );

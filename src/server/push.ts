@@ -34,6 +34,8 @@ export type PushMessage = {
   body: string;
   /** Where a tap on the notification opens. */
   url: string;
+  /** When set, the notification carries a Call button that opens this. */
+  callUrl?: string;
   /** Same tag replaces rather than stacks, e.g. one per lead. */
   tag?: string;
 };

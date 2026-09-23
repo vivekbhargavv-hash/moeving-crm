@@ -5,7 +5,6 @@ import {
   awaitsMe,
   canActOn,
   canAssign,
-  canTake,
   takesOnAction,
   type AssignableLead,
   type Viewer,
@@ -13,8 +12,8 @@ import {
 
 /**
  * Who may assign, take and act on a lead. The rules are Vivek's: only an
- * admin assigns, a deal owner may take an open unassigned lead, and an
- * assigned lead is its assignee's and the admins' alone.
+ * admin assigns, a deal owner takes an open unassigned lead by acting on it,
+ * and an assigned lead is its assignee's and the admins' alone.
  */
 const admin: Viewer = { userId: "a", role: "admin" };
 const rahul: Viewer = { userId: "r", role: "sales" };
@@ -38,25 +37,6 @@ describe("canAssign", () => {
     assert.equal(canAssign(admin, lead({ status: "qualified" })), true);
     assert.equal(canAssign(admin, lead({ status: "not_qualified" })), false);
     assert.equal(canAssign(admin, lead({ status: "converted" })), false);
-  });
-});
-
-describe("canTake", () => {
-  it("lets a deal owner pick up an open lead nobody has", () => {
-    assert.equal(canTake(rahul, lead()), true);
-    assert.equal(canTake(rahul, lead({ status: "qualified" })), true);
-  });
-
-  it("refuses a lead that is already somebody's, even the taker's own", () => {
-    assert.equal(canTake(rahul, lead({ assignedToUserId: "p" })), false);
-    assert.equal(canTake(rahul, lead({ assignedToUserId: "r" })), false);
-  });
-
-  it("refuses closed leads, and people who do not ring leads", () => {
-    assert.equal(canTake(rahul, lead({ status: "not_qualified" })), false);
-    assert.equal(canTake(rahul, lead({ status: "converted" })), false);
-    assert.equal(canTake(desk, lead()), false);
-    assert.equal(canTake(ops, lead()), false);
   });
 });
 

@@ -7,12 +7,12 @@ export const dynamic = "force-dynamic";
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ lead?: string; call?: string }>;
 }) {
   // Ops are turned away here: they put trucks on the road for deals that
   // exist, and an enquiry carries a caller's name, number and email.
   const session = await requireLeads();
-  const [leads, master, { view }] = await Promise.all([
+  const [leads, master, { lead, call }] = await Promise.all([
     listLeads(),
     getMasterData(),
     searchParams,
@@ -37,7 +37,8 @@ export default async function LeadsPage({
         master={master}
         viewer={{ userId: session.userId, role: session.role }}
         canCreate={canCreate}
-        initialView={view}
+        focusLeadId={lead}
+        dial={call === "1"}
       />
     </div>
   );

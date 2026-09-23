@@ -33,7 +33,6 @@ import {
 import {
   canActOn,
   canAssign,
-  canTake,
   isDealOwnerRole,
   takesOnAction,
 } from "@/lib/lead-assignment";
@@ -1646,60 +1645,30 @@ export async function assignLead(
   // Nobody needs a notification for a lead they handed to themselves.
   if (assignee && assignee.id !== session.userId) {
     try {
+      // "New lead: ZYRKON · Hyderabad · 2 × 3W", and who to ring. A Call
+      // button rides along when there is a number (see public/sw.js).
+      const headline = [
+        existing.companyName,
+        existing.callingCity,
+        existing.vehicleRequirement
+          ? `${existing.vehicleRequirement} × ${existing.vehicleType ?? "vehicle"}`
+          : existing.vehicleType,
+      ]
+        .filter(Boolean)
+        .join(" · ");
       await pushToUser(session.organizationId, assignee.id, {
-        title: `New lead: ${existing.companyName}`,
-        body: [
-          existing.callingCity,
-          existing.vehicleRequirement
-            ? `${existing.vehicleRequirement} × ${existing.vehicleType ?? "vehicle"}`
-            : existing.vehicleType,
-          `assigned by ${session.name.split(" ")[0]}`,
-        ]
-          .filter(Boolean)
-          .join(" · "),
-        url: "/leads?view=mine",
+        title: `New lead: ${headline}`,
+        body:
+          [existing.callerName, existing.mobile].filter(Boolean).join(" · ") ||
+          `Assigned by ${session.name.split(" ")[0]}`,
+        url: `/leads?lead=${existing.id}`,
+        callUrl: existing.mobile ? `/leads?lead=${existing.id}&call=1` : undefined,
         tag: `lead-${existing.id}`,
       });
     } catch {
       /* Delivery is best effort; the lead is theirs regardless. */
     }
   }
-
-  revalidatePath("/leads");
-  return { ok: true };
-}
-
-/** A deal owner picking up an open lead nobody has yet. */
-export async function takeLead(id: string): Promise<ActionResult> {
-  const session = await requireDealOwner();
-
-  const existing = await db.query.leads.findFirst({
-    where: and(eq(leads.id, id), eq(leads.organizationId, session.organizationId)),
-  });
-  if (!existing) return { ok: false, error: "Lead not found" };
-  if (!canTake(session, existing)) {
-    return {
-      ok: false,
-      error: existing.assignedToUserId
-        ? "Someone already has this lead."
-        : "Only an open lead can be taken.",
-    };
-  }
-
-  // Conditional on still being unassigned, so two people tapping Take at the
-  // same moment cannot both win.
-  const taken = await db
-    .update(leads)
-    .set({ ...selfAssigned(session.userId, new Date()), updatedAt: new Date() })
-    .where(
-      and(
-        eq(leads.id, id),
-        eq(leads.organizationId, session.organizationId),
-        isNull(leads.assignedToUserId),
-      ),
-    )
-    .returning();
-  if (!taken.length) return { ok: false, error: "Someone already has this lead." };
 
   revalidatePath("/leads");
   return { ok: true };

@@ -3,7 +3,8 @@
  *
  * Vivek's rules (23 Sep 2026):
  *  - Only an admin assigns a lead to somebody.
- *  - A deal owner may take an OPEN lead nobody has yet.
+ *  - A deal owner takes an OPEN lead nobody has yet by acting on it —
+ *    qualifying or rejecting it makes it theirs. There is no separate Take.
  *  - Once a lead is someone's, only they and admins act on it.
  *
  * Free of React, Next and the database, so the rules are tested directly and
@@ -32,15 +33,6 @@ export function isDealOwnerRole(role: Role) {
 /** Assigning is an admin's call, and only while the lead is still open. */
 export function canAssign(viewer: Viewer, lead: AssignableLead) {
   return viewer.role === "admin" && isOpenLead(lead);
-}
-
-/** A deal owner picking up an open lead nobody has claimed. */
-export function canTake(viewer: Viewer, lead: AssignableLead) {
-  return (
-    isDealOwnerRole(viewer.role) &&
-    isOpenLead(lead) &&
-    lead.assignedToUserId === null
-  );
 }
 
 /**

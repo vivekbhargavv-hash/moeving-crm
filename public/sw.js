@@ -57,9 +57,15 @@ self.addEventListener("fetch", (event) => {
 });
 
 /*
- * "A lead has been assigned to you." The server sends { title, body, url,
- * tag }; one tag per lead, so reassigning the same lead replaces its
- * notification rather than stacking a second one.
+ * "New lead: ZYRKON · Hyderabad · 2 × 3W". The server sends { title, body,
+ * url, callUrl?, tag }; one tag per lead, so reassigning the same lead
+ * replaces its notification rather than stacking a second one.
+ *
+ * With a number, the notification carries a Call button (Chrome on Android
+ * and desktop; iOS shows no buttons, so a tap opens the lead instead). A
+ * notification cannot dial by itself — browsers do not open tel: from a
+ * service worker — so Call opens the lead with ?call=1 and the page hands
+ * the number to the dialer, the card's Call button beneath it if refused.
  */
 self.addEventListener("push", (event) => {
   let data = {};
@@ -74,7 +80,8 @@ self.addEventListener("push", (event) => {
       tag: data.tag,
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
-      data: { url: data.url || "/leads" },
+      data: { url: data.url || "/leads", callUrl: data.callUrl },
+      actions: data.callUrl ? [{ action: "call", title: "Call" }] : [],
     }),
   );
 });
@@ -83,7 +90,9 @@ self.addEventListener("push", (event) => {
 // window that is already open rather than starting another.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url || "/leads", self.location.origin).href;
+  const data = event.notification.data || {};
+  const target = event.action === "call" && data.callUrl ? data.callUrl : data.url || "/leads";
+  const url = new URL(target, self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
       for (const win of wins) {

@@ -150,6 +150,10 @@ export function EnableNotifications({ compact = false }: { compact?: boolean }) 
 
   if (state === "loading") return <p className="text-sm text-muted">Checking…</p>;
 
+  if (state === "unsupported" && !PUBLIC_KEY) {
+    return <p className="text-sm text-muted">Notifications are not switched on for this app yet.</p>;
+  }
+
   if (state === "unsupported") {
     return (
       <p className="text-sm text-muted">
@@ -170,22 +174,29 @@ export function EnableNotifications({ compact = false }: { compact?: boolean }) 
     );
   }
 
-  return (
-    <div className="flex items-center gap-3">
-      <p className="min-w-0 flex-1 text-sm">
-        {state === "on"
-          ? "On for this device. You will be notified when a lead is assigned to you."
-          : "Get a notification on this device when a lead is assigned to you."}
-      </p>
-      {state === "on" ? (
+  if (state === "on") {
+    return (
+      <div className="flex items-center gap-3">
+        <p className="flex min-w-0 flex-1 items-start gap-2 text-sm">
+          <Bell size={16} className="mt-0.5 shrink-0 text-brand-ink" />
+          On for this device. You will be notified when a lead is assigned to you.
+        </p>
         <Button variant="secondary" disabled={busy} onClick={turnOff}>
           Turn off
         </Button>
-      ) : (
-        <Button variant="brand" disabled={busy} onClick={turnOn}>
-          {busy ? "Turning on…" : "Turn on"}
-        </Button>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted">
+        Get a notification on this device when a lead is assigned to you, with
+        a Call button that rings the customer.
+      </p>
+      <Button variant="brand" size="lg" className="w-full sm:w-auto" disabled={busy} onClick={turnOn}>
+        <Bell size={17} /> {busy ? "Turning on…" : "Enable notifications"}
+      </Button>
     </div>
   );
 }

@@ -157,10 +157,12 @@ Change these only deliberately — a lot of code assumes them.
 | **The Pipeline's headline money column is `price` — per vehicle, per month.** Deal value steps behind the `2xl` breakpoint. | It is how the business thinks about a deal ("what does a truck earn"), and it is the figure every cost line on the sheet is comparable with. Value is that times the fleet and both halves are on the same row. |
 | **Deployments has a third view, By month**: city in rows, month in columns, vehicles in the cells, tapping a city for the clients behind the number. | By date answers "what is late", By city answers "what does Bangalore owe". Neither answers "how many trucks land where, and when", which is a shape rather than a list. The arithmetic is `lib/deployment-grid.ts`, free of React, so it tests. |
 | **The Deployments grid's detail panel sits UNDER the table**, not inside a row of it. | The Forecast tucks its drill-down into a table cell held to the viewport width by hand. Here the client rows landed beneath the fade that hints at sideways scroll: legible, and looking cut off. Below the table they get the full page width and no hack. |
-| **Leads have an owner** (`assigned_to_user_id`). Only an admin assigns; a deal owner may Take an open lead nobody has; an assigned lead is its assignee's and the admins' alone to qualify, reject or convert. A deal owner acting on an unassigned lead takes it by doing so; an admin acting on one does not. | Vivek's rules, 23 Sep. `lib/lead-assignment.ts` holds them free of React, and both the actions and the cards call it, so the screen cannot offer what the server refuses. |
-| **"Waiting on me" = assigned to me AND status `new`.** It drives a red count on the Leads tab (rail, phone bar, menu), a rose banner on Leads, a rose ring on the card, and those cards sort first. | A qualified lead waiting to be converted is not a phone call somebody owes. The count is one indexed query in `(app)/layout.tsx` — the one exception to "the shell fetches nothing" — so it is fresh on every navigation, not live on an open page. |
-| **An assignment pushes a notification to the assignee's devices**, never email. Web Push with VAPID keys; one `push_subscriptions` row per browser; a 404/410 from the push service deletes the row. Delivery is best effort and never fails the assignment. | Vivek: in-app plus push, no email. Assigning to yourself sends nothing. Tapping the notification opens `/leads?view=mine`. |
-| **Notifications are opt-in by a tap** — a dismissable prompt on Leads (deal owners and admins) and a switch in Settings. | Browsers refuse a permission prompt nobody asked for, and a prompt on page load teaches people to press Block, after which only browser settings can undo it. |
+| **Leads have an owner** (`assigned_to_user_id`). Only an admin assigns; an assigned lead is its assignee's and the admins' alone to qualify, reject or convert. There is NO Take button: a deal owner who qualifies or rejects an unowned lead has taken it; an admin doing so has not. | Vivek's rules, 23 Sep. `lib/lead-assignment.ts` holds them free of React, and both the actions and the cards call it, so the screen cannot offer what the server refuses. |
+| **"Waiting on me" = assigned to me AND status `new`.** It drives a red count on the Leads tab (rail, phone bar, menu) and a rose ring on the card. | A qualified lead waiting to be converted is not a phone call somebody owes. The count is one indexed query in `(app)/layout.tsx` — the one exception to "the shell fetches nothing" — so it is fresh on every navigation, not live on an open page. |
+| **An assignment pushes a notification to the assignee's devices**, never email: title "New lead: ZYRKON · Hyderabad · 2 × 3W", body the caller and number, and a **Call** button when there is a number. Web Push with VAPID keys; one `push_subscriptions` row per browser; a 404/410 deletes the row. Best effort — never fails the assignment. | Vivek: in-app plus push, no email. Assigning to yourself sends nothing. A notification cannot dial by itself (a service worker cannot open `tel:`), so Call opens `/leads?lead=<id>&call=1`: the page scrolls to the card, rings it green, and hands the number to the dialer; where a browser refuses to dial without a tap, the card's Call button is under the thumb. A plain tap opens `/leads?lead=<id>`. iOS shows no notification buttons at all. |
+| **The Leads screen per desk.** Deal owner: **My leads** (default) = "Assigned to you", then "No owner yet" — never a colleague's — and **All**; the funnel sits BELOW the list. Admin: **Open · No owner · All**, funnel on top, an Owner picker on each open card. NOC: **Open · All**. A search looks through every lead whatever the view. | Vivek: "My leads first and unassigned after that". A deal owner opens the screen to ring people; four tiles of conversion rates in front of the list pushed their first lead below the fold on a phone. |
+| **One row of buttons per card, next step first**: new → Call · Qualified · Not qualified; qualified → Convert · Call · Not qualified. Qualified offers **Save & convert**. Not qualified offers one-tap reasons (Budget, Wrong vehicle type, City we don't serve, Already has a vendor, Not reachable, Just enquiring) with typing still open. | Fewest taps from notification to outcome: Call → talk → Qualified → Save & convert. The sheet no longer pre-fills the DESK's note as the deal owner's remark (a quick Save used to record the desk's words as theirs); the desk note is shown above the box instead. "Add a remark" on a qualified card is gone — Qualified/Not qualified reopen the sheet with the remark in it. |
+| **Notifications are opt-in by a tap** — a dismissable prompt on Leads (deal owners and admins) and an **Enable notifications** button in Settings → Notifications. | Browsers refuse a permission prompt nobody asked for, and a prompt on page load teaches people to press Block, after which only browser settings can undo it. |
 | **Suspending someone returns their open leads to the pool.** | While a lead is theirs nobody else may act on it, and a suspended person rings nobody. |
 | **The Deployments grid spans the data's own months with no gaps.** | A fixed window hides a delivery that slipped past its end; dropping empty months prints "Sep, Nov, Jan", which reads as a stride rather than a calendar. The blank October column is itself the answer to "what does October look like". |
 | **A lead card says loudly what a deal owner did with it**: a coloured left edge (amber waiting, green qualified or a deal, red not qualified) and, once somebody has acted, a green or red panel naming who, when, the reason and the remark. An unactioned lead gets the amber edge and NO panel (Vivek: the sentence on every waiting card was noise) — only the desk's note, if any, in plain grey. The calling city sits on its own line under the company, bold with a pin. | The NOC desk cannot see the pipeline, so this is the only way it learns whether anybody rang back. A lead has one `remarks` column: before a deal owner acts it is the desk's note, after it is theirs, so the label follows `actioned_by`, not the status. |
@@ -186,7 +188,7 @@ src/
     leads/funnel.tsx  inbound conversion, by period
     leads/board.tsx   the inbound desk: list, new-lead form, qualify /
                       not-qualify sheets, the convert-to-deal sheet, and the
-                      owner row (admin picker / Take / "Assigned to")
+                      owner row (admin picker / "Assigned to")
     enable-notifications.tsx  the push opt-in: compact on Leads, full in Settings
     pipeline/         board.tsx (kanban) · table.tsx (list + table) · filters.tsx
     forecast/         grid.tsx (city × month) · wins.tsx (owner × month) · tabs.tsx
@@ -213,7 +215,7 @@ src/
                       date, or by city) — no React, so it tests
     lead-funnel.ts    the inbound funnel and its denominators — no React,
                       so the rates are tested
-    lead-assignment.ts  who may assign, take and act on a lead — no React,
+    lead-assignment.ts  who may assign and act on a lead — no React,
                       so the rules are tested
     cost-defaults.ts  which standard rate applies to a deal, and which stored
                       figures have drifted from it — no React, so it tests
@@ -226,7 +228,7 @@ tests/
   deployment-groups.test.ts     the ops queue's two groupings, runs anywhere
   deployment-grid.test.ts       the By month grid's months and cells, anywhere
   lead-funnel.test.ts           the inbound rates and their denominators
-  lead-assignment.test.ts       who may assign, take and act on a lead
+  lead-assignment.test.ts       who may assign and act on a lead
   neon-http-driver.test.ts      no db.transaction() anywhere in src/, ever
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
@@ -261,7 +263,7 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. A hundred and fifteen (eleven of them on lead assignment — who may assign, take and act); the older ones:
+`node --test` with `tsx` — no test framework, no new dependencies. A hundred and twelve (eight of them on lead assignment — who may assign and act); the older ones:
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"

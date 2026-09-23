@@ -1,6 +1,16 @@
 "use client";
 
-import { ArrowRight, Check, Phone, Plus, Search, ThumbsDown } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Clock,
+  Phone,
+  Plus,
+  Search,
+  ThumbsDown,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -21,7 +31,11 @@ import {
 import type { LeadStatus } from "@/db/schema";
 import { OPERATING_DAYS } from "@/lib/constants";
 import { showToast } from "@/lib/toast";
-import { cn, formatDate, monthLabelShort, num, todayInIndia, upcomingMonths } from "@/lib/utils";
+import {
+  cn,
+  formatDate,
+  formatDateTimeInIndia,
+  monthLabelShort, num, todayInIndia, upcomingMonths } from "@/lib/utils";
 import { actionLead, convertLead, createLead } from "@/server/actions";
 import type { LeadRow } from "@/server/queries";
 
@@ -37,8 +51,8 @@ export const LEAD_STATUS: Record<
   },
   not_qualified: {
     label: "Not qualified",
-    short: "No",
-    chip: "bg-slate-100 text-slate-600",
+    short: "Not qualified",
+    chip: "bg-rose-100 text-rose-800",
   },
   converted: { label: "Became a deal", short: "Deal", chip: "bg-brand-soft text-brand-ink" },
 };
@@ -232,7 +246,12 @@ function LeadCard({
   const status = LEAD_STATUS[lead.status];
 
   return (
-    <div className="rounded-[14px] border border-line bg-white p-4">
+    <div
+      className={cn(
+        "rounded-[14px] border border-l-4 border-line bg-white p-4",
+        OUTCOME_EDGE[lead.status],
+      )}
+    >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -286,19 +305,7 @@ function LeadCard({
         </div>
       ) : null}
 
-      {lead.remarks ? (
-        <p className="mt-2.5 rounded-xl bg-canvas px-3 py-2 text-[13px]">
-          <span className="text-muted">
-            {lead.actionedBy ? `${lead.actionedBy.split(" ")[0]}: ` : ""}
-          </span>
-          {lead.remarks}
-        </p>
-      ) : null}
-      {lead.notQualifiedReason ? (
-        <p className="mt-2 text-[13px] text-muted">
-          Not a deal — {lead.notQualifiedReason}
-        </p>
-      ) : null}
+      <LeadOutcome lead={lead} />
 
       {canAction && lead.status !== "converted" ? (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -329,6 +336,88 @@ function LeadCard({
         >
           Open the deal <ArrowRight size={15} />
         </Link>
+      ) : null}
+    </div>
+  );
+}
+
+/** The card's left edge: the outcome, readable from across the list. */
+const OUTCOME_EDGE: Record<LeadStatus, string> = {
+  new: "border-l-amber-400",
+  qualified: "border-l-emerald-500",
+  not_qualified: "border-l-rose-500",
+  converted: "border-l-emerald-600",
+};
+
+/**
+ * What a deal owner did with the lead, said loudly.
+ *
+ * The desk that wrote the lead down cannot see the pipeline, so this panel is
+ * the only way it learns whether anybody rang back: who, when, which way it
+ * went, and what they said. Green for qualified or a deal, red for no, amber
+ * while nobody has called.
+ *
+ * A lead keeps one `remarks` column. Before a deal owner acts it holds what
+ * the desk wrote; afterwards it holds the deal owner's remark — so the label
+ * follows `actionedBy`, not the status.
+ */
+function LeadOutcome({ lead }: { lead: LeadRow }) {
+  const who = lead.actionedBy;
+  const when = lead.actionedAt ? formatDateTimeInIndia(lead.actionedAt) : null;
+
+  if (lead.status === "new" && !who) {
+    return (
+      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
+        <p className="flex items-center gap-1.5 font-semibold">
+          <Clock size={15} /> No deal owner has reached out yet
+        </p>
+        {lead.remarks ? (
+          <p className="mt-1 text-amber-900/80">
+            <span className="font-medium">Desk note:</span> {lead.remarks}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  const negative = lead.status === "not_qualified";
+  const heading =
+    lead.status === "converted"
+      ? who
+        ? `Qualified by ${who} · now a deal`
+        : "Converted to a deal"
+      : negative
+        ? `Not qualified by ${who ?? "a deal owner"}`
+        : `Qualified by ${who ?? "a deal owner"}`;
+
+  return (
+    <div
+      className={cn(
+        "mt-3 rounded-xl border px-3 py-2.5 text-[13px]",
+        negative
+          ? "border-rose-200 bg-rose-50 text-rose-900"
+          : "border-emerald-200 bg-emerald-50 text-emerald-900",
+      )}
+    >
+      <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        {negative ? (
+          <XCircle size={16} className="shrink-0" />
+        ) : (
+          <CheckCircle2 size={16} className="shrink-0" />
+        )}
+        <span className="font-semibold">{heading}</span>
+        {when ? <span className="tabular opacity-70">· {when}</span> : null}
+      </p>
+      {negative && lead.notQualifiedReason ? (
+        <p className="mt-1">
+          <span className="font-medium">Reason:</span> {lead.notQualifiedReason}
+        </p>
+      ) : null}
+      {lead.remarks ? (
+        <p className="mt-1">
+          <span className="font-medium">{who ? "Remarks:" : "Desk note:"}</span>{" "}
+          {lead.remarks}
+        </p>
       ) : null}
     </div>
   );
@@ -476,6 +565,10 @@ function ConvertSheet({
             name, number and remarks go into the deal&apos;s notes.
           </p>
         </div>
+
+        <Field label="Deal name">
+          <Input name="name" required defaultValue={lead.companyName} />
+        </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="City" hint={lead.callingCity ?? undefined}>

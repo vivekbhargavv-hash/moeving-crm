@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 22 September 2026 (eighth session)
+**Last updated:** 23 September 2026 (ninth session)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -150,6 +150,8 @@ Change these only deliberately — a lot of code assumes them.
 | **Deployments has a third view, By month**: city in rows, month in columns, vehicles in the cells, tapping a city for the clients behind the number. | By date answers "what is late", By city answers "what does Bangalore owe". Neither answers "how many trucks land where, and when", which is a shape rather than a list. The arithmetic is `lib/deployment-grid.ts`, free of React, so it tests. |
 | **The Deployments grid's detail panel sits UNDER the table**, not inside a row of it. | The Forecast tucks its drill-down into a table cell held to the viewport width by hand. Here the client rows landed beneath the fade that hints at sideways scroll: legible, and looking cut off. Below the table they get the full page width and no hack. |
 | **The Deployments grid spans the data's own months with no gaps.** | A fixed window hides a delivery that slipped past its end; dropping empty months prints "Sep, Nov, Jan", which reads as a stride rather than a calendar. The blank October column is itself the answer to "what does October look like". |
+| **A lead card says loudly what a deal owner did with it**: a coloured left edge (amber waiting, green qualified or a deal, red not qualified) and a panel naming who acted, when, the reason and the remark. | The NOC desk cannot see the pipeline, so this is the only way it learns whether anybody rang back. A lead has one `remarks` column: before a deal owner acts it is the desk's note, after it is theirs, so the label follows `actioned_by`, not the status. |
+| **The desktop rail ends with a Pricing Tool link** (https://moeving-pricing.vercel.app/, new tab) for admin and deal owners, not ops or NOC. | Deal owners quote from that calculator; it is a separate app, so it is a link, not a screen. |
 
 ---
 
@@ -456,6 +458,22 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   build if a transaction reappears; the Neon MCP connector plus a throwaway
   branch (`create_branch`) is how to check real behaviour against the real
   schema without touching live data.
+- **New deal refused with "Invalid input: expected string, received null".**
+  `formToObject()` posts a blank box as null, and a schema that says
+  `.optional()` without `.nullable()` refuses it with Zod's raw message. Any
+  optional text field fed through `formToObject()` must be
+  `.nullable().optional()`. **Deal name is now REQUIRED** (Vivek, 23 Sep): it
+  sits under Customer on New deal, is asked on Convert to deal (pre-filled with
+  the company) and on Edit, and the server refuses a blank with "Deal name is
+  required". There is no fallback to the customer name any more.
+  **The root cause was React 19's form reset.** A `<form action={fn}>` clears
+  every uncontrolled field as soon as the action returns, and ours return at
+  once (they start their own transition). So any refused save came back with
+  Customer, Deal name and Notes wiped; the person retyped the customer, missed
+  the name, and the retry failed on the blank. `Sheet` now submits through
+  `onSubmit` + `preventDefault()`, which keeps what was typed and still lets
+  the browser's `required` checks run first. Reproduced in the browser, fixed,
+  and re-checked.
 - **The Vercel deployments API reports `BUILDING` after a build is finished.**
   A deployment whose `ready` timestamp is already set keeps coming back as
   `BUILDING` on repeated `get_deployment` calls for minutes. Check

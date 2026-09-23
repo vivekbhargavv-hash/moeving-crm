@@ -591,8 +591,23 @@ function Body({
   children: React.ReactNode;
 }) {
   if (!action) return <div className="flex min-h-0 flex-1 flex-col">{children}</div>;
+  /*
+   * onSubmit, not <form action>. React 19 resets every uncontrolled field
+   * once a form action returns — and ours return at once, having started a
+   * transition of their own. So a save the server refused came back with the
+   * customer, deal name and notes wiped: the person retyped the customer,
+   * missed the name, and the next attempt failed on the blank. onSubmit still
+   * runs only after the browser's `required` checks pass, and the button is
+   * still a real submit button inside the form (see the iOS note above).
+   */
   return (
-    <form action={action} className="flex min-h-0 flex-1 flex-col">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        action(new FormData(e.currentTarget));
+      }}
+      className="flex min-h-0 flex-1 flex-col"
+    >
       {children}
     </form>
   );

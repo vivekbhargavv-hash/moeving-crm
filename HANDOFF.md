@@ -11,17 +11,25 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-**Migrations 0000–0011 are applied to production. `0012_lead_assignment` is
-applied at the same time as the lead-assignment release — check
-`select 1 from information_schema.columns where table_name='leads' and
-column_name='assigned_to_user_id'` before assuming.** Migrations are applied by
+**Migrations 0000–0012 are all applied to production** (0012, lead
+assignment, on 23 Sep before its code deployed). Migrations are applied by
 hand through the Neon MCP connector BEFORE their code deploys, because the app
-queries those tables on page load (0012 is read by the shell on EVERY page, for
-the Leads badge — deploying without it takes the whole app down).
+queries those tables on page load — 0012 is read by the shell on EVERY page,
+for the Leads badge.
 
-**Push notifications need three Vercel env vars** (§ 7):
-`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Without
-them push is simply off — assignment and the badge still work.
+### Blocking push notifications (added 23 Sep)
+
+0. **Add the three Web Push keys in Vercel, then Redeploy.** The Vercel MCP
+   connector cannot write env vars (403), so this is a dashboard job: Vercel
+   → good-deal-crm → Settings → Environment Variables, all three environments:
+   `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (mark Sensitive),
+   `VAPID_SUBJECT` = `mailto:vivekbhargav.v@gmail.com`. The values were handed
+   to Vivek in the session, not committed. Then Deployments → latest →
+   Redeploy — `NEXT_PUBLIC_` values are baked in at build time, so adding them
+   without a rebuild changes nothing. Until then assignment, the badge and the
+   Call button all work; Settings says notifications are not switched on yet.
+   **Never regenerate these keys once people have turned notifications on**
+   (see § 7).
 
 ### Blocking somebody today
 

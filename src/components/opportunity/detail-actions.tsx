@@ -23,6 +23,7 @@ import { CHARGING_SCOPES, DRIVER_TYPES, OPERATING_DAYS } from "@/lib/constants";
 import { showToast } from "@/lib/toast";
 import { monthLabelShort, upcomingMonths } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { startNavigation, whileBusy } from "@/lib/busy";
 import { deleteOpportunity, updateOpportunity } from "@/server/actions";
 
 
@@ -119,10 +120,13 @@ export function DetailActions({
     setError(null);
     startTransition(async () => {
       try {
-        const result = await deleteOpportunity(opp.id);
+        const result = await whileBusy(deleteOpportunity(opp.id));
         if (!result.ok) return setError(result.error);
         setConfirmDelete(false);
-        router.refresh();
+        // No router.refresh() first: the action already revalidated
+        // /pipeline, so this push fetches it fresh. A refresh on top re-rendered
+        // the deleted deal's page for nothing and doubled the wait.
+        startNavigation();
         router.push("/pipeline");
       } catch {
         setError("Could not delete that. Check your connection and try again.");

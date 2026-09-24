@@ -31,6 +31,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { LeadStatus } from "@/db/schema";
+import { startNavigation } from "@/lib/busy";
 import { OPERATING_DAYS } from "@/lib/constants";
 import { showToast } from "@/lib/toast";
 import {
@@ -925,6 +926,7 @@ function ConvertSheet({
       if (!result.ok) return setError(result.error);
       showToast(`${lead.companyName} is a deal now`);
       onClose();
+      startNavigation();
       router.push(`/opportunities/${result.data!.id}`);
     });
   }

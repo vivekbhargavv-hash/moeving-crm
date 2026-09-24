@@ -3,6 +3,7 @@ import "server-only";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { and, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { cache } from "react";
 
 import { db } from "@/db";
@@ -40,7 +41,8 @@ export const requireSession = cache(async (): Promise<Session> => {
     where: and(eq(users.clerkUserId, clerkUserId), eq(users.isActive, true)),
   });
   if (byClerkId) {
-    await recordSeen(byClerkId.id, byClerkId.lastSeenAt);
+    // After the response, so the page never waits on a write it does not need.
+    after(() => recordSeen(byClerkId.id, byClerkId.lastSeenAt));
     return toSession(byClerkId);
   }
 

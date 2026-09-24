@@ -10,6 +10,7 @@ import {
   Menu,
   PhoneCall,
   Plus,
+  RefreshCw,
   Settings,
   Shield,
   Truck,
@@ -19,12 +20,14 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 
+import { NavProgress } from "@/components/nav-progress";
 import { QuickAdd } from "@/components/quick-add";
 import type { QuickAddData } from "@/components/quick-add";
 import { Sheet } from "@/components/ui";
 import { loadQuickAddData } from "@/server/actions";
 import type { Session } from "@/server/auth";
 import { recordPage } from "@/lib/nav-history";
+import { useKeepWarm } from "@/lib/use-keep-warm";
 import { onToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
@@ -108,6 +111,13 @@ export function AppShell({
     [],
   );
   const [master, setMaster] = React.useState<QuickAddData | null>(null);
+  const [refreshing, startRefresh] = React.useTransition();
+
+  // Wakes the database before the next tap needs it (see the hook).
+  useKeepWarm();
+
+  /** Re-reads this screen from the server, for when somebody else has moved a deal. */
+  const refresh = () => startRefresh(() => router.refresh());
 
   /**
    * The Add deal sheet's data is fetched the first time it is opened, not
@@ -191,16 +201,28 @@ export function AppShell({
     <div className="min-h-dvh md:flex">
       {/* Desktop rail */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-line bg-white px-3 py-5 md:flex">
-        <div className="px-3 pb-6">
-          <Image
-            src="/logo-wordmark.png"
-            alt="Good Deal"
-            width={524}
-            height={192}
-            priority
-            className="h-8 w-auto"
-          />
-          <p className="mt-1.5 text-xs text-muted">MoEVing sales</p>
+        <div className="flex items-start justify-between gap-2 pb-6 pl-3">
+          <div>
+            <Image
+              src="/logo-wordmark.png"
+              alt="Good Deal"
+              width={524}
+              height={192}
+              priority
+              className="h-8 w-auto"
+            />
+            <p className="mt-1.5 text-xs text-muted">MoEVing sales</p>
+          </div>
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            aria-label="Refresh"
+            title="Refresh"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-canvas hover:text-ink disabled:opacity-60"
+          >
+            <RefreshCw size={16} className={cn(refreshing && "animate-spin")} />
+          </button>
         </div>
         <nav className="flex flex-col gap-1">
           {nav.map((item) => {
@@ -331,6 +353,8 @@ export function AppShell({
           )}
         </div>
       </nav>
+
+      <NavProgress busy={refreshing} />
 
       {/* The live region is always there and only its text changes: a
           region inserted already holding its message is often not read out.

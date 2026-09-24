@@ -7,6 +7,7 @@ import * as React from "react";
 
 import { Badge, Button, Picker, Segmented, Sheet } from "@/components/ui";
 import type { PickerOption } from "@/components/ui";
+import { startNavigation } from "@/lib/busy";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
 import { cn, formatDate, inrCompact, monthLabel, monthLabelLong, num } from "@/lib/utils";
@@ -406,6 +407,7 @@ function FilterBar({
     else url.searchParams.delete(key);
     // A router navigation, not a full page load: the shell and the tab bar
     // stay put instead of the whole app being thrown away and rebuilt.
+    startNavigation(url.pathname + url.search);
     startTransition(() => router.push(url.pathname + url.search, { scroll: false }));
   }
 

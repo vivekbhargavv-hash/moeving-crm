@@ -27,6 +27,7 @@ import {
 } from "@/components/pipeline/filters";
 import { Avatar, Badge, EmptyState } from "@/components/ui";
 import type { SalesStage } from "@/db/schema";
+import { startNavigation } from "@/lib/busy";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
 import { showToast } from "@/lib/toast";
 import { useIsDesktop } from "@/lib/use-desktop";
@@ -195,9 +196,11 @@ export function PipelineBoard({
     const wantAll = scope ? scope === "all" : !showingMine;
     if (wantAll && !next.ownerIds.length) p.set("scope", "all");
     const qs = p.toString();
+    const href = qs ? `/pipeline?${qs}` : "/pipeline";
+    startNavigation(href);
     startTransition(() => {
       setOptimisticMine(!wantAll && !next.ownerIds.length);
-      router.push(qs ? `/pipeline?${qs}` : "/pipeline", { scroll: false });
+      router.push(href, { scroll: false });
     });
   }
 

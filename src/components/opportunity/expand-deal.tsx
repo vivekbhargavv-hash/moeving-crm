@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import * as React from "react";
 
 import { Button, Field, Input, PickedDate, Sheet } from "@/components/ui";
+import { startNavigation } from "@/lib/busy";
 import { showToast } from "@/lib/toast";
 import { cn, inr, todayInIndia } from "@/lib/utils";
 import { createExpansion } from "@/server/actions";
@@ -68,6 +69,7 @@ export function ExpandDeal({
         if (!result.ok) return setError(result.error);
         showToast("Expansion created");
         setOpen(false);
+        startNavigation();
         router.push(`/opportunities/${result.data!.id}`);
       } catch {
         setError("Could not save that. Check your connection and try again.");

@@ -1,6 +1,6 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 23 September 2026 (ninth session, lead assignment)
+**Last updated:** 24 September 2026 (tenth session, speed and loading feedback)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -72,7 +72,12 @@ for the Leads badge.
    after ~5 minutes idle, so the first screen after a pause waits for the
    database to wake. The API refuses the change — *"modifying the suspend
    interval is not permitted on this account"* — so it needs a Neon plan
-   upgrade, after which it is a one-line change.
+   upgrade, after which it is a one-line change. **Worked around on 24 Sep:**
+   while somebody is actively using the app, the shell pings `/api/warm`
+   every 4 minutes, and again the moment they come back to the tab, so the
+   database is usually awake before the next tap (see § 2). Compute use was
+   ~5 CU-hours of the free plan's allowance for Sep 1–24; watch it in the Neon
+   console for the first week, and delete `use-keep-warm.ts` if it climbs.
 7. **The production database holds live data.** Deals, 26 imported leads, and
    the master data. `drizzle/demo-data.sql` is still in the repo: running it now
    would put fake deals into live data.
@@ -170,6 +175,12 @@ Change these only deliberately — a lot of code assumes them.
 | **The Deployments grid spans the data's own months with no gaps.** | A fixed window hides a delivery that slipped past its end; dropping empty months prints "Sep, Nov, Jan", which reads as a stride rather than a calendar. The blank October column is itself the answer to "what does October look like". |
 | **A lead card says loudly what a deal owner did with it**: a coloured left edge (amber waiting, green qualified or a deal, red not qualified) and, once somebody has acted, a green or red panel naming who, when, the reason and the remark. An unactioned lead gets the amber edge and NO panel (Vivek: the sentence on every waiting card was noise) — only the desk's note, if any, in plain grey. The calling city sits on its own line under the company, bold with a pin. | The NOC desk cannot see the pipeline, so this is the only way it learns whether anybody rang back. A lead has one `remarks` column: before a deal owner acts it is the desk's note, after it is theirs, so the label follows `actioned_by`, not the status. |
 | **The desktop rail ends with a Pricing Tool link** (https://moeving-pricing.vercel.app/, new tab) for admin and deal owners, not ops or NOC. | Deal owners quote from that calculator; it is a separate app, so it is a link, not a screen. |
+| **A slow wait shows a loading indicator** (`components/nav-progress.tsx`): a thin green bar across the top, plus a spinner (top-right on desktop, a "Loading…" pill above the tab bar on a phone). It appears only after 300 ms, so a quick tap never flickers. | Vivek, 24 Sep: "if it is taking longer to load, show a loading icon". Link taps are noticed by one capture-phase listener; a `router.push()` from code calls `startNavigation(href)` and a slow action wraps itself in `whileBusy()` (`lib/busy.ts`). Those signals are sent on the next tick ON PURPOSE: they are usually called inside `startTransition`, and a state update made there is held until the whole transition ends — the spinner appeared only once there was nothing left to wait for. |
+| **The desktop rail has a Refresh button** beside the logo: `router.refresh()`, spinning while it runs. | Screens are reused for 30 s (`staleTimes`), so a deal somebody else moved is not on your screen until you navigate; Refresh fetches it now. |
+| **The database is kept awake while the app is in use** (`lib/use-keep-warm.ts` → `/api/warm`). Only when the tab is visible AND somebody touched it in the last 10 minutes; a ping on return to the tab. The route checks the Clerk token before touching the database. | The free Neon plan suspends after ~5 min and the timeout cannot be changed (§ 0), so the first screen after a pause paid a cold start. A tab left open overnight must not spend the compute allowance, hence the activity gate. |
+| **`last_seen_at` is written with `after()`**, once the page has been sent. | It is the least important thing a request does; the page should not wait on it. |
+| **Deleting a deal goes straight to the Pipeline** — no `router.refresh()` first. | The refresh re-rendered the deleted deal's page before navigating, a whole extra server round trip. The action already revalidates `/pipeline`. |
+| **A Pipeline table row prefetches its deal on hover.** | A row is a `<tr onClick>`, not a Link, so Next never prefetched it and the click waited for the server before even showing the skeleton. |
 
 ---
 
@@ -183,6 +194,7 @@ src/
                       admin/users · admin/master-data · admin/cost-defaults
                       every route has a loading.tsx beside its page.tsx
     api/export/deals  CSV export (org-scoped, UTF-8 BOM for Excel)
+    api/warm          wakes Neon while someone is using the app (signed-in only)
     sign-in, sign-up, no-access, offline
   components/
     app-shell.tsx     mobile header + tab bar + desktop rail + toast
@@ -193,6 +205,7 @@ src/
                       not-qualify sheets, the convert-to-deal sheet, and the
                       owner row (admin picker / "Assigned to")
     enable-notifications.tsx  the push opt-in: compact on Leads, full in Settings
+    nav-progress.tsx  the top bar + spinner shown when a wait passes 300 ms
     pipeline/         board.tsx (kanban) · table.tsx (list + table) · filters.tsx
     forecast/         grid.tsx (city × month) · wins.tsx (owner × month) · tabs.tsx
     opportunity/      detail-actions.tsx · note-box.tsx · expand-deal.tsx ·

@@ -13,6 +13,7 @@ import {
   DRIVER_TYPE_LABEL,
   STAGE_MAP,
 } from "@/lib/constants";
+import { startNavigation } from "@/lib/busy";
 import { cn, formatDate, inr, num } from "@/lib/utils";
 import type { OpportunityCard } from "@/server/queries";
 
@@ -419,7 +420,13 @@ export function PipelineList({
               return (
                 <tr
                   key={o.id}
-                  onClick={() => router.push(`/opportunities/${o.id}`)}
+                  onClick={() => {
+                    startNavigation();
+                    router.push(`/opportunities/${o.id}`);
+                  }}
+                  // A row is not a Link, so Next never prefetched it; hovering
+                  // fetches the page's loading shell before the click lands.
+                  onMouseEnter={() => router.prefetch(`/opportunities/${o.id}`)}
                   className="cursor-pointer border-b border-line last:border-0 hover:bg-canvas/70"
                 >
                   <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-2.5 font-medium">

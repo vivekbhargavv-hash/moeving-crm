@@ -16,6 +16,7 @@ import {
 } from "@/components/ui";
 import { CHARGING_ICONS, DRIVER_ICONS } from "@/components/choice-icons";
 import { Shimmer } from "@/components/skeletons";
+import { startNavigation } from "@/lib/busy";
 import { CHARGING_SCOPES, DRIVER_TYPES, OPERATING_DAYS } from "@/lib/constants";
 import { showToast } from "@/lib/toast";
 import {
@@ -147,9 +148,9 @@ export function QuickAdd({
         onClose();
         // One deal opens directly; several go back to the pipeline, where
         // seeing the new cards is the point.
-        router.push(
-          count > 1 ? `/pipeline?created=${count}` : `/opportunities/${id}`,
-        );
+        const href = count > 1 ? `/pipeline?created=${count}` : `/opportunities/${id}`;
+        startNavigation(href);
+        router.push(href);
       } catch {
         setError("Could not save that. Check your connection and try again.");
       }

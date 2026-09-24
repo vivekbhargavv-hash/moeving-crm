@@ -5,6 +5,7 @@ import * as React from "react";
 
 import { Picker, Segmented } from "@/components/ui";
 import type { PickerOption } from "@/components/ui";
+import { startNavigation } from "@/lib/busy";
 import { DASHBOARD_PERIODS, type DashboardPeriod } from "@/lib/dashboard";
 import type { OpportunityFilters } from "@/server/queries";
 
@@ -34,6 +35,7 @@ export function DashboardFilters({
     else url.searchParams.delete(key);
     // A router navigation, not a full page load: the shell and the tab bar
     // stay put instead of the whole app being thrown away and rebuilt.
+    startNavigation(url.pathname + url.search);
     startTransition(() => router.push(url.pathname + url.search, { scroll: false }));
   }
 

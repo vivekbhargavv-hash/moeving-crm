@@ -2,6 +2,7 @@ import { ChevronRight, Database, Users } from "lucide-react";
 import Link from "next/link";
 
 import { EnableNotifications } from "@/components/enable-notifications";
+import { Faq } from "@/components/faq";
 import { InstallApp } from "@/components/install-app";
 import { Card, CardHeader } from "@/components/ui-server";
 import { requireSession } from "@/server/auth";
@@ -44,6 +45,13 @@ export default async function SettingsPage() {
           </div>
         </Card>
       ) : null}
+
+      <Card className="mt-3">
+        <CardHeader title="How the CRM works" />
+        <div className="px-4 pb-1">
+          <Faq role={session.role} />
+        </div>
+      </Card>
 
       {session.role === "admin" ? (
         <Card className="mt-3">

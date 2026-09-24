@@ -21,10 +21,14 @@ export default async function DeploymentsPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-4 hidden md:block">
-        <h1 className="text-2xl font-semibold tracking-tight">Deployments</h1>
-        <p className="text-sm text-muted">
-          Vehicles owed to customers on won deals, soonest first.
+      <div className="mb-4">
+        <h1 className="hidden text-2xl font-semibold tracking-tight md:block">
+          Deployments
+        </h1>
+        {/* On every width: ops needs to know why a deal not yet won is here. */}
+        <p className="text-[13px] text-muted md:text-sm">
+          All deals in Contracting or Closed Won with an expected deployment
+          date show here, for ops to plan deployments.
         </p>
       </div>
       <DeploymentsBoard

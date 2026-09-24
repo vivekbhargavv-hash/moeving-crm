@@ -26,6 +26,7 @@ import {
   monthLabelShort,
   upcomingMonths,
 } from "@/lib/utils";
+import type { DealPrefill } from "@/lib/new-deal";
 import { createOpportunity } from "@/server/actions";
 import type { Session } from "@/server/auth";
 
@@ -49,8 +50,9 @@ export type QuickAddData = MasterData & {
  * The sheet opens empty. It used to remember the last city, vehicle type,
  * driver type and charging scope this person used, and to pre-tick a fleet of
  * 5 and the current month — which meant a deal saved with whatever was already
- * highlighted if nobody looked. Every field is now a deliberate choice, and the
- * only pre-filled sheet is an expansion, which copies the deal it grew from.
+ * highlighted if nobody looked. Every field is now a deliberate choice. The
+ * sheet is filled in only when somebody asks for it to be: Duplicate on a
+ * deal's page opens it holding that deal's details (`prefill`).
  */
 
 export function QuickAdd({
@@ -58,11 +60,14 @@ export function QuickAdd({
   onClose,
   master,
   session,
+  prefill,
 }: {
   open: boolean;
   onClose: () => void;
   master: QuickAddData | null;
   session: Session;
+  /** Duplicate: the deal to start from. Stage, name and costs are not copied. */
+  prefill?: DealPrefill | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
@@ -91,21 +96,27 @@ export function QuickAdd({
 
   React.useEffect(() => {
     if (!open) return;
+    const p = prefill ?? null;
     setError(null);
-    setCityIds([]);
-    setVehicleTypeId("");
-    setDriverType(null);
-    setChargingScope(null);
-    setFleet("");
-    setPrice("");
-    setDays(null);
-    setMonth("");
-    setShowMore(false);
+    setCityIds(p?.cityId ? [p.cityId] : []);
+    setVehicleTypeId(p?.vehicleTypeId ?? "");
+    setDriverType(p?.driverType ?? null);
+    setChargingScope(p?.chargingScope ?? null);
+    setFleet(p ? String(p.fleetSize) : "");
+    setPrice(p?.price != null ? String(p.price) : "");
+    setDays(p?.operatingDays ?? null);
+    // A closing month already in the past is not carried: it would put the
+    // copy on a forecast month that has gone.
+    setMonth(p?.expectedCloseMonth && months.includes(p.expectedCloseMonth) ? p.expectedCloseMonth : "");
+    // Notes and the owner sit behind "more"; open it when they carry something.
+    setShowMore(Boolean(p?.notes));
     setTyped(false);
-    setCustomer("");
+    setCustomer(p?.accountName ?? "");
+    // The name is suggested afresh — "Customer - City" — rather than copied:
+    // two deals with one name are exactly what the name is there to prevent.
     setDealName("");
     setNameTyped(false);
-  }, [open]);
+  }, [open, prefill, months]);
 
   // Several cities make several deals, and the server adds each one's city to
   // this name — so the suggestion is then the customer alone.
@@ -184,7 +195,7 @@ export function QuickAdd({
     <Sheet
       open={open}
       onClose={onClose}
-      title="New deal"
+      title={prefill ? "Duplicate deal" : "New deal"}
       action={submit}
       confirmDiscard={dirty && !pending}
       footer={
@@ -443,7 +454,7 @@ export function QuickAdd({
                 <PickerField
                   label="Deal owner"
                   name="ownerUserId"
-                  defaultValue={session.userId}
+                  defaultValue={prefill?.ownerUserId ?? session.userId}
                   options={master.users.map((u) => ({
                     value: u.id,
                     label: u.name,
@@ -452,7 +463,11 @@ export function QuickAdd({
               </Field>
             ) : null}
             <Field label="Notes">
-              <Textarea name="notes" placeholder="What did they ask for?" />
+              <Textarea
+                name="notes"
+                defaultValue={prefill?.notes ?? ""}
+                placeholder="What did they ask for?"
+              />
             </Field>
           </div>
         ) : (

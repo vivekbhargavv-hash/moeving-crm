@@ -28,6 +28,7 @@ import { loadQuickAddData } from "@/server/actions";
 import type { Session } from "@/server/auth";
 import { recordPage } from "@/lib/nav-history";
 import { useKeepWarm } from "@/lib/use-keep-warm";
+import { onOpenNewDeal, type DealPrefill } from "@/lib/new-deal";
 import { onToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
@@ -154,6 +155,17 @@ export function AppShell({
   }, [params, pathname, router, say]);
 
   React.useEffect(() => onToast(say), [say]);
+
+  // Duplicate on a deal's page: the same sheet, filled in with that deal.
+  const [prefill, setPrefill] = React.useState<DealPrefill | null>(null);
+  React.useEffect(
+    () =>
+      onOpenNewDeal((p) => {
+        setPrefill(p ?? null);
+        setAddOpen(true);
+      }),
+    [],
+  );
 
   // Remembered for the back link on a deal's page.
   const query = params.toString();
@@ -429,7 +441,12 @@ export function AppShell({
       {isOps || isNoc ? null : (
         <QuickAdd
           open={addOpen}
-          onClose={() => setAddOpen(false)}
+          onClose={() => {
+            setAddOpen(false);
+            // The next + opens an empty sheet, not the last duplicate.
+            setPrefill(null);
+          }}
+          prefill={prefill}
           master={master}
           session={session}
         />

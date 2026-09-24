@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Repeat, Trash2 } from "lucide-react";
+import { Copy, Pencil, Repeat, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
@@ -24,6 +24,7 @@ import { showToast } from "@/lib/toast";
 import { monthLabelShort, upcomingMonths } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { startNavigation, whileBusy } from "@/lib/busy";
+import { openNewDeal } from "@/lib/new-deal";
 import { deleteOpportunity, updateOpportunity } from "@/server/actions";
 
 
@@ -166,6 +167,31 @@ export function DetailActions({
           <Pencil size={17} /> Edit
         </Button>
       </div>
+
+      {/* The same customer, vehicle and terms for another city or another
+          phase — a NEW deal at First Contact, named afresh, with no cost
+          sheet. Repeat business on a won deal is "Deploy more vehicles"
+          instead, which links to the win. */}
+      <button
+        onClick={() =>
+          openNewDeal({
+            accountName: opp.accountName,
+            cityId: opp.cityId,
+            vehicleTypeId: opp.vehicleTypeId,
+            driverType: opp.driverType,
+            chargingScope: opp.chargingScope,
+            fleetSize: opp.fleetSize,
+            price: opp.price,
+            operatingDays: opp.operatingDays,
+            expectedCloseMonth: opp.expectedCloseDate?.slice(0, 7) ?? null,
+            notes: opp.notes,
+            ownerUserId: opp.ownerUserId,
+          })
+        }
+        className="mt-3 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-line bg-white text-[14px] font-medium text-ink hover:bg-canvas"
+      >
+        <Copy size={15} /> Duplicate this deal
+      </button>
 
       {/* Delete sits apart from Move stage and Edit, and reads as plain text
           rather than a button: it is rare, and it is not undoable. */}

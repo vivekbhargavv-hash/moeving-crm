@@ -2,7 +2,7 @@ import { ForecastGrid } from "@/components/forecast/grid";
 import { ForecastTabs } from "@/components/forecast/tabs";
 import { WinsGrid } from "@/components/forecast/wins";
 import type { SalesStage } from "@/db/schema";
-import { pastMonths, upcomingMonths } from "@/lib/utils";
+import { cn, pastMonths, upcomingMonths } from "@/lib/utils";
 import { requireSales } from "@/server/auth";
 import {
   getForecast,
@@ -55,9 +55,21 @@ export default async function ForecastPage({
 
   return (
     <>
-      <h1 className="mb-3 hidden text-2xl font-semibold tracking-tight md:block">
-        {tab === "wins" ? "Wins" : "Closure forecast"}
+      <h1
+        className={cn(
+          "hidden text-2xl font-semibold tracking-tight md:block",
+          tab === "wins" ? "mb-3" : "mb-1",
+        )}
+      >
+        {tab === "wins" ? "Wins" : "Sales Closure Forecast"}
       </h1>
+      {/* What the grid is, in one line, on every width: the month is when the
+          deal owner expects to CLOSE, not when trucks go out. */}
+      {tab === "wins" ? null : (
+        <p className="mb-3 text-[13px] text-muted md:text-sm">
+          This is the expected sales closure month for all open deals.
+        </p>
+      )}
 
       <ForecastTabs active={tab} />
 

@@ -23,15 +23,13 @@ for the Leads badge.
 
 ### Agreement storage (8 Oct)
 
-00. **Uploading agreements needs a private Vercel Blob store connected to the
-   `good-deal-crm` project.** The Vercel connector was refused (403) creating
-   one on 8 Oct, so it is a dashboard step. Vercel → Storage → Create → Blob, access
-   **Private**, connect it to the project for Production, Preview and
-   Development. That adds `BLOB_READ_WRITE_TOKEN` to the environment; redeploy
-   after. Until then the Customers page works and the Upload button says
-   "File storage is not set up yet". Never make the store public: the files
-   carry prices, and the app's own route (`/api/agreements/<id>`) is what keeps
-   ops and NOC out.
+00. **Agreement files live in a private Vercel Blob store in Mumbai
+   (`bom1`)**, created by Vivek in the dashboard on 8 Oct and connected to
+   `good-deal-crm`, which put `BLOB_READ_WRITE_TOKEN` in the environment (the
+   Vercel connector was refused creating it). A deployment built before a
+   variable is added does not have it — redeploy after any change to it.
+   Never make the store public: the files carry prices, and the app's own
+   route (`/api/agreements/<id>`) is what keeps ops and NOC out.
 
 ### Push notifications (23 Sep)
 

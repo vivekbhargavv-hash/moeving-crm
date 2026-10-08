@@ -130,8 +130,7 @@ export function daysUntil(day: string, today: string) {
   return Math.round(ms / 86_400_000);
 }
 
-export function renewalState(renewalOn: string | null, today: string): RenewalState | null {
-  if (!renewalOn) return null;
+export function renewalState(renewalOn: string, today: string): RenewalState {
   if (renewalOn < today) return "overdue";
   if (renewalOn <= addDays(today, RENEWAL_WINDOW_DAYS)) return "due";
   return "later";
@@ -141,8 +140,13 @@ export type RenewalCandidate = {
   id: string;
   accountId: string;
   opportunityId: string | null;
-  renewalOn: string | null;
+  type: AgreementType;
+  signedOn: string;
+  renewalOn: string;
 };
+
+/** Which of several papers renewing together names the reminder. */
+const TYPE_RANK: Record<AgreementType, number> = { msa: 0, addendum: 1, other: 2 };
 
 /**
  * The agreements somebody needs to act on: renewing within the window, or
@@ -152,28 +156,43 @@ export type RenewalCandidate = {
  * customer has another agreement, for the same deal or for the whole
  * customer, whose renewal date is later. Uploading the renewed contract is
  * therefore what clears the reminder; nobody has to remember to tick it off.
- * Clearing the renewal date on the old one also clears it.
+ * Moving the renewal date forward on the old one also clears it.
+ *
+ * Papers for the same customer and deal that renew on the SAME day are one
+ * reminder, not several: an addendum usually carries the date of the MSA it
+ * amends, and the desk should be told once. The MSA names it.
  *
  * Every agreement the organization holds is passed in at once — a few per
  * customer — so this is arithmetic, not a query per row.
  */
 export function renewalsDue<T extends RenewalCandidate>(agreements: T[], today: string) {
-  return agreements
+  const due = agreements.filter((a) => {
+    const state = renewalState(a.renewalOn, today);
+    if (state !== "overdue" && state !== "due") return false;
+    // A LATER renewal date, not merely a later upload: an addendum signed
+    // afterwards on the same term does not renew the agreement it amends.
+    const replaced = agreements.some(
+      (b) =>
+        b.id !== a.id &&
+        b.accountId === a.accountId &&
+        (b.opportunityId === a.opportunityId || b.opportunityId === null) &&
+        b.renewalOn > a.renewalOn,
+    );
+    return !replaced;
+  });
+
+  const seen = new Set<string>();
+  return due
+    .sort(
+      (a, b) =>
+        a.renewalOn.localeCompare(b.renewalOn) ||
+        TYPE_RANK[a.type] - TYPE_RANK[b.type] ||
+        a.signedOn.localeCompare(b.signedOn),
+    )
     .filter((a) => {
-      const state = renewalState(a.renewalOn, today);
-      if (state !== "overdue" && state !== "due") return false;
-      const replaced = agreements.some(
-        (b) =>
-          b.id !== a.id &&
-          b.accountId === a.accountId &&
-          (b.opportunityId === a.opportunityId || b.opportunityId === null) &&
-          // A LATER renewal date, not merely a later upload: an addendum
-          // signed afterwards usually has no end date of its own and does
-          // not renew the agreement it amends.
-          b.renewalOn !== null &&
-          b.renewalOn > a.renewalOn!,
-      );
-      return !replaced;
-    })
-    .sort((a, b) => (a.renewalOn! < b.renewalOn! ? -1 : 1));
+      const key = `${a.accountId}|${a.opportunityId ?? ""}|${a.renewalOn}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }

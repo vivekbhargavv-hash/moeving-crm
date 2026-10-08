@@ -611,8 +611,12 @@ export const agreements = pgTable(
     }),
     type: agreementType("type").notNull(),
     signedOn: date("signed_on").notNull(),
-    /** When it is up for renewal. Null for an agreement with no end. */
-    renewalOn: date("renewal_on"),
+    /**
+     * When it is up for renewal. Required (Vivek, 8 Oct): every agreement
+     * gets a date somebody will be reminded of — an addendum takes the date
+     * of the agreement it amends.
+     */
+    renewalOn: date("renewal_on").notNull(),
     notes: text("notes"),
 
     blobUrl: text("blob_url").notNull(),
@@ -631,7 +635,7 @@ export const agreements = pgTable(
     index("agreements_org_renewal_idx").on(t.organizationId, t.renewalOn),
     check(
       "agreements_renewal_after_signing",
-      sql`${t.renewalOn} is null or ${t.renewalOn} >= ${t.signedOn}`,
+      sql`${t.renewalOn} >= ${t.signedOn}`,
     ),
   ],
 );

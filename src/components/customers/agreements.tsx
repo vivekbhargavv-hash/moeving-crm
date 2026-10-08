@@ -91,7 +91,7 @@ export function AgreementsPanel({
     setDraft({
       type: a.type,
       signedOn: a.signedOn,
-      renewalOn: a.renewalOn ?? "",
+      renewalOn: a.renewalOn,
       opportunityId: a.opportunityId ?? "",
       notes: a.notes ?? "",
     });
@@ -102,7 +102,7 @@ export function AgreementsPanel({
   const details = () => ({
     type: draft.type,
     signedOn: draft.signedOn,
-    renewalOn: draft.renewalOn || null,
+    renewalOn: draft.renewalOn,
     opportunityId: draft.opportunityId || null,
     notes: draft.notes || null,
   });
@@ -284,9 +284,10 @@ export function AgreementsPanel({
               />
               <PickedDate value={draft.signedOn} />
             </Field>
-            <Field label="Renewal date (optional)">
+            <Field label="Renewal date">
               <Input
                 type="date"
+                required
                 min={draft.signedOn || undefined}
                 value={draft.renewalOn}
                 onChange={(e) => setDraft((d) => ({ ...d, renewalOn: e.target.value }))}
@@ -295,8 +296,9 @@ export function AgreementsPanel({
             </Field>
           </div>
           <p className="-mt-2 text-xs text-muted">
-            The Customers page lists it 60 days before renewal, until the
-            renewed agreement is uploaded.
+            For an addendum, use the renewal date of the agreement it amends.
+            The Customers page lists it from 60 days before, until the renewed
+            agreement is uploaded.
           </p>
 
           <div>
@@ -380,7 +382,7 @@ function AgreementItem({
   onEdit: () => void;
 }) {
   const state = renewalState(a.renewalOn, today);
-  const days = a.renewalOn ? daysUntil(a.renewalOn, today) : 0;
+  const days = daysUntil(a.renewalOn, today);
 
   return (
     <li className="flex items-start gap-3 py-3">
@@ -407,24 +409,20 @@ function AgreementItem({
         </a>
         <p className="mt-0.5 text-[12.5px] text-muted">
           Signed {formatDate(a.signedOn)}
-          {a.renewalOn ? (
-            <>
-              {" · "}
-              <span
-                className={cn(
-                  state === "overdue" && "font-semibold text-rose-700",
-                  state === "due" && "font-semibold text-amber-800",
-                )}
-              >
-                renews {formatDate(a.renewalOn)}
-                {state === "overdue"
-                  ? ` (${-days} ${days === -1 ? "day" : "days"} late)`
-                  : state === "due"
-                    ? ` (in ${days} ${days === 1 ? "day" : "days"})`
-                    : ""}
-              </span>
-            </>
-          ) : null}
+          {" · "}
+          <span
+            className={cn(
+              state === "overdue" && "font-semibold text-rose-700",
+              state === "due" && "font-semibold text-amber-800",
+            )}
+          >
+            renews {formatDate(a.renewalOn)}
+            {state === "overdue"
+              ? ` (${-days} ${days === -1 ? "day" : "days"} late)`
+              : state === "due"
+                ? ` (in ${days} ${days === 1 ? "day" : "days"})`
+                : ""}
+          </span>
           {a.uploadedBy ? ` · by ${a.uploadedBy.split(" ")[0]}` : ""}
         </p>
         {a.notes ? <p className="mt-1 text-[13px]">{a.notes}</p> : null}

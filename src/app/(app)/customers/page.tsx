@@ -37,7 +37,7 @@ export default async function CustomersPage() {
           accountName: a.accountName,
           type: a.type,
           dealName: a.dealName,
-          renewalOn: a.renewalOn!,
+          renewalOn: a.renewalOn,
         }))}
         today={today}
       />

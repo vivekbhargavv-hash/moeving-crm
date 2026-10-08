@@ -45,11 +45,7 @@ const details = z
   .object({
     type: z.enum(agreementType.enumValues, { error: "Pick what kind of agreement it is" }),
     signedOn: day("When was it signed?"),
-    renewalOn: z
-      .union([day("Pick a renewal date"), z.literal("")])
-      .nullable()
-      .optional()
-      .transform((v) => (v ? v : null)),
+    renewalOn: day("When is it up for renewal?"),
     opportunityId: z
       .string()
       .uuid()
@@ -64,7 +60,7 @@ const details = z
       .optional()
       .transform((v) => (v ? v : null)),
   })
-  .refine((v) => !v.renewalOn || v.renewalOn >= v.signedOn, {
+  .refine((v) => v.renewalOn >= v.signedOn, {
     message: "The renewal date cannot be before it was signed",
   });
 
@@ -178,9 +174,7 @@ export async function createAgreement(input: unknown): Promise<ActionResult> {
     session.organizationId,
     session.userId,
     meta.data.opportunityId,
-    `Agreement uploaded: ${AGREEMENT_TYPE_LABEL[meta.data.type]} signed ${formatDate(meta.data.signedOn)}${
-      meta.data.renewalOn ? `, renews ${formatDate(meta.data.renewalOn)}` : ""
-    }.`,
+    `Agreement uploaded: ${AGREEMENT_TYPE_LABEL[meta.data.type]} signed ${formatDate(meta.data.signedOn)}, renews ${formatDate(meta.data.renewalOn)}.`,
   );
 
   revalidate(accountId, meta.data.opportunityId);

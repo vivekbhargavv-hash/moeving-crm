@@ -1,5 +1,5 @@
 {
-  "id": "c3e22f26-bb06-494b-9435-4b4482489f8d",
+  "id": "e897c7fc-b143-4508-9fbd-54be066b38fd",
   "prevId": "2087e99c-c266-43e5-83fe-1affe91ebc97",
   "version": "7",
   "dialect": "postgresql",
@@ -144,7 +144,7 @@
           "name": "renewal_on",
           "type": "date",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "notes": {
           "name": "notes",
@@ -300,7 +300,7 @@
       "checkConstraints": {
         "agreements_renewal_after_signing": {
           "name": "agreements_renewal_after_signing",
-          "value": "\"agreements\".\"renewal_on\" is null or \"agreements\".\"renewal_on\" >= \"agreements\".\"signed_on\""
+          "value": "\"agreements\".\"renewal_on\" >= \"agreements\".\"signed_on\""
         }
       },
       "isRLSEnabled": false

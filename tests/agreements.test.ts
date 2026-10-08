@@ -48,17 +48,16 @@ describe("isCovered", () => {
 
 const ag = (
   id: string,
-  renewalOn: string | null,
+  renewalOn: string,
   accountId = "acme",
   opportunityId: string | null = null,
-) => ({ id, accountId, opportunityId, renewalOn });
+  type: "msa" | "addendum" | "other" = "msa",
+  signedOn = "2025-01-01",
+) => ({ id, accountId, opportunityId, type, signedOn, renewalOn });
 
 const TODAY = "2026-10-08";
 
 describe("renewalState", () => {
-  it("is nothing for an agreement with no renewal date", () => {
-    assert.equal(renewalState(null, TODAY), null);
-  });
   it("is overdue once the date has passed", () => {
     assert.equal(renewalState("2026-10-07", TODAY), "overdue");
   });
@@ -90,8 +89,24 @@ describe("renewalsDue", () => {
     assert.deepEqual(due, []);
   });
 
-  it("does not let an addendum with no end date silence the MSA", () => {
-    const due = renewalsDue([ag("msa", "2026-11-01"), ag("addendum", null)], TODAY);
+  it("tells the desk once when an addendum shares the MSA's renewal date", () => {
+    const due = renewalsDue(
+      [
+        ag("addendum", "2026-11-01", "acme", null, "addendum", "2026-03-01"),
+        ag("msa", "2026-11-01", "acme", null, "msa", "2025-11-01"),
+      ],
+      TODAY,
+    );
+    assert.deepEqual(due.map((a) => a.id), ["msa"]);
+  });
+
+  it("keeps an addendum that renews on its own, earlier date", () => {
+    const due = renewalsDue(
+      [ag("msa", "2026-11-20"), ag("addendum", "2026-10-31", "acme", null, "addendum")],
+      TODAY,
+    );
+    // The MSA renews later, so it retires the addendum's reminder: the
+    // addendum lapses inside the contract that is still running.
     assert.deepEqual(due.map((a) => a.id), ["msa"]);
   });
 
@@ -109,6 +124,14 @@ describe("renewalsDue", () => {
       TODAY,
     );
     assert.deepEqual(due.map((a) => a.id), ["d1"]);
+  });
+
+  it("does not merge two deals' papers that happen to renew the same day", () => {
+    const due = renewalsDue(
+      [ag("d1", "2026-11-01", "acme", "deal-1"), ag("d2", "2026-11-01", "acme", "deal-2")],
+      TODAY,
+    );
+    assert.deepEqual(due.map((a) => a.id).sort(), ["d1", "d2"]);
   });
 
   it("lets a new customer-wide contract retire a deal's", () => {

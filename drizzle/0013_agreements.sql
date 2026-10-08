@@ -2,8 +2,8 @@
 --
 -- One row per uploaded file: the customer it belongs to, optionally the deal
 -- it covers (null = the whole customer), its type (MSA / addendum / other),
--- the signed and renewal dates, and where the file sits in the PRIVATE Vercel
--- Blob store. Additive only — a new enum and a new table, nothing existing is
+-- the signed and renewal dates (both required), and where the file sits in
+-- the PRIVATE Vercel Blob store. Additive only — a new enum and a new table, nothing existing is
 -- touched — so it is safe to apply before the code that reads it deploys.
 --
 -- Apply it BEFORE that code: the Pipeline reads this table to decide which
@@ -17,7 +17,7 @@ CREATE TABLE "agreements" (
 	"opportunity_id" uuid,
 	"type" "agreement_type" NOT NULL,
 	"signed_on" date NOT NULL,
-	"renewal_on" date,
+	"renewal_on" date NOT NULL,
 	"notes" text,
 	"blob_url" text NOT NULL,
 	"blob_pathname" text NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE "agreements" (
 	"size_bytes" integer,
 	"uploaded_by_user_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "agreements_renewal_after_signing" CHECK ("agreements"."renewal_on" is null or "agreements"."renewal_on" >= "agreements"."signed_on")
+	CONSTRAINT "agreements_renewal_after_signing" CHECK ("agreements"."renewal_on" >= "agreements"."signed_on")
 );
 --> statement-breakpoint
 ALTER TABLE "agreements" ADD CONSTRAINT "agreements_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

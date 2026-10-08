@@ -178,7 +178,8 @@ const ITEMS: Item[] = [
         On the customer&apos;s page (<b>Customers</b> in the menu, or tap the
         customer&apos;s name on a deal). Upload a PDF, a photo or a Word file
         and say whether it is an <b>MSA</b>, an <b>Addendum</b> or{" "}
-        <b>Other</b>, when it was signed and when it renews. Leave{" "}
+        <b>Other</b>, when it was signed and when it renews — both dates are
+        required; an addendum takes the renewal date of what it amends. Leave{" "}
         <b>Covers</b> on <i>All deals</i> for a master agreement, or pick the
         one deal it is for. A won deal with nothing covering it shows{" "}
         <b>No agreement</b> in the Pipeline — a reminder, not a block. Any
@@ -192,10 +193,11 @@ const ITEMS: Item[] = [
     for: SELLERS,
     a: (
       <>
-        An agreement with a renewal date appears under <b>Renewals due</b> at
-        the top of Customers from 60 days before that date, and turns red once
-        it has passed. Uploading the renewed agreement with a later renewal
-        date clears it, as does removing the renewal date.
+        Every agreement appears under <b>Renewals due</b> at the top of
+        Customers from 60 days before its renewal date, and turns red once it
+        has passed. Uploading the renewed agreement with a later renewal date
+        clears it, as does moving the date forward with Edit. Papers for the
+        same customer renewing on the same day show as one reminder.
       </>
     ),
   },

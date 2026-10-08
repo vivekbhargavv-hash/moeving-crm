@@ -1105,7 +1105,7 @@ export type AgreementRow = {
   dealName: string | null;
   type: AgreementType;
   signedOn: string;
-  renewalOn: string | null;
+  renewalOn: string;
   notes: string | null;
   fileName: string;
   contentType: string | null;

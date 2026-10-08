@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * NOC like the Pipeline is.
  */
 export default async function CustomersPage() {
-  const [, customers, papers] = await Promise.all([
+  const [session, customers, papers] = await Promise.all([
     requireSales(),
     listCustomers(),
     listAgreements(),
@@ -40,6 +40,7 @@ export default async function CustomersPage() {
           renewalOn: a.renewalOn,
         }))}
         today={today}
+        isAdmin={session.role === "admin"}
       />
     </div>
   );

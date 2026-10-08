@@ -10,6 +10,8 @@ import { AGREEMENT_TYPE_LABEL, daysUntil } from "@/lib/agreements";
 import { cn, formatDate, inrCompact, num } from "@/lib/utils";
 import type { CustomerRow } from "@/server/queries";
 
+import { DeleteCustomer } from "./delete-customer";
+
 type Renewal = {
   id: string;
   accountId: string;
@@ -19,7 +21,8 @@ type Renewal = {
   renewalOn: string;
 };
 
-type View = "all" | "won" | "missing";
+/** "empty" — customers with no deals — is reached from the admin's note, not the switch. */
+type View = "all" | "won" | "missing" | "empty";
 
 const PAGE = 60;
 
@@ -32,10 +35,13 @@ export function CustomerList({
   customers,
   renewals,
   today,
+  isAdmin,
 }: {
   customers: CustomerRow[];
   renewals: Renewal[];
   today: string;
+  /** Admins may delete a customer with no deals, from its row. */
+  isAdmin: boolean;
 }) {
   const [query, setQuery] = React.useState("");
   const [view, setView] = React.useState<View>("all");
@@ -48,11 +54,14 @@ export function CustomerList({
         (!q || c.name.toLowerCase().includes(q)) &&
         (view === "all" ||
           (view === "won" && c.wonDeals > 0) ||
-          (view === "missing" && c.uncovered > 0)),
+          (view === "missing" && c.uncovered > 0) ||
+          (view === "empty" && c.deals === 0)),
     );
   }, [customers, query, view]);
 
   React.useEffect(() => setShown(PAGE), [query, view]);
+
+  const emptyCount = customers.filter((c) => c.deals === 0).length;
 
   return (
     <div>
@@ -87,10 +96,34 @@ export function CustomerList({
         />
       </div>
 
+      {/* Admin housekeeping: customers nothing hangs off, which may be
+          deleted. A note rather than a fourth option on the switch, which
+          would truncate on a phone and means nothing to a deal owner. */}
+      {isAdmin && (emptyCount > 0 || view === "empty") ? (
+        <button
+          type="button"
+          onClick={() => setView(view === "empty" ? "all" : "empty")}
+          className="mb-3 flex min-h-11 w-full items-center gap-2 rounded-xl border border-dashed border-line bg-white/60 px-4 text-left text-[13px] text-muted active:bg-canvas"
+        >
+          <span className="flex-1">
+            {view === "empty"
+              ? "Showing customers with no deals. Delete any that are not needed."
+              : `${num(emptyCount)} ${emptyCount === 1 ? "customer has" : "customers have"} no deals and can be deleted.`}
+          </span>
+          <span className="shrink-0 font-semibold text-brand-ink">
+            {view === "empty" ? "Show all" : "Review"}
+          </span>
+        </button>
+      ) : null}
+
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line bg-white/60 px-6 py-12 text-center">
           <p className="font-semibold">
-            {view === "missing" && !query ? "Every won deal has an agreement" : "No customers match"}
+            {view === "missing" && !query
+              ? "Every won deal has an agreement"
+              : view === "empty" && !query
+                ? "Every customer has a deal"
+                : "No customers match"}
           </p>
           <p className="mt-1 text-sm text-muted">
             {view === "missing" && !query
@@ -102,7 +135,12 @@ export function CustomerList({
         <ul className="divide-y divide-line overflow-hidden rounded-[14px] border border-line bg-white">
           {filtered.slice(0, shown).map((c) => (
             <li key={c.id}>
-              <CustomerItem c={c} />
+              <CustomerItem
+                c={c}
+                // Agreements are deleted one by one on purpose; the server
+                // would refuse, so the bin is not offered.
+                canDelete={isAdmin && c.deals === 0 && c.agreements === 0}
+              />
             </li>
           ))}
         </ul>
@@ -128,7 +166,7 @@ export function CustomerList({
   );
 }
 
-function CustomerItem({ c }: { c: CustomerRow }) {
+function CustomerItem({ c, canDelete }: { c: CustomerRow; canDelete: boolean }) {
   const facts = [
     `${num(c.deals)} ${c.deals === 1 ? "deal" : "deals"}`,
     c.wonVehicles ? `${num(c.onRoad)} of ${num(c.wonVehicles)} on road` : null,
@@ -136,9 +174,10 @@ function CustomerItem({ c }: { c: CustomerRow }) {
   ].filter(Boolean);
 
   return (
+    <div className="flex items-center hover:bg-canvas">
     <Link
       href={`/customers/${c.id}`}
-      className="flex min-h-[64px] items-center gap-3 px-4 py-3 hover:bg-canvas active:bg-canvas"
+      className="flex min-h-[64px] min-w-0 flex-1 items-center gap-3 px-4 py-3 active:bg-canvas"
     >
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-semibold">{c.name}</p>
@@ -149,6 +188,11 @@ function CustomerItem({ c }: { c: CustomerRow }) {
               <AlertTriangle size={11} aria-hidden="true" />
               No agreement
               {c.uncovered > 1 ? ` · ${c.uncovered} deals` : ""}
+            </span>
+          ) : null}
+          {c.deals === 0 ? (
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+              No deals
             </span>
           ) : null}
           {c.agreements ? (
@@ -174,8 +218,18 @@ function CustomerItem({ c }: { c: CustomerRow }) {
           </>
         ) : null}
       </div>
-      <ChevronRight size={16} className="shrink-0 text-muted" aria-hidden="true" />
+      {canDelete ? null : (
+        <ChevronRight size={16} className="shrink-0 text-muted" aria-hidden="true" />
+      )}
     </Link>
+    {/* Beside the link, not in it: a button inside a link is invalid HTML
+        and one control to a screen reader. */}
+    {canDelete ? (
+      <div className="pr-2">
+        <DeleteCustomer id={c.id} name={c.name} compact />
+      </div>
+    ) : null}
+    </div>
   );
 }
 

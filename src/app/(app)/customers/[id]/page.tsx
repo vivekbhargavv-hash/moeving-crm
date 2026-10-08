@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
 import { AgreementsPanel } from "@/components/customers/agreements";
+import { DeleteCustomer } from "@/components/customers/delete-customer";
 import { Badge, Card, CardHeader } from "@/components/ui-server";
 import { agreementFolder, isCovered } from "@/lib/agreements";
 import { STAGE_MAP } from "@/lib/constants";
@@ -132,6 +133,14 @@ export default async function CustomerPage({
             From the enquiries that became this customer&apos;s deals.
           </p>
         </Card>
+      ) : null}
+
+      {/* Admin only, and only with nothing hanging off it: a deal is history,
+          and the server refuses it anyway (Vivek, 8 Oct). */}
+      {session.role === "admin" && deals.length === 0 && agreements.length === 0 ? (
+        <div className="flex justify-center">
+          <DeleteCustomer id={account.id} name={account.name} />
+        </div>
       ) : null}
     </div>
   );

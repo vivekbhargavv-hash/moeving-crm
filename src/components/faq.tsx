@@ -202,6 +202,19 @@ const ITEMS: Item[] = [
     ),
   },
   {
+    q: "Can a customer be deleted?",
+    for: ["admin"],
+    a: (
+      <>
+        Only by an admin, and only a customer with no deals and no
+        agreements — a misspelt name, say. On Customers, tap the note that
+        counts customers with no deals, then the bin on the row (or use{" "}
+        <b>Delete this customer</b> on its page). A customer with any deal,
+        open or closed, stays: it is how that history is found.
+      </>
+    ),
+  },
+  {
     q: "Can I delete a deal?",
     for: SELLERS,
     a: (

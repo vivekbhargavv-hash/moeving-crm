@@ -126,8 +126,12 @@ export function AgreementsPanel({
           setProgress(0);
           // Loaded on the tap, not with the page: it is most of the page's
           // JavaScript, and most visits only read the list.
-          const { upload } = await import("@vercel/blob/client");
-          const blob = await upload(`${folder}${safeFileName(file.name)}`, file, {
+          const { uploadPresigned } = await import("@vercel/blob/client");
+          // A random prefix makes every upload its own file: two signed
+          // copies called "MSA.pdf" must never overwrite each other, and the
+          // server refuses to.
+          const unique = crypto.randomUUID().slice(0, 8);
+          const blob = await uploadPresigned(`${folder}${unique}-${safeFileName(file.name)}`, file, {
             access: "private",
             handleUploadUrl: "/api/agreements/upload",
             clientPayload: JSON.stringify({ accountId }),

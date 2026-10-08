@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { issueSignedToken } from "@vercel/blob";
+import { handleUploadPresigned, type HandleUploadPresignedBody } from "@vercel/blob/client";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
@@ -15,26 +16,34 @@ import { blobUploadProblem } from "@/server/blob-config";
 
 export const dynamic = "force-dynamic";
 
+/** How long the browser has to start sending the file. */
+const UPLOAD_WINDOW_MS = 10 * 60 * 1000;
+
 /**
- * Hands the browser a short-lived token to upload ONE agreement file
- * straight to the private blob store.
+ * Hands the browser a presigned URL to upload ONE agreement file straight to
+ * the private blob store.
  *
  * Straight to the store, not through this server: a Vercel function refuses
  * a request body over 4.5 MB, and a scanned contract is routinely bigger. The
- * file never passes through here — only the question "may this person put a
- * file in this customer's folder?", which is answered from the session:
+ * file never passes through here — only the question "may this person put
+ * this file in this customer's folder?", which is answered from the session:
  *
  * - a deal owner or an admin (Vivek: every deal owner may upload);
  * - of this organization, for a customer of this organization;
- * - into `agreements/<org>/<customer>/`, and nowhere else;
- * - a PDF, photo or Word file, 25 MB at most, valid for ten minutes.
+ * - at exactly the pathname asked for, inside `agreements/<org>/<customer>/`;
+ * - a PDF, photo or Word file, 25 MB at most, within ten minutes.
+ *
+ * PRESIGNED, not the older client-token flow: that one signs with a
+ * read-write token, and the store was connected the newer, keyless way (a
+ * store ID plus Vercel's own OIDC token, no secret in the environment).
+ * `issueSignedToken` signs with whichever credentials the deployment has.
  *
  * The agreement row itself is written afterwards by `createAgreement`, which
- * checks the folder again — this token being issued proves nothing to it.
+ * checks the folder again — this URL being issued proves nothing to it.
  */
 export async function POST(request: Request) {
   // Every refusal is logged with its reason: the upload library shows the
-  // browser only "Failed to retrieve the client token", whatever happened.
+  // browser only a generic failure, whatever happened here.
   const refuse = (error: string, status: number) => {
     console.error(`[agreements/upload] ${status}: ${error}`);
     return Response.json({ error }, { status });
@@ -46,12 +55,20 @@ export async function POST(request: Request) {
   const problem = blobUploadProblem();
   if (problem) return refuse(problem, 503);
 
-  const body = (await request.json()) as HandleUploadBody;
+  const body = (await request.json()) as HandleUploadPresignedBody;
+  // Completion callbacks are never requested, so none should arrive. The key
+  // is only there because the helper insists on one; a forged callback fails
+  // its signature check against it.
+  if (body.type !== "blob.generate-presigned-url") {
+    return refuse("Unexpected upload event.", 400);
+  }
+
   try {
-    const result = await handleUpload({
+    const result = await handleUploadPresigned({
       body,
       request,
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
+      webhookPublicKey: process.env.BLOB_WEBHOOK_PUBLIC_KEY || "callbacks-not-used",
+      getSignedToken: async (pathname, clientPayload) => {
         const session = await requireSession();
         if (session.role !== "admin" && session.role !== "sales") {
           throw new Error("Only deal owners and admins can upload agreements.");
@@ -72,11 +89,25 @@ export async function POST(request: Request) {
         if (!isInFolder(pathname, agreementFolder(session.organizationId, accountId))) {
           throw new Error("That file cannot go there.");
         }
-        return {
+
+        const validUntil = Date.now() + UPLOAD_WINDOW_MS;
+        // Scoped to this one pathname and to writing, nothing else.
+        const token = await issueSignedToken({
+          pathname,
+          operations: ["put"],
+          validUntil,
           allowedContentTypes: AGREEMENT_CONTENT_TYPES,
           maximumSizeInBytes: AGREEMENT_MAX_BYTES,
-          addRandomSuffix: true,
-          validUntil: Date.now() + 10 * 60 * 1000,
+        });
+        return {
+          token,
+          urlOptions: {
+            validUntil,
+            allowedContentTypes: AGREEMENT_CONTENT_TYPES,
+            maximumSizeInBytes: AGREEMENT_MAX_BYTES,
+            // The browser makes the name unique; never replace a contract.
+            allowOverwrite: false,
+          },
         };
       },
     });

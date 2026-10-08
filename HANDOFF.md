@@ -25,8 +25,13 @@ for the Leads badge.
 
 00. **Agreement files live in a private Vercel Blob store in Mumbai
    (`bom1`)**, created by Vivek in the dashboard on 8 Oct and connected to
-   `good-deal-crm`, which put `BLOB_READ_WRITE_TOKEN` in the environment (the
-   Vercel connector was refused creating it). A deployment built before a
+   `good-deal-crm` the newer, KEYLESS way: the environment holds only
+   `BLOB_STORE_ID`, and the SDK signs with Vercel's own OIDC token at runtime —
+   there is no `BLOB_READ_WRITE_TOKEN`. That is why uploads use the PRESIGNED
+   flow (`issueSignedToken` + `handleUploadPresigned` / `uploadPresigned`); the
+   older client-token flow (`handleUpload` / `upload`) needs the read-write
+   token and failed with "Failed to retrieve the client token". (The Vercel
+   connector was refused creating the store.) A deployment built before a
    variable is added does not have it — redeploy after any change to it.
    Never make the store public: the files carry prices, and the app's own
    route (`/api/agreements/<id>`) is what keeps ops and NOC out.
@@ -204,7 +209,7 @@ Change these only deliberately — a lot of code assumes them.
 | **Agreements belong to the customer and may name one deal.** Type MSA / Addendum / Other, signed date and renewal date (both required — Vivek, 8 Oct; an addendum takes the date of what it amends), optional note. A won deal is **covered** by an agreement for the whole customer, for itself, or for the deal it grew out of (`isCovered` in `lib/agreements.ts`, mirrored in SQL as `hasAgreementSql` in `queries.ts` — change both together). | Vivek: usually one MSA per customer, sometimes one per deal, plus addendums. Expansions run on the parent's paper. |
 | **"No agreement" is a warning, never a block** — on won deals only, in the Pipeline (list, table, board), on the deal page and on the customer page. | Vivek: "Not yet" to requiring one at Closed Won. A win is recorded when it is won; the paper follows. |
 | **Agreement files live in a PRIVATE Vercel Blob store** and are read only through `/api/agreements/<id>`, which refuses ops and NOC and looks the row up inside the caller's organization. The blob URL never reaches a browser. | The files carry the price. A private store means the address alone opens nothing. |
-| **Uploads go browser → blob directly** (`upload()` from `@vercel/blob/client`, token from `/api/agreements/upload`), then `createAgreement` records them. The token route checks role, org and customer and pins the path to `agreements/<org>/<customer>/`; `createAgreement` checks the path AGAIN and asks the store (`head`) for the real size and type. | A Vercel function refuses bodies over 4.5 MB and scanned contracts are bigger. The second check matters because issuing a token proves nothing to the action. Limit 25 MB: PDF, JPG/PNG/HEIC/WebP, Word. The client library is imported on tap (it was 34 kB of the page). |
+| **Uploads go browser → blob directly** (`uploadPresigned()` from `@vercel/blob/client`, a presigned PUT URL from `/api/agreements/upload`), then `createAgreement` records them. Before sending, the sheet asks `checkAgreementUpload` (role, customer, storage configured) so a refusal reaches the screen in words. The route checks role, org and customer, pins the path to `agreements/<org>/<customer>/`, and scopes the signed token to that one pathname, `put` only, ten minutes; the browser prefixes the name with 8 random characters and overwriting is refused. `createAgreement` checks the path AGAIN and asks the store (`head`) for the real size and type. | A Vercel function refuses bodies over 4.5 MB and scanned contracts are bigger. The second check matters because issuing a token proves nothing to the action. Limit 25 MB: PDF, JPG/PNG/HEIC/WebP, Word. The client library is imported on tap (it was 34 kB of the page). |
 | **Every deal owner and admin may upload, edit and delete agreements.** Upload/delete adds a line to the covered deal's timeline. | Vivek, 8 Oct. Delete removes the row first, then the file — an orphaned file is harmless, a row pointing at nothing is not. |
 | **Renewal reminders are in-app**: "Renewals due" at the top of Customers lists agreements renewing within 60 days or already past. One stops asking once the same customer has another agreement (same deal, or customer-wide) with a LATER renewal date — so uploading the renewal clears it, as does moving the date forward with Edit. Papers for the same customer and deal renewing on the same day are ONE reminder, named by the MSA. | Vivek asked for expiry reminders, and made the renewal date mandatory so every agreement has one. Without the same-day merge, an MSA and its addendum would nag twice. Push/email reminders are not built — see § 9. |
 
@@ -570,8 +575,10 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
 NEXT_PUBLIC_VAPID_PUBLIC_KEY        Web Push public key (safe to ship to browsers)
 VAPID_PRIVATE_KEY                   Web Push private key — a secret
 VAPID_SUBJECT                       mailto: contact the push services may use
-BLOB_READ_WRITE_TOKEN               private Vercel Blob store for agreements —
+BLOB_STORE_ID                       private Vercel Blob store for agreements —
                                     added by Vercel when the store is connected
+                                    (keyless; a BLOB_READ_WRITE_TOKEN would
+                                    also work, but there is none)
 ```
 
 - **VAPID keys are generated once** (`npx web-push generate-vapid-keys`) and

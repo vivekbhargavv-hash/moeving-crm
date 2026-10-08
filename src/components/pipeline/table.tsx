@@ -6,6 +6,7 @@ import * as React from "react";
 
 import Link from "next/link";
 
+import { missingAgreement, NoAgreementMark } from "@/components/customers/no-agreement";
 import type { StageTarget } from "@/components/stage-changer";
 import { Badge } from "@/components/ui-server";
 import {
@@ -334,6 +335,7 @@ export function PipelineList({
                           {stage.label}
                         </Badge>
                       </button>
+                      {missingAgreement(o) ? <NoAgreementMark /> : null}
                       {/* A costed deal says what one truck costs to run. An
                           uncosted one says nothing rather than printing a zero
                           that reads as break-even. */}
@@ -469,6 +471,7 @@ export function PipelineList({
                         {stage.label}
                       </Badge>
                     </button>
+                    {missingAgreement(o) ? <NoAgreementMark className="ml-1.5" /> : null}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-muted">{o.city ?? "—"}</td>
                   <td className="whitespace-nowrap px-3 py-2.5">

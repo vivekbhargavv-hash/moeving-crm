@@ -3,6 +3,7 @@
 import { UserButton } from "@clerk/nextjs";
 import {
   BarChart3,
+  Building2,
   Calculator,
   CalendarRange,
   ExternalLink,
@@ -44,6 +45,9 @@ const SALES_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/leads", label: "Leads", icon: PhoneCall },
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
+  // In the rail and the phone's menu, not the bottom bar: it is a place to
+  // look something up, not one a deal owner is in and out of all day.
+  { href: "/customers", label: "Customers", icon: Building2 },
   { href: "/forecast", label: "Forecast", icon: CalendarRange },
   { href: "/deployments", label: "Deploy", icon: Truck },
 ];
@@ -79,6 +83,7 @@ const TITLES: Record<string, string> = {
   "/pipeline": "Pipeline",
   "/forecast": "Forecast",
   "/opportunities": "Deal",
+  "/customers": "Customers",
   "/admin/users": "Users",
   "/admin/master-data": "Master data",
   "/admin/cost-defaults": "Cost defaults",

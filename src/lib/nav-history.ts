@@ -50,6 +50,9 @@ const SECTIONS: [string, string][] = [
   ["/deployments", "Deployments"],
   ["/dashboard", "Dashboard"],
   ["/opportunities/", "Back"],
+  // A customer page before the list, or the list's label would win.
+  ["/customers/", "Back"],
+  ["/customers", "Customers"],
 ];
 
 /** What a back link to `url` should say, or null if it is not a page to go back to. */

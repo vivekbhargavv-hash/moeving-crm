@@ -13,10 +13,9 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-**Migration 0013 (agreements) must be applied to production BEFORE the
-8 Oct branch merges** — the Pipeline reads the `agreements` table on every
-load to decide which won deals say "No agreement", so the page errors without
-it. It is additive (a new enum and a new table). Migrations 0000–0012 are
+**Migrations 0000–0013 are all applied to production** (0013, agreements,
+on 8 Oct before its code merged — renewal date NOT NULL; at that moment 6 won
+deals had no agreement and will say so). Migrations 0000–0012 are
 applied (0012, lead assignment, on 23 Sep before its code deployed). Migrations are applied by
 hand through the Neon MCP connector BEFORE their code deploys, because the app
 queries those tables on page load — 0012 is read by the shell on EVERY page,
@@ -25,7 +24,8 @@ for the Leads badge.
 ### Agreement storage (8 Oct)
 
 00. **Uploading agreements needs a private Vercel Blob store connected to the
-   `good-deal-crm` project.** Vercel → Storage → Create → Blob, access
+   `good-deal-crm` project.** The Vercel connector was refused (403) creating
+   one on 8 Oct, so it is a dashboard step. Vercel → Storage → Create → Blob, access
    **Private**, connect it to the project for Production, Preview and
    Development. That adds `BLOB_READ_WRITE_TOKEN` to the environment; redeploy
    after. Until then the Customers page works and the Upload button says

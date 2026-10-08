@@ -11,6 +11,7 @@ import {
   isInFolder,
 } from "@/lib/agreements";
 import { requireSession } from "@/server/auth";
+import { blobUploadProblem } from "@/server/blob-config";
 
 export const dynamic = "force-dynamic";
 
@@ -32,15 +33,18 @@ export const dynamic = "force-dynamic";
  * checks the folder again — this token being issued proves nothing to it.
  */
 export async function POST(request: Request) {
-  const { userId } = await auth();
-  if (!userId) return Response.json({ error: "Sign in again." }, { status: 401 });
+  // Every refusal is logged with its reason: the upload library shows the
+  // browser only "Failed to retrieve the client token", whatever happened.
+  const refuse = (error: string, status: number) => {
+    console.error(`[agreements/upload] ${status}: ${error}`);
+    return Response.json({ error }, { status });
+  };
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return Response.json(
-      { error: "File storage is not set up yet. Ask an admin to connect Vercel Blob." },
-      { status: 503 },
-    );
-  }
+  const { userId } = await auth();
+  if (!userId) return refuse("Sign in again.", 401);
+
+  const problem = blobUploadProblem();
+  if (problem) return refuse(problem, 503);
 
   const body = (await request.json()) as HandleUploadBody;
   try {
@@ -78,9 +82,6 @@ export async function POST(request: Request) {
     });
     return Response.json(result);
   } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "Upload refused." },
-      { status: 400 },
-    );
+    return refuse(error instanceof Error ? error.message : "Upload refused.", 400);
   }
 }

@@ -22,6 +22,7 @@ import {
 } from "@/lib/agreements";
 import { formatDate } from "@/lib/utils";
 import { requireDealOwner } from "@/server/auth";
+import { blobUploadProblem } from "@/server/blob-config";
 import type { ActionResult } from "@/server/actions";
 
 /*
@@ -116,6 +117,32 @@ async function noteOnDeal(
     kind: "note",
     body,
   });
+}
+
+/**
+ * Asked before a file is sent: can this person upload for this customer, and
+ * is storage set up here? The same checks the upload route makes, but a
+ * server action's answer reaches the screen word for word, where the upload
+ * library replaces the route's with "Failed to retrieve the client token".
+ */
+export async function checkAgreementUpload(accountId: string): Promise<ActionResult> {
+  const session = await requireDealOwner();
+  if (!z.string().uuid().safeParse(accountId).success) {
+    return { ok: false, error: "That customer was not found." };
+  }
+  const [account] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(
+      and(eq(accounts.id, accountId), eq(accounts.organizationId, session.organizationId)),
+    );
+  if (!account) return { ok: false, error: "That customer was not found." };
+  const problem = blobUploadProblem();
+  if (problem) {
+    console.error(`[agreements] upload not possible: ${problem}`);
+    return { ok: false, error: problem };
+  }
+  return { ok: true };
 }
 
 /**

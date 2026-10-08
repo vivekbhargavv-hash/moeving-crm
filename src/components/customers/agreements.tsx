@@ -28,6 +28,7 @@ import { STAGE_MAP } from "@/lib/constants";
 import { showToast } from "@/lib/toast";
 import { cn, formatDate } from "@/lib/utils";
 import {
+  checkAgreementUpload,
   createAgreement,
   deleteAgreement,
   updateAgreement,
@@ -119,6 +120,9 @@ export function AgreementsPanel({
           const problem = fileProblem(file);
           if (problem) return setError(problem);
 
+          const ready = await checkAgreementUpload(accountId);
+          if (!ready.ok) return setError(ready.error);
+
           setProgress(0);
           // Loaded on the tap, not with the page: it is most of the page's
           // JavaScript, and most visits only read the list.
@@ -152,9 +156,11 @@ export function AgreementsPanel({
       } catch (e) {
         const message = e instanceof Error ? e.message : "";
         setError(
-          /not set up/i.test(message)
-            ? "File storage is not set up yet. Ask an admin to connect Vercel Blob."
-            : message && message.length < 160
+          /client token/i.test(message)
+            ? // The pre-check passed, so the upload route refused for a reason
+              // the library hides; the route logs it.
+              "The server refused the upload. The reason is in the Vercel logs under agreements/upload."
+            : message && message.length < 200
               ? message
               : "Could not upload that. Check your connection and try again.",
         );

@@ -4,7 +4,9 @@
 Deployments by month without delivered work, Customers page with signed
 agreements)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
-**Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
+**Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main`. Cloud sessions work
+on a `claude/*` branch and open a PR; Vivek asks for it to be merged (squash,
+titled "… (#N)"), and Vercel deploys `main` on merge.
 **Live:** https://good-deal-crm.vercel.app
 
 Read this, then `README.md` for setup mechanics.
@@ -12,6 +14,23 @@ Read this, then `README.md` for setup mechanics.
 ---
 
 ## 0. START HERE — the things waiting on a human
+
+### Where things stand (end of 8 Oct)
+
+- **PR #29 is merged** (`971bc2d`) and **live in production**: Forecast
+  Overdue column, Deployments By month without delivered work, Customers page,
+  signed agreements with renewal reminders, admin delete for customers with no
+  deals. Production deployment READY with no runtime errors after release.
+- **Agreements on file: none yet.** The test PDF was deleted, so all **6 won
+  deals show "No agreement"** until the real signed agreements are uploaded
+  (Customers → customer → Upload). That is the next thing for the team to do,
+  not code.
+- **Customers: 61**, of which **1** has no deals (Vivek deleted the others on
+  8 Oct with the new admin delete).
+- **Forecast hygiene:** 4 open deals are in the Overdue column and 16 open
+  deals have no expected closing date. Their owners need to move the date or
+  the stage — the app now shows both, it does not fix them.
+- **Not yet exercised:** an agreement file over 8 MB (it uploads in parts).
 
 **Migrations 0000–0013 are all applied to production** (0013, agreements,
 on 8 Oct before its code merged — renewal date NOT NULL; at that moment 6 won
@@ -322,7 +341,7 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. A hundred and fifty: twenty-six on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
+`node --test` with `tsx` — no test framework, no new dependencies. A hundred and fifty-one: twenty-seven on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"
@@ -405,6 +424,25 @@ DOM-ready under a 4x CPU throttle, long tasks and scroll frame times. The
 and `/deployments` 3,903 DOM nodes. **A phone downloads and hydrates the
 desktop markup too** — `hidden md:block` is CSS, not a skip — so an unbounded
 desktop board column costs every phone that never sees it.
+
+**Sandbox gotchas met on 8 Oct:**
+
+- **The scratch Postgres dies when the container restarts** (the session's
+  worker can be restarted mid-task). `rm /home/pgtest/data/postmaster.pid`,
+  then the `pg_ctl … start` line above; the data survives.
+- **`pkill -f "next dev"` kills the tool's own shell** (exit 144), because the
+  pattern matches the command running it. Stop the dev server by process
+  name instead: `kill $(ps -eo pid,comm | awk '$2 ~ /^(node|next-server)$/ {print $1}')`.
+- **`*.vercel.app` is unreachable from the sandbox** (curl returns 000), and
+  **previews sit behind Vercel's own login**, which the Vercel connector's
+  `web_fetch_vercel_url` could not get past. Anything behind Clerk — an
+  upload, a delete — has to be tested by Vivek on the branch preview,
+  `good-deal-crm-git-<branch-with-dashes>-vivek-5ea1b3e5.vercel.app`, which
+  uses the PRODUCTION database.
+- **Runtime logs are kept one hour on the Hobby plan.** Ask for the test
+  straight after the deploy and read `get_runtime_logs` with `since: "30m"`.
+- **The Vercel connector is read-mostly**: listing env vars and creating a
+  Blob store both returned 403. Dashboard settings are Vivek's to change.
 
 **Two checks worth running on every mobile change:**
 
@@ -554,6 +592,18 @@ document.querySelector("nav.fixed").getBoundingClientRect().width // must equal 
   `onSubmit` + `preventDefault()`, which keeps what was typed and still lets
   the browser's `required` checks run first. Reproduced in the browser, fixed,
   and re-checked.
+- **Vercel Blob connected the keyless way has no read-write token.** The
+  first real upload failed with "Vercel Blob: Failed to retrieve the client
+  token": the store gave the project `BLOB_STORE_ID` (signing through Vercel's
+  OIDC token) and no `BLOB_READ_WRITE_TOKEN`, and `handleUpload`/`upload` can
+  only sign with the token. Fixed by moving to `issueSignedToken` +
+  `handleUploadPresigned`/`uploadPresigned`, which use whichever credentials
+  exist. `get`, `head` and `del` were already fine either way.
+- **The blob upload library throws away the server's reason.** Any non-200
+  from the token route becomes "Failed to retrieve the client token". So the
+  sheet first calls the server action `checkAgreementUpload` (role, customer,
+  storage configured), whose message reaches the screen word for word, and
+  the route `console.error`s every refusal with `[agreements/upload]`.
 - **The Vercel deployments API reports `BUILDING` after a build is finished.**
   A deployment whose `ready` timestamp is already set keeps coming back as
   `BUILDING` on repeated `get_deployment` calls for minutes. Check

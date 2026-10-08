@@ -19,6 +19,7 @@ import { cache } from "react";
 import { db } from "@/db";
 import {
   accounts,
+  agreements,
   costDefaults,
   leads,
   cities,
@@ -29,7 +30,7 @@ import {
   users,
   vehicleTypes,
 } from "@/db/schema";
-import type { LeadStatus, SalesStage } from "@/db/schema";
+import type { AgreementType, LeadStatus, SalesStage } from "@/db/schema";
 import { DEFAULT_STAGE_PROBABILITY, OPEN_STAGES } from "@/lib/constants";
 import {
   periodStart,
@@ -37,6 +38,8 @@ import {
   type DashboardPeriod,
 } from "@/lib/dashboard";
 import type { CostDefault } from "@/lib/cost-defaults";
+import { dayBefore, forecastColumn, OVERDUE } from "@/lib/forecast";
+import { todayInIndia } from "@/lib/utils";
 import { requireSession } from "@/server/auth";
 
 export type OpportunityCard = {
@@ -66,12 +69,22 @@ export type OpportunityCard = {
   expectedCloseDate: string | null;
   /** Pencilled in at Contracting, or committed at Closed Won. */
   deploymentDate: string | null;
+  /** How many of the fleet are on the road. */
+  vehiclesDeployed: number;
   updatedAt: Date;
   ownerName: string;
   ownerId: string;
+  /**
+   * Is there a signed agreement behind this deal — one for the whole
+   * customer, for this deal, or for the deal it grew out of. Only meaningful
+   * on a won deal, which is the only place the Pipeline says "No agreement".
+   */
+  hasAgreement: boolean;
 };
 
 export type OpportunityFilters = {
+  /** One customer's deals — the customer page. */
+  accountId?: string;
   cityId?: string;
   ownerUserId?: string;
   vehicleTypeId?: string;
@@ -108,6 +121,7 @@ function filterConditions(
   f: OpportunityFilters,
 ) {
   const where = [eq(opportunities.organizationId, organizationId)];
+  if (f.accountId) where.push(eq(opportunities.accountId, f.accountId));
   if (f.cityId) where.push(eq(opportunities.cityId, f.cityId));
   if (f.vehicleTypeId) where.push(eq(opportunities.vehicleTypeId, f.vehicleTypeId));
   if (f.stage) where.push(eq(opportunities.stage, f.stage));
@@ -141,6 +155,25 @@ function filterConditions(
   return where;
 }
 
+/**
+ * The `isCovered` rule from lib/agreements.ts, in SQL, for a row of
+ * `opportunities`.
+ *
+ * The table names are spelled out on purpose. Drizzle renders a column inside
+ * a `sql` template unqualified, and inside this subquery a bare "id" would
+ * resolve to the agreement's own id — comparing a row to itself, silently
+ * (HANDOFF § 6).
+ */
+export const hasAgreementSql = sql<boolean>`exists (
+  select 1 from "agreements"
+  where "agreements"."account_id" = "opportunities"."account_id"
+    and (
+      "agreements"."opportunity_id" is null
+      or "agreements"."opportunity_id" = "opportunities"."id"
+      or "agreements"."opportunity_id" = "opportunities"."parent_opportunity_id"
+    )
+)`;
+
 const cardColumns = {
   id: opportunities.id,
   name: opportunities.name,
@@ -162,9 +195,11 @@ const cardColumns = {
   parentOpportunityId: opportunities.parentOpportunityId,
   expectedCloseDate: opportunities.expectedCloseDate,
   deploymentDate: opportunities.deploymentDate,
+  vehiclesDeployed: opportunities.vehiclesDeployed,
   updatedAt: opportunities.updatedAt,
   ownerName: users.name,
   ownerId: opportunities.ownerUserId,
+  hasAgreement: hasAgreementSql,
 };
 
 export async function listOpportunities(
@@ -191,6 +226,8 @@ function toCard<T extends Omit<OpportunityCard, "value" | "marginPct"> & {
 }>(r: T) {
   return {
     ...r,
+    // Postgres answers "t"/"f" through some drivers; every screen wants a boolean.
+    hasAgreement: r.hasAgreement === true || (r.hasAgreement as unknown) === "t",
     marginPct: r.marginPct === null ? null : Number(r.marginPct),
     value: (r.price ?? 0) * r.fleetSize,
   };
@@ -217,6 +254,7 @@ export async function getOpportunity(id: string) {
         vehicleType: vehicleTypes.name,
         ownerName: users.name,
         lostReason: lostReasons.label,
+        hasAgreement: hasAgreementSql,
       })
       .from(opportunities)
       .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
@@ -595,45 +633,72 @@ export async function getForecast(
     : (OPEN_STAGES as SalesStage[]);
 
   const monthExpr = sql<string>`to_char(${opportunities.expectedCloseDate}, 'YYYY-MM')`;
+  const where = [
+    ...filterConditions(session.organizationId, session.userId, {
+      ...filters,
+      stage: undefined,
+      // Everything before the window too: those are the Overdue column.
+      from: undefined,
+    }),
+    inArray(opportunities.stage, stages),
+  ];
 
-  const rows = await db
-    .select({
-      cityId: opportunities.cityId,
-      city: cities.name,
-      month: monthExpr.as("month"),
-      fleet: sql<number>`sum(${opportunities.fleetSize})::int`,
-      value: sql<number>`sum(coalesce(${opportunities.price}, 0) * ${opportunities.fleetSize})::int`,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(opportunities)
-    .leftJoin(cities, eq(cities.id, opportunities.cityId))
-    .where(
-      and(
-        ...filterConditions(session.organizationId, session.userId, {
-          ...filters,
-          stage: undefined,
-        }),
-        inArray(opportunities.stage, stages),
-        sql`${opportunities.expectedCloseDate} is not null`,
+  const [rows, [undated]] = await Promise.all([
+    db
+      .select({
+        cityId: opportunities.cityId,
+        city: cities.name,
+        month: monthExpr.as("month"),
+        fleet: sql<number>`sum(${opportunities.fleetSize})::int`,
+        value: sql<number>`sum(coalesce(${opportunities.price}, 0) * ${opportunities.fleetSize})::int`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(opportunities)
+      .leftJoin(cities, eq(cities.id, opportunities.cityId))
+      .where(and(...where, sql`${opportunities.expectedCloseDate} is not null`))
+      .groupBy(opportunities.cityId, cities.name, monthExpr),
+    // Open deals nobody has given a closing month. They have no column, and
+    // leaving them out without a word made the forecast look complete.
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(opportunities)
+      .leftJoin(cities, eq(cities.id, opportunities.cityId))
+      .where(
+        and(
+          ...filterConditions(session.organizationId, session.userId, {
+            ...filters,
+            stage: undefined,
+            from: undefined,
+            to: undefined,
+          }),
+          inArray(opportunities.stage, stages),
+          sql`${opportunities.expectedCloseDate} is null`,
+        ),
       ),
-    )
-    .groupBy(opportunities.cityId, cities.name, monthExpr);
+  ]);
 
-  const cityOrder = new Map<string, { id: string | null; name: string }>();
   const grid = new Map<string, ForecastCell>();
+  const cityOrder = new Map<string, { id: string | null; name: string }>();
+  let anyOverdue = false;
   for (const r of rows) {
+    const column = forecastColumn(r.month, months);
+    if (!column) continue;
+    if (column === OVERDUE) anyOverdue = true;
     const key = r.cityId ?? "none";
     cityOrder.set(key, { id: r.cityId, name: r.city ?? "No city" });
-    grid.set(`${key}|${r.month}`, {
-      fleet: Number(r.fleet),
-      value: Number(r.value),
-      count: Number(r.count),
-    });
+    const cell = grid.get(`${key}|${column}`) ?? { fleet: 0, value: 0, count: 0 };
+    cell.fleet += Number(r.fleet);
+    cell.value += Number(r.value);
+    cell.count += Number(r.count);
+    grid.set(`${key}|${column}`, cell);
   }
+
+  // The Overdue column appears only when something is in it.
+  const columns = anyOverdue ? [OVERDUE, ...months] : months;
 
   const cityRows = [...cityOrder.entries()]
     .map(([key, meta]) => {
-      const cells = months.map(
+      const cells = columns.map(
         (m) => grid.get(`${key}|${m}`) ?? { fleet: 0, value: 0, count: 0 },
       );
       return {
@@ -654,7 +719,7 @@ export async function getForecast(
     .filter((r) => r.total.count > 0)
     .sort((a, b) => b.total.fleet - a.total.fleet);
 
-  const monthTotals = months.map((_, i) =>
+  const monthTotals = columns.map((_, i) =>
     cityRows.reduce(
       (acc, r) => ({
         fleet: acc.fleet + r.cells[i]!.fleet,
@@ -665,7 +730,12 @@ export async function getForecast(
     ),
   );
 
-  return { months, rows: cityRows, monthTotals };
+  return {
+    months: columns,
+    rows: cityRows,
+    monthTotals,
+    undated: Number(undated?.count ?? 0),
+  };
 }
 
 /** Drill-down: one city + one month, grouped by vehicle type. */
@@ -674,10 +744,17 @@ export async function getForecastDrilldown(
   month: string,
   filters: OpportunityFilters = {},
 ) {
-  const from = `${month}-01`;
-  const [y, m] = month.split("-").map(Number);
-  const end = new Date(Date.UTC(y!, m!, 0));
-  const to = end.toISOString().slice(0, 10);
+  let from: string | undefined;
+  let to: string;
+  if (month === OVERDUE) {
+    // Every closing date before this month — however long ago it slipped.
+    from = undefined;
+    to = dayBefore(todayInIndia().slice(0, 7));
+  } else {
+    from = `${month}-01`;
+    const [y, m] = month.split("-").map(Number);
+    to = new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
+  }
 
   const opps = await listOpportunities({
     ...filters,
@@ -934,3 +1011,184 @@ export const countLeadsAwaitingMe = cache(async (): Promise<number> => {
     );
   return row?.n ?? 0;
 });
+
+/* ---------------------------------------------------------------- customers */
+
+export type CustomerRow = {
+  id: string;
+  name: string;
+  deals: number;
+  openDeals: number;
+  wonDeals: number;
+  /** Vehicles on won deals, and how many of them are on the road. */
+  wonVehicles: number;
+  onRoad: number;
+  /** Won deals' monthly revenue: price x fleet, the Pipeline's own figure. */
+  monthlyRevenue: number;
+  /** Open deals' monthly value, unweighted. */
+  openValue: number;
+  agreements: number;
+  /** Won deals with no signed agreement behind them. */
+  uncovered: number;
+  lastActivity: Date | null;
+};
+
+/**
+ * Every customer, with the numbers that say what we do with them.
+ *
+ * One grouped query over deals and one over agreements, not a query per
+ * customer. The whole book is a few hundred rows at most, so the search on
+ * the page filters what is already there.
+ */
+export async function listCustomers(): Promise<CustomerRow[]> {
+  const session = await requireSession();
+  const org = session.organizationId;
+  const open = sql.raw(OPEN_STAGES.map((s) => `'${s}'`).join(","));
+
+  const [deals, papers] = await Promise.all([
+    db
+      .select({
+        id: accounts.id,
+        name: accounts.name,
+        deals: sql<number>`count("opportunities"."id")::int`,
+        openDeals: sql<number>`count(*) filter (where "opportunities"."stage" in (${open}))::int`,
+        wonDeals: sql<number>`count(*) filter (where "opportunities"."stage" = 'closed_won')::int`,
+        wonVehicles: sql<number>`coalesce(sum("opportunities"."fleet_size") filter (where "opportunities"."stage" = 'closed_won'), 0)::int`,
+        onRoad: sql<number>`coalesce(sum(least("opportunities"."vehicles_deployed", "opportunities"."fleet_size")) filter (where "opportunities"."stage" = 'closed_won'), 0)::int`,
+        monthlyRevenue: sql<number>`coalesce(sum(coalesce("opportunities"."price", 0) * "opportunities"."fleet_size") filter (where "opportunities"."stage" = 'closed_won'), 0)::bigint`,
+        openValue: sql<number>`coalesce(sum(coalesce("opportunities"."price", 0) * "opportunities"."fleet_size") filter (where "opportunities"."stage" in (${open})), 0)::bigint`,
+        uncovered: sql<number>`count(*) filter (where "opportunities"."stage" = 'closed_won' and not ${hasAgreementSql})::int`,
+        lastActivity: sql<Date | null>`max("opportunities"."updated_at")`,
+      })
+      .from(accounts)
+      .leftJoin(opportunities, eq(opportunities.accountId, accounts.id))
+      .where(eq(accounts.organizationId, org))
+      .groupBy(accounts.id, accounts.name),
+    db
+      .select({
+        accountId: agreements.accountId,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(agreements)
+      .where(eq(agreements.organizationId, org))
+      .groupBy(agreements.accountId),
+  ]);
+
+  const paperCount = new Map(papers.map((p) => [p.accountId, Number(p.n)]));
+  return deals
+    .map((r) => ({
+      ...r,
+      deals: Number(r.deals),
+      openDeals: Number(r.openDeals),
+      wonDeals: Number(r.wonDeals),
+      wonVehicles: Number(r.wonVehicles),
+      onRoad: Number(r.onRoad),
+      monthlyRevenue: Number(r.monthlyRevenue),
+      openValue: Number(r.openValue),
+      uncovered: Number(r.uncovered),
+      lastActivity: r.lastActivity ? new Date(r.lastActivity) : null,
+      agreements: paperCount.get(r.id) ?? 0,
+    }))
+    .sort(
+      (a, b) =>
+        b.wonVehicles - a.wonVehicles ||
+        b.openValue - a.openValue ||
+        a.name.localeCompare(b.name),
+    );
+}
+
+export type AgreementRow = {
+  id: string;
+  accountId: string;
+  accountName: string;
+  opportunityId: string | null;
+  dealName: string | null;
+  type: AgreementType;
+  signedOn: string;
+  renewalOn: string;
+  notes: string | null;
+  fileName: string;
+  contentType: string | null;
+  sizeBytes: number | null;
+  uploadedBy: string | null;
+  createdAt: Date;
+};
+
+/**
+ * Agreements, newest signed first — one customer's, or the organization's.
+ *
+ * Never the blob URL: the file is fetched through /api/agreements/<id>, which
+ * checks the role first, so the address has no reason to leave the server.
+ */
+export async function listAgreements(accountId?: string): Promise<AgreementRow[]> {
+  const session = await requireSession();
+  return db
+    .select({
+      id: agreements.id,
+      accountId: agreements.accountId,
+      accountName: accounts.name,
+      opportunityId: agreements.opportunityId,
+      dealName: opportunities.name,
+      type: agreements.type,
+      signedOn: agreements.signedOn,
+      renewalOn: agreements.renewalOn,
+      notes: agreements.notes,
+      fileName: agreements.fileName,
+      contentType: agreements.contentType,
+      sizeBytes: agreements.sizeBytes,
+      uploadedBy: users.name,
+      createdAt: agreements.createdAt,
+    })
+    .from(agreements)
+    .innerJoin(accounts, eq(accounts.id, agreements.accountId))
+    .leftJoin(opportunities, eq(opportunities.id, agreements.opportunityId))
+    .leftJoin(users, eq(users.id, agreements.uploadedByUserId))
+    .where(
+      and(
+        eq(agreements.organizationId, session.organizationId),
+        accountId ? eq(agreements.accountId, accountId) : undefined,
+      ),
+    )
+    .orderBy(desc(agreements.signedOn), desc(agreements.createdAt));
+}
+
+/**
+ * One customer: the account, every deal, every agreement, and the people we
+ * have spoken to there (from the leads that became its deals — a deal has no
+ * contact fields of its own).
+ */
+export async function getCustomer(id: string) {
+  const session = await requireSession();
+  const [account] = await db
+    .select({ id: accounts.id, name: accounts.name, createdAt: accounts.createdAt })
+    .from(accounts)
+    .where(
+      and(eq(accounts.id, id), eq(accounts.organizationId, session.organizationId)),
+    );
+  if (!account) return null;
+
+  const [deals, papers, contacts] = await Promise.all([
+    listOpportunities({ accountId: id }),
+    listAgreements(id),
+    db
+      .select({
+        id: leads.id,
+        callerName: leads.callerName,
+        designation: leads.designation,
+        mobile: leads.mobile,
+        email: leads.email,
+        enquiryDate: leads.enquiryDate,
+      })
+      .from(leads)
+      .innerJoin(opportunities, eq(opportunities.id, leads.opportunityId))
+      .where(
+        and(
+          eq(leads.organizationId, session.organizationId),
+          eq(opportunities.accountId, id),
+        ),
+      )
+      .orderBy(desc(leads.enquiryDate)),
+  ]);
+
+  return { account, deals, agreements: papers, contacts };
+}

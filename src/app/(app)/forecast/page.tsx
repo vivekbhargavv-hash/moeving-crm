@@ -2,7 +2,7 @@ import { ForecastGrid } from "@/components/forecast/grid";
 import { ForecastTabs } from "@/components/forecast/tabs";
 import { WinsGrid } from "@/components/forecast/wins";
 import type { SalesStage } from "@/db/schema";
-import { cn, pastMonths, upcomingMonths } from "@/lib/utils";
+import { cn, pastMonths, todayInIndia, upcomingMonths } from "@/lib/utils";
 import { requireSales } from "@/server/auth";
 import {
   getForecast,
@@ -28,7 +28,9 @@ export default async function ForecastPage({
   /** One `?stage=a,b` parameter to a list — the same shape the pipeline uses. */
   const list = (k: string) => (one(k) ?? "").split(",").filter(Boolean);
 
-  const months = upcomingMonths(MONTH_COUNT);
+  // India's month, not the server's: from midnight to 05:30 on the 1st, UTC is
+  // still in the month before.
+  const months = upcomingMonths(MONTH_COUNT, new Date(todayInIndia()));
   const filters: OpportunityFilters = {
     cityId: one("city"),
     vehicleTypeId: one("vehicle"),
@@ -36,7 +38,8 @@ export default async function ForecastPage({
     // Multi-select: "how do Negotiation and Contracting look together" is the
     // question this page is usually opened with.
     stages: list("stage") as SalesStage[],
-    from: `${months[0]}-01`,
+    // No `from`: a deal whose closing month has passed is still open, and
+    // belongs in the Overdue column rather than off the edge of the grid.
     to: lastDayOf(months[months.length - 1]!),
   };
 
@@ -92,6 +95,7 @@ export default async function ForecastPage({
           months={forecast.months}
           rows={forecast.rows}
           monthTotals={forecast.monthTotals}
+          undated={forecast.undated}
           filters={filters}
           options={{
             cities: master.cities,

@@ -1,3 +1,4 @@
+import { AlertTriangle, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -67,7 +68,13 @@ export default async function OpportunityPage({
               {stage.label}
             </Badge>
             <h1 className="mt-2 truncate text-[22px] font-bold tracking-[-0.02em]">
-              {row.accountName}
+              {/* The customer's own page: every deal and the signed paper. */}
+              <Link
+                href={`/customers/${opp.accountId}`}
+                className="underline-offset-4 hover:underline"
+              >
+                {row.accountName}
+              </Link>
             </h1>
             <p className="mt-0.5 truncate text-[13px] text-muted">
               {row.city ?? "No city"} · {row.ownerName}
@@ -81,6 +88,20 @@ export default async function OpportunityPage({
           </div>
         </div>
       </div>
+
+      {isWon && !row.hasAgreement ? (
+        <Link
+          href={`/customers/${opp.accountId}`}
+          className="mb-3 flex items-start gap-2.5 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-[13.5px] text-amber-900 active:opacity-80"
+        >
+          <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span className="flex-1">
+            <strong>No agreement on file.</strong> Upload the signed agreement
+            on {row.accountName}&apos;s page.
+          </span>
+          <ChevronRight size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+        </Link>
+      ) : null}
 
       <DetailActions
         opp={{

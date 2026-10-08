@@ -184,9 +184,8 @@ export function DeploymentsBoard({
       </div>
 
       {view === "month" ? (
-        // The grid stands for the whole page: completed deliveries included,
-        // because "what lands in November" is not answered by the trucks that
-        // have not gone yet.
+        // The grid counts the vehicles still to send; deals with every truck
+        // out sit in a Deployed box under it, as they do in the other views.
         <DeploymentGridView deployments={filtered} canOpenDeals={canOpenDeals} />
       ) : null}
 

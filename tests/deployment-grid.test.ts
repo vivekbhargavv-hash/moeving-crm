@@ -49,21 +49,54 @@ describe("buildDeploymentGrid", () => {
     assert.equal(grid.months[0], "2026-08");
   });
 
-  it("counts vehicles promised, and how many are still to go", () => {
+  it("keeps a part-sent fleet in the grid, knowing how many are still to go", () => {
+    const grid = buildDeploymentGrid([
+      job("2026-10-05", "Bangalore", 12, 5),
+      job("2026-10-19", "Bangalore", 8, 3),
+    ]);
+    const cell = grid.rows[0]!.cells[0]!;
+    assert.equal(cell.vehicles, 20);
+    assert.equal(cell.remaining, 12);
+    assert.equal(cell.items.length, 2);
+  });
+
+  it("takes a fully deployed deal out of the grid and into Deployed", () => {
+    // A month must read as the trucks still to send, not the ones gone.
     const grid = buildDeploymentGrid([
       job("2026-10-05", "Bangalore", 12, 5),
       job("2026-10-19", "Bangalore", 8, 8),
     ]);
-    const cell = grid.rows[0]!.cells[0]!;
-    assert.equal(cell.vehicles, 20);
-    assert.equal(cell.remaining, 7);
-    assert.equal(cell.items.length, 2);
+    assert.equal(grid.rows[0]!.cells[0]!.items.length, 1);
+    assert.equal(grid.total.remaining, 7);
+    assert.equal(grid.deployed.length, 1);
+    assert.equal(grid.deployed[0]!.deploymentDate, "2026-10-19");
   });
 
-  it("never lets an over-recorded count read as negative work left", () => {
+  it("files an over-recorded count as deployed, never as negative work", () => {
     // Ops can record every vehicle out and the fleet later shrink on an edit.
     const grid = buildDeploymentGrid([job("2026-10-05", "Pune", 4, 6)]);
-    assert.equal(grid.rows[0]!.total.remaining, 0);
+    assert.deepEqual(grid.rows, []);
+    assert.equal(grid.deployed.length, 1);
+  });
+
+  it("does not stretch the months for history already delivered", () => {
+    const grid = buildDeploymentGrid([
+      job("2026-06-05", "Pune", 4, 4),
+      job("2026-10-05", "Pune", 4, 0),
+    ]);
+    assert.deepEqual(grid.months, ["2026-10"]);
+  });
+
+  it("lists Deployed most recent first", () => {
+    const grid = buildDeploymentGrid([
+      job("2026-08-05", "Pune", 2, 2),
+      job("2026-09-05", "Pune", 2, 2),
+      job(null, "Pune", 2, 2),
+    ]);
+    assert.deepEqual(
+      grid.deployed.map((d) => d.deploymentDate),
+      ["2026-09-05", "2026-08-05", null],
+    );
   });
 
   it("splits one city across the months it is owed in", () => {
@@ -121,15 +154,15 @@ describe("buildDeploymentGrid", () => {
     const grid = buildDeploymentGrid([
       job("2026-10-05", "Pune", 4, 1),
       job("2026-11-05", "Pune", 6, 0),
-      job("2026-11-08", "Mumbai", 5, 5),
+      job("2026-11-08", "Mumbai", 5, 2),
     ]);
     assert.deepEqual(
-      grid.monthTotals.map((t) => t.vehicles),
-      [4, 11],
+      grid.monthTotals.map((t) => t.remaining),
+      [3, 9],
     );
     assert.deepEqual(grid.months, ["2026-10", "2026-11"]);
     assert.equal(grid.total.vehicles, 15);
-    assert.equal(grid.total.remaining, 9);
+    assert.equal(grid.total.remaining, 12);
   });
 
   it("has no months and no rows when nothing is dated", () => {

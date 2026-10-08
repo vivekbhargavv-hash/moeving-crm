@@ -24,7 +24,7 @@ const ITEMS: Item[] = [
     a: (
       <>
         <b>Admins</b> see everything. <b>Deal Owners</b> see Leads, Pipeline,
-        Dashboard, Forecast and Deployments. <b>Operations</b> see Deployments
+        Customers, Dashboard, Forecast and Deployments. <b>Operations</b> see Deployments
         only — never a price or a margin. The <b>phone desk (NOC)</b> sees
         Leads only.
       </>
@@ -147,8 +147,11 @@ const ITEMS: Item[] = [
     a: (
       <>
         Every open deal, by city and the month its owner expects it to close.
-        A deal with no expected closing month stays off it. <b>Wins</b> count
-        on the day a deal is marked won, not its expected month.
+        An open deal whose closing month has already passed sits in the red{" "}
+        <b>Overdue</b> column until its date or stage is updated. A deal with
+        no expected closing month is in no column; the note under the grid
+        counts them. <b>Wins</b> count on the day a deal is marked won, not
+        its expected month.
       </>
     ),
   },
@@ -161,7 +164,53 @@ const ITEMS: Item[] = [
         deployment date. Contracting ones are badged <b>Expected</b>: plan for
         them, but vehicles can only be recorded once the deal is won. Record
         vehicles as they go out — part of a fleet is fine (&ldquo;8 of
-        12&rdquo;).
+        12&rdquo;). <b>By month</b> counts only vehicles still to go out; a
+        deal with every vehicle on the road moves to <b>Deployed</b> under the
+        grid.
+      </>
+    ),
+  },
+  {
+    q: "Where do signed agreements go?",
+    for: SELLERS,
+    a: (
+      <>
+        On the customer&apos;s page (<b>Customers</b> in the menu, or tap the
+        customer&apos;s name on a deal). Upload a PDF, a photo or a Word file
+        and say whether it is an <b>MSA</b>, an <b>Addendum</b> or{" "}
+        <b>Other</b>, when it was signed and when it renews — both dates are
+        required; an addendum takes the renewal date of what it amends. Leave{" "}
+        <b>Covers</b> on <i>All deals</i> for a master agreement, or pick the
+        one deal it is for. A won deal with nothing covering it shows{" "}
+        <b>No agreement</b> in the Pipeline — a reminder, not a block. Any
+        Deal Owner can upload, edit or delete one; Operations and the phone
+        desk cannot see them.
+      </>
+    ),
+  },
+  {
+    q: "How do renewal reminders work?",
+    for: SELLERS,
+    a: (
+      <>
+        Every agreement appears under <b>Renewals due</b> at the top of
+        Customers from 60 days before its renewal date, and turns red once it
+        has passed. Uploading the renewed agreement with a later renewal date
+        clears it, as does moving the date forward with Edit. Papers for the
+        same customer renewing on the same day show as one reminder.
+      </>
+    ),
+  },
+  {
+    q: "Can a customer be deleted?",
+    for: ["admin"],
+    a: (
+      <>
+        Only by an admin, and only a customer with no deals and no
+        agreements — a misspelt name, say. On Customers, tap the note that
+        counts customers with no deals, then the bin on the row (or use{" "}
+        <b>Delete this customer</b> on its page). A customer with any deal,
+        open or closed, stays: it is how that history is found.
       </>
     ),
   },

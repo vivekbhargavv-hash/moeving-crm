@@ -571,6 +571,75 @@ export const opportunities = pgTable(
   ],
 );
 
+/* --------------------------------------------------------------- agreements */
+
+/**
+ * What kind of paper it is. A customer usually signs one master agreement;
+ * some sign one per deal; and any change after signing is an addendum.
+ */
+export const agreementType = pgEnum("agreement_type", ["msa", "addendum", "other"]);
+
+/**
+ * A signed customer agreement: the file, and the dates that matter about it.
+ *
+ * It belongs to the CUSTOMER, because that is who signed it, and may name the
+ * one deal it covers. An agreement naming no deal covers every deal for that
+ * customer — the usual case, one MSA — which is how a won deal decides whether
+ * it has paper behind it.
+ *
+ * The file itself lives in Vercel Blob, in a PRIVATE store: `blob_url` cannot
+ * be opened by anyone holding it. The app streams the file through
+ * /api/agreements/<id>, which checks the person is a deal owner or an admin of
+ * this organization first. Ops and NOC never see one — the agreement carries
+ * the price.
+ */
+export const agreements = pgTable(
+  "agreements",
+  {
+    id: id(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // RESTRICT: deleting a customer must not quietly orphan signed contracts
+    // in blob storage.
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "restrict" }),
+    /** The deal it covers, when it covers one. Null means the whole customer. */
+    opportunityId: uuid("opportunity_id").references(() => opportunities.id, {
+      onDelete: "set null",
+    }),
+    type: agreementType("type").notNull(),
+    signedOn: date("signed_on").notNull(),
+    /**
+     * When it is up for renewal. Required (Vivek, 8 Oct): every agreement
+     * gets a date somebody will be reminded of — an addendum takes the date
+     * of the agreement it amends.
+     */
+    renewalOn: date("renewal_on").notNull(),
+    notes: text("notes"),
+
+    blobUrl: text("blob_url").notNull(),
+    blobPathname: text("blob_pathname").notNull(),
+    fileName: text("file_name").notNull(),
+    contentType: text("content_type"),
+    sizeBytes: integer("size_bytes"),
+
+    uploadedByUserId: uuid("uploaded_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("agreements_org_account_idx").on(t.organizationId, t.accountId),
+    index("agreements_org_renewal_idx").on(t.organizationId, t.renewalOn),
+    check(
+      "agreements_renewal_after_signing",
+      sql`${t.renewalOn} >= ${t.signedOn}`,
+    ),
+  ],
+);
+
 export const opportunityEvents = pgTable(
   "opportunity_events",
   {
@@ -594,3 +663,4 @@ export const opportunityEvents = pgTable(
 export type Opportunity = typeof opportunities.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type SalesStage = (typeof salesStage.enumValues)[number];
+export type AgreementType = (typeof agreementType.enumValues)[number];

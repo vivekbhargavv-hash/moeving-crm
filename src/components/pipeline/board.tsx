@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
+import { missingAgreement, NoAgreementMark } from "@/components/customers/no-agreement";
 import { PipelineList } from "@/components/pipeline/table";
 import { Segmented } from "@/components/ui";
 import { StageChanger, type StageTarget } from "@/components/stage-changer";
@@ -710,9 +711,12 @@ function DealCard({
         }
         className="mt-3 flex w-full items-center justify-between border-t border-line py-3 pl-4 pr-3.5 text-left transition active:bg-canvas"
       >
-        <Badge className={cn(stage.chip, "px-2.5 py-1 text-[12px]")}>
-          {stage.label}
-        </Badge>
+        <span className="flex items-center gap-1.5">
+          <Badge className={cn(stage.chip, "px-2.5 py-1 text-[12px]")}>
+            {stage.label}
+          </Badge>
+          {missingAgreement(opp) ? <NoAgreementMark /> : null}
+        </span>
         <span className="flex items-center gap-0.5 text-[13px] font-semibold text-brand-ink">
           Move stage <ChevronRight size={15} />
         </span>

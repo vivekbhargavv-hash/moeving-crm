@@ -42,7 +42,17 @@ export type DeploymentGrid<T> = {
    * dropping them silently would make the grid disagree with the queue.
    */
   undated: T[];
+  /**
+   * Deals with every vehicle on the road, most recent first. They are not in
+   * the grid: a planner reading "12 in Bangalore in November" needs that to
+   * be twelve trucks still to send, not twelve of which eight have gone.
+   */
+  deployed: T[];
 };
+
+/** Every vehicle on the road, or more — an edit can shrink a fleet after. */
+export const isFullyDeployed = (row: Groupable) =>
+  row.vehiclesDeployed >= row.fleetSize;
 
 const empty = <T>(): GridCell<T> => ({ vehicles: 0, remaining: 0, items: [] });
 
@@ -83,8 +93,17 @@ function monthRange(first: string, last: string) {
 export function buildDeploymentGrid<T extends Groupable>(
   rows: T[],
 ): DeploymentGrid<T> {
-  const undated = rows.filter((r) => !r.deploymentDate);
-  const dated = rows.filter((r) => r.deploymentDate);
+  // Only the work still owed is laid out in the grid. Vivek, Oct 2026: the
+  // vehicles already deployed were being counted in the cells, so a month
+  // read as more work than there was.
+  const deployed = rows
+    .filter(isFullyDeployed)
+    .sort((a, b) =>
+      (a.deploymentDate ?? "") > (b.deploymentDate ?? "") ? -1 : 1,
+    );
+  const owed = rows.filter((r) => !isFullyDeployed(r));
+  const undated = owed.filter((r) => !r.deploymentDate);
+  const dated = owed.filter((r) => r.deploymentDate);
 
   const present = [
     ...new Set(dated.map((r) => r.deploymentDate!.slice(0, 7))),
@@ -140,5 +159,6 @@ export function buildDeploymentGrid<T extends Groupable>(
     monthTotals,
     total,
     undated,
+    deployed,
   };
 }

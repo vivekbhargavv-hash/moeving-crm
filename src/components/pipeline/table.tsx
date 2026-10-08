@@ -6,6 +6,7 @@ import * as React from "react";
 
 import Link from "next/link";
 
+import { missingAgreement, NoAgreementMark } from "@/components/customers/no-agreement";
 import type { StageTarget } from "@/components/stage-changer";
 import { Badge } from "@/components/ui-server";
 import {
@@ -356,6 +357,13 @@ export function PipelineList({
                         {o.ownerName.split(" ")[0]}
                       </span>
                     </div>
+                    {/* Its own line: beside the stage and the cost on a 390px
+                        card it squeezed both into two lines each. */}
+                    {missingAgreement(o) ? (
+                      <div className="mt-2">
+                        <NoAgreementMark />
+                      </div>
+                    ) : null}
                   </div>
                 </li>
               );
@@ -469,6 +477,7 @@ export function PipelineList({
                         {stage.label}
                       </Badge>
                     </button>
+                    {missingAgreement(o) ? <NoAgreementMark className="ml-1.5" /> : null}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-muted">{o.city ?? "—"}</td>
                   <td className="whitespace-nowrap px-3 py-2.5">

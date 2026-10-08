@@ -698,12 +698,11 @@ Roughly in order of value to adoption:
 
 ## 10. Known rough edges
 
-- **Agreement upload was never driven end to end against a real Blob store**
-  from this sandbox (no store existed and Vercel's API is not reachable from
-  here). Everything around it was: the pages, the list, coverage and renewals
-  were checked in the browser against a local Postgres, and the server checks
-  are unit-tested. The first real upload after the store is connected is the
-  test.
+- **Agreement upload was verified end to end on 8 Oct** on the branch preview
+  against production: a PDF uploaded, opened through `/api/agreements/<id>`,
+  landed in the private store under its org/customer folder, and DHL's won
+  deals stopped saying "No agreement". Only the single (non-multipart) path
+  was exercised; files over 8 MB go up in parts and have not been tried.
 - **A customer cannot be deleted while it has agreements** (`ON DELETE
   RESTRICT`), and nothing in the app deletes customers anyway.
 

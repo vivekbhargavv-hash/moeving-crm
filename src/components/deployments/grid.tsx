@@ -33,19 +33,24 @@ export function DeploymentGridView({
 
   const max = Math.max(
     1,
-    ...grid.rows.flatMap((r) => r.cells.map((c) => c.vehicles)),
+    ...grid.rows.flatMap((r) => r.cells.map((c) => c.remaining)),
   );
   const open = grid.rows.find((r) => r.key === expanded) ?? null;
 
   if (grid.months.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-line bg-white/60 px-6 py-12 text-center">
-        <p className="font-semibold">Nothing with a date to plan against</p>
-        <p className="mt-1 text-sm text-muted">
-          {grid.undated.length
-            ? `${num(grid.undated.length)} won ${grid.undated.length === 1 ? "deal has" : "deals have"} no deployment date, so there is no month to put them in.`
-            : "Deals appear here once they are marked Closed Won."}
-        </p>
+      <div>
+        <div className="rounded-2xl border border-dashed border-line bg-white/60 px-6 py-12 text-center">
+          <p className="font-semibold">Nothing left to deploy</p>
+          <p className="mt-1 text-sm text-muted">
+            {grid.undated.length
+              ? `${num(grid.undated.length)} won ${grid.undated.length === 1 ? "deal has" : "deals have"} no deployment date, so there is no month to put them in.`
+              : grid.deployed.length
+                ? "Every dated deal has all its vehicles on the road."
+                : "Deals appear here once they are marked Closed Won."}
+          </p>
+        </div>
+        <DeployedBox deployed={grid.deployed} canOpenDeals={canOpenDeals} />
       </div>
     );
   }
@@ -112,10 +117,10 @@ export function DeploymentGridView({
                     {r.cells.map((c, i) => (
                       <td key={grid.months[i]} className="p-1 text-center">
                         <button
-                          disabled={!c.vehicles}
+                          disabled={!c.remaining}
                           aria-label={`${r.city}, ${monthLabelLong(grid.months[i]!)}: ${
-                            c.vehicles
-                              ? `${num(c.vehicles)} ${c.vehicles === 1 ? "vehicle" : "vehicles"} to deploy`
+                            c.remaining
+                              ? `${num(c.remaining)} ${c.remaining === 1 ? "vehicle" : "vehicles"} to deploy`
                               : "nothing due"
                           }`}
                           onClick={() =>
@@ -123,24 +128,24 @@ export function DeploymentGridView({
                           }
                           className={cn(
                             "tabular h-11 w-full min-w-[42px] rounded-lg text-[15px] font-semibold transition",
-                            c.vehicles
+                            c.remaining
                               ? "hover:ring-2 hover:ring-brand/30"
                               : "cursor-default text-muted/40",
                           )}
                           style={
-                            c.vehicles
+                            c.remaining
                               ? {
-                                  backgroundColor: `color-mix(in oklab, var(--color-brand) ${8 + (c.vehicles / max) * 42}%, white)`,
+                                  backgroundColor: `color-mix(in oklab, var(--color-brand) ${8 + (c.remaining / max) * 42}%, white)`,
                                 }
                               : undefined
                           }
                         >
-                          {c.vehicles ? num(c.vehicles) : "·"}
+                          {c.remaining ? num(c.remaining) : "·"}
                         </button>
                       </td>
                     ))}
                   <td className="tabular hidden py-2 pl-1 pr-3 text-right text-[13px] font-bold sm:table-cell">
-                    {num(r.total.vehicles)}
+                    {num(r.total.remaining)}
                   </td>
                 </tr>
               ))}
@@ -154,11 +159,11 @@ export function DeploymentGridView({
                     key={grid.months[i]}
                     className="tabular px-1 py-2.5 text-center text-[13px] font-semibold"
                   >
-                    {t.vehicles ? num(t.vehicles) : "·"}
+                    {t.remaining ? num(t.remaining) : "·"}
                   </td>
                 ))}
                 <td className="tabular hidden py-2.5 pl-1 pr-3 text-right text-[13px] font-bold sm:table-cell">
-                  {num(grid.total.vehicles)}
+                  {num(grid.total.remaining)}
                 </td>
               </tr>
             </tbody>
@@ -187,10 +192,7 @@ export function DeploymentGridView({
               {open.city}
             </h3>
             <span className="tabular shrink-0 text-[13px] text-muted">
-              {num(open.total.vehicles)} veh
-              {open.total.remaining
-                ? ` · ${num(open.total.remaining)} to go`
-                : " · all out"}
+              {num(open.total.remaining)} to go
             </span>
             <button
               onClick={() => setExpanded(null)}
@@ -209,8 +211,7 @@ export function DeploymentGridView({
                       {monthLabelLong(grid.months[i]!)}
                     </p>
                     <p className="tabular ml-auto text-[12px] text-muted">
-                      {num(cell.vehicles)} veh
-                      {cell.remaining ? ` · ${num(cell.remaining)} to go` : " · all out"}
+                      {num(cell.remaining)} to go
                     </p>
                   </div>
                   <ul className="divide-y divide-line">
@@ -225,15 +226,86 @@ export function DeploymentGridView({
         </section>
       ) : null}
 
+      <DeployedBox deployed={grid.deployed} canOpenDeals={canOpenDeals} />
+
       <p className="mt-3 px-1 text-xs text-muted">
-        Vehicles due in the month they are wanted — won deals, plus deals at
-        Contracting that have pencilled in a date and are marked Expected. {num(grid.total.remaining)} of{" "}
-        {num(grid.total.vehicles)} are still to go out.
+        Vehicles still to deploy, in the month they are wanted — won deals,
+        plus deals at Contracting that have pencilled in a date and are marked
+        Expected. A part-sent fleet counts only the vehicles not yet out; a
+        fully deployed deal moves to Deployed.
         {grid.undated.length
           ? ` ${num(grid.undated.length)} ${grid.undated.length === 1 ? "deal has" : "deals have"} no deployment date and cannot be placed in a month — they are in the By date view under “No date set”.`
           : ""}
       </p>
     </div>
+  );
+}
+
+/**
+ * Deals with every vehicle on the road, kept apart from the grid and grouped
+ * by the month they were due. Collapsed: it is history, and the work still
+ * owed is what this screen is opened for.
+ */
+function DeployedBox({
+  deployed,
+  canOpenDeals,
+}: {
+  deployed: Deployment[];
+  canOpenDeals: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  if (deployed.length === 0) return null;
+
+  const vehicles = deployed.reduce((s, d) => s + d.fleetSize, 0);
+  const byMonth: { key: string; items: Deployment[] }[] = [];
+  for (const d of deployed) {
+    const key = d.deploymentDate?.slice(0, 7) ?? "none";
+    const last = byMonth[byMonth.length - 1];
+    if (last?.key === key) last.items.push(d);
+    else byMonth.push({ key, items: [d] });
+  }
+
+  return (
+    <section className="mt-4 rounded-[14px] border border-line bg-canvas">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex min-h-12 w-full items-center gap-2 px-4 py-3 text-left active:opacity-70"
+      >
+        <ChevronRight
+          size={14}
+          className={cn("shrink-0 text-muted transition", open && "rotate-90")}
+        />
+        <span className="flex-1 text-[13px] font-semibold uppercase tracking-wide text-muted">
+          Deployed
+        </span>
+        <span className="tabular text-[13px] font-semibold text-emerald-700">
+          {num(deployed.length)} {deployed.length === 1 ? "deal" : "deals"} ·{" "}
+          {num(vehicles)} veh
+        </span>
+      </button>
+      {open ? (
+        <div className="space-y-3 border-t border-line px-4 py-3">
+          {byMonth.map((m) => (
+            <div key={m.key}>
+              <div className="flex items-baseline gap-2 border-b border-line pb-1">
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+                  {m.key === "none" ? "No date set" : monthLabelLong(m.key)}
+                </p>
+                <p className="tabular ml-auto text-[12px] text-muted">
+                  {num(m.items.reduce((s, d) => s + d.fleetSize, 0))} veh
+                </p>
+              </div>
+              <ul className="divide-y divide-line">
+                {m.items.map((d) => (
+                  <ClientRow key={d.id} d={d} canOpenDeals={canOpenDeals} />
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -268,7 +340,11 @@ function ClientRow({
             left === 0 ? "text-emerald-700" : "text-ink",
           )}
         >
-          {left === 0 ? "all out" : `${left} left`}
+          {left === 0
+            ? "all out"
+            : d.vehiclesDeployed > 0
+              ? `${left} left · ${d.vehiclesDeployed} out`
+              : `${left} left`}
         </span>
       </div>
       <div className="mt-0.5 flex items-baseline gap-2 text-[12.5px] text-muted">

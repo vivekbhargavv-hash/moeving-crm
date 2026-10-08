@@ -37,6 +37,8 @@ import {
   type DashboardPeriod,
 } from "@/lib/dashboard";
 import type { CostDefault } from "@/lib/cost-defaults";
+import { dayBefore, forecastColumn, OVERDUE } from "@/lib/forecast";
+import { todayInIndia } from "@/lib/utils";
 import { requireSession } from "@/server/auth";
 
 export type OpportunityCard = {
@@ -595,45 +597,72 @@ export async function getForecast(
     : (OPEN_STAGES as SalesStage[]);
 
   const monthExpr = sql<string>`to_char(${opportunities.expectedCloseDate}, 'YYYY-MM')`;
+  const where = [
+    ...filterConditions(session.organizationId, session.userId, {
+      ...filters,
+      stage: undefined,
+      // Everything before the window too: those are the Overdue column.
+      from: undefined,
+    }),
+    inArray(opportunities.stage, stages),
+  ];
 
-  const rows = await db
-    .select({
-      cityId: opportunities.cityId,
-      city: cities.name,
-      month: monthExpr.as("month"),
-      fleet: sql<number>`sum(${opportunities.fleetSize})::int`,
-      value: sql<number>`sum(coalesce(${opportunities.price}, 0) * ${opportunities.fleetSize})::int`,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(opportunities)
-    .leftJoin(cities, eq(cities.id, opportunities.cityId))
-    .where(
-      and(
-        ...filterConditions(session.organizationId, session.userId, {
-          ...filters,
-          stage: undefined,
-        }),
-        inArray(opportunities.stage, stages),
-        sql`${opportunities.expectedCloseDate} is not null`,
+  const [rows, [undated]] = await Promise.all([
+    db
+      .select({
+        cityId: opportunities.cityId,
+        city: cities.name,
+        month: monthExpr.as("month"),
+        fleet: sql<number>`sum(${opportunities.fleetSize})::int`,
+        value: sql<number>`sum(coalesce(${opportunities.price}, 0) * ${opportunities.fleetSize})::int`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(opportunities)
+      .leftJoin(cities, eq(cities.id, opportunities.cityId))
+      .where(and(...where, sql`${opportunities.expectedCloseDate} is not null`))
+      .groupBy(opportunities.cityId, cities.name, monthExpr),
+    // Open deals nobody has given a closing month. They have no column, and
+    // leaving them out without a word made the forecast look complete.
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(opportunities)
+      .leftJoin(cities, eq(cities.id, opportunities.cityId))
+      .where(
+        and(
+          ...filterConditions(session.organizationId, session.userId, {
+            ...filters,
+            stage: undefined,
+            from: undefined,
+            to: undefined,
+          }),
+          inArray(opportunities.stage, stages),
+          sql`${opportunities.expectedCloseDate} is null`,
+        ),
       ),
-    )
-    .groupBy(opportunities.cityId, cities.name, monthExpr);
+  ]);
 
-  const cityOrder = new Map<string, { id: string | null; name: string }>();
   const grid = new Map<string, ForecastCell>();
+  const cityOrder = new Map<string, { id: string | null; name: string }>();
+  let anyOverdue = false;
   for (const r of rows) {
+    const column = forecastColumn(r.month, months);
+    if (!column) continue;
+    if (column === OVERDUE) anyOverdue = true;
     const key = r.cityId ?? "none";
     cityOrder.set(key, { id: r.cityId, name: r.city ?? "No city" });
-    grid.set(`${key}|${r.month}`, {
-      fleet: Number(r.fleet),
-      value: Number(r.value),
-      count: Number(r.count),
-    });
+    const cell = grid.get(`${key}|${column}`) ?? { fleet: 0, value: 0, count: 0 };
+    cell.fleet += Number(r.fleet);
+    cell.value += Number(r.value);
+    cell.count += Number(r.count);
+    grid.set(`${key}|${column}`, cell);
   }
+
+  // The Overdue column appears only when something is in it.
+  const columns = anyOverdue ? [OVERDUE, ...months] : months;
 
   const cityRows = [...cityOrder.entries()]
     .map(([key, meta]) => {
-      const cells = months.map(
+      const cells = columns.map(
         (m) => grid.get(`${key}|${m}`) ?? { fleet: 0, value: 0, count: 0 },
       );
       return {
@@ -654,7 +683,7 @@ export async function getForecast(
     .filter((r) => r.total.count > 0)
     .sort((a, b) => b.total.fleet - a.total.fleet);
 
-  const monthTotals = months.map((_, i) =>
+  const monthTotals = columns.map((_, i) =>
     cityRows.reduce(
       (acc, r) => ({
         fleet: acc.fleet + r.cells[i]!.fleet,
@@ -665,7 +694,12 @@ export async function getForecast(
     ),
   );
 
-  return { months, rows: cityRows, monthTotals };
+  return {
+    months: columns,
+    rows: cityRows,
+    monthTotals,
+    undated: Number(undated?.count ?? 0),
+  };
 }
 
 /** Drill-down: one city + one month, grouped by vehicle type. */
@@ -674,10 +708,17 @@ export async function getForecastDrilldown(
   month: string,
   filters: OpportunityFilters = {},
 ) {
-  const from = `${month}-01`;
-  const [y, m] = month.split("-").map(Number);
-  const end = new Date(Date.UTC(y!, m!, 0));
-  const to = end.toISOString().slice(0, 10);
+  let from: string | undefined;
+  let to: string;
+  if (month === OVERDUE) {
+    // Every closing date before this month — however long ago it slipped.
+    from = undefined;
+    to = dayBefore(todayInIndia().slice(0, 7));
+  } else {
+    from = `${month}-01`;
+    const [y, m] = month.split("-").map(Number);
+    to = new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
+  }
 
   const opps = await listOpportunities({
     ...filters,

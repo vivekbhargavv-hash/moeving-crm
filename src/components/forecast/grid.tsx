@@ -11,6 +11,7 @@ import { startNavigation } from "@/lib/busy";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
 import { cn, formatDate, inrCompact, monthLabel, monthLabelLong, num } from "@/lib/utils";
+import { OVERDUE } from "@/lib/forecast";
 import { loadDrilldown } from "@/server/forecast-actions";
 
 const FIELD = "h-11 w-full min-w-0 rounded-xl px-2 text-[12px] font-medium";
@@ -31,6 +32,11 @@ type Group = {
   items: OpportunityCard[];
 };
 
+/** "Overdue" for the column of slipped dates, otherwise "Oct". */
+const columnLabel = (m: string) => (m === OVERDUE ? "Overdue" : monthLabel(m));
+const columnLabelLong = (m: string) =>
+  m === OVERDUE ? "Overdue — closing date has passed" : monthLabelLong(m);
+
 /** The deals a city expects to close in one month. */
 type MonthDeals = { month: string; items: OpportunityCard[] };
 
@@ -38,12 +44,15 @@ export function ForecastGrid({
   months,
   rows,
   monthTotals,
+  undated,
   filters,
   options,
 }: {
   months: string[];
   rows: Row[];
   monthTotals: ForecastCell[];
+  /** Open deals with no expected closing date, so in no column. */
+  undated: number;
   filters: OpportunityFilters;
   options: {
     cities: { id: string; name: string }[];
@@ -141,9 +150,12 @@ export function ForecastGrid({
               {months.map((m) => (
                 <th
                   key={m}
-                  className="px-1 py-2.5 text-center text-[12px] font-semibold uppercase tracking-wide text-muted"
+                  className={cn(
+                    "px-1 py-2.5 text-center text-[12px] font-semibold uppercase tracking-wide",
+                    m === OVERDUE ? "text-rose-700" : "text-muted",
+                  )}
                 >
-                  {monthLabel(m)}
+                  {columnLabel(m)}
                 </th>
               ))}
               <th className="hidden px-3 py-3 text-right text-[13px] font-semibold uppercase tracking-wide text-muted sm:table-cell">
@@ -180,7 +192,7 @@ export function ForecastGrid({
                         disabled={!c.count}
                         // A bare "12" says nothing without the row and column
                         // a sighted reader gets from the grid around it.
-                        aria-label={`${r.city}, ${monthLabelLong(months[i]!)}: ${
+                        aria-label={`${r.city}, ${columnLabelLong(months[i]!)}: ${
                           c.count
                             ? `${show(c)} ${metric === "fleet" ? "vehicles" : "a month"}, ${c.count} ${c.count === 1 ? "deal" : "deals"}`
                             : "nothing closing"
@@ -193,9 +205,13 @@ export function ForecastGrid({
                           c.count
                             ? "hover:ring-2 hover:ring-brand/30"
                             : "cursor-default text-muted/40",
+                          // Late is rose everywhere in the app; it must not
+                          // read as one more month of healthy pipeline.
+                          c.count && months[i] === OVERDUE &&
+                            "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
                         )}
                         style={
-                          c.count
+                          c.count && months[i] !== OVERDUE
                             ? {
                                 backgroundColor: `color-mix(in oklab, var(--color-brand) ${8 + intensity * 42}%, white)`,
                               }
@@ -228,8 +244,13 @@ export function ForecastGrid({
                             {/* The month is the heading, because a forecast is
                                 read a month at a time. */}
                             <div className="flex items-baseline gap-2 border-b border-line pb-1">
-                              <p className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-                                {monthLabelLong(m.month)}
+                              <p
+                                className={cn(
+                                  "text-[12px] font-semibold uppercase tracking-wide",
+                                  m.month === OVERDUE ? "text-rose-700" : "text-muted",
+                                )}
+                              >
+                                {columnLabelLong(m.month)}
                               </p>
                               <p className="tabular ml-auto text-[12px] text-muted">
                                 {num(m.items.reduce((a, o) => a + o.fleetSize, 0))}{" "}
@@ -285,7 +306,13 @@ export function ForecastGrid({
                   Total
                 </th>
                 {monthTotals.map((t, i) => (
-                  <td key={months[i]} className="tabular px-1 py-2.5 text-center text-[13px] font-semibold">
+                  <td
+                    key={months[i]}
+                    className={cn(
+                      "tabular px-1 py-2.5 text-center text-[13px] font-semibold",
+                      months[i] === OVERDUE && t.count && "text-rose-700",
+                    )}
+                  >
                     {show(t)}
                   </td>
                 ))}
@@ -313,13 +340,27 @@ export function ForecastGrid({
 
       <p className="mt-3 px-1 text-xs text-muted">
         Open deals only, placed in the month of their expected closing date.
+        {months[0] === OVERDUE
+          ? " Overdue holds open deals whose closing month has already passed — move their date or their stage."
+          : ""}
         {metric === "fleet" ? " Numbers are vehicles." : " Numbers are monthly value."}
       </p>
+      {undated ? (
+        <p className="mt-1 px-1 text-xs font-medium text-amber-700">
+          {num(undated)} open {undated === 1 ? "deal has" : "deals have"} no
+          expected closing date, so {undated === 1 ? "it is" : "they are"} in
+          no month above.
+        </p>
+      ) : null}
 
       <Sheet
         open={Boolean(drill)}
         onClose={() => setDrill(null)}
-        title={drill ? `${drill.city} · ${monthLabelLong(drill.month)}` : ""}
+        title={
+          drill
+            ? `${drill.city} · ${drill.month === OVERDUE ? "Overdue" : monthLabelLong(drill.month)}`
+            : ""
+        }
       >
         {groups === null ? (
           <div className="flex justify-center py-10 text-muted">

@@ -1,6 +1,8 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 24 September 2026 (tenth session, speed and loading feedback)
+**Last updated:** 8 October 2026 (eleventh session: Forecast Overdue column,
+Deployments by month without delivered work, Customers page with signed
+agreements)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main` (push straight to it)
 **Live:** https://good-deal-crm.vercel.app
@@ -11,11 +13,25 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-**Migrations 0000–0012 are all applied to production** (0012, lead
-assignment, on 23 Sep before its code deployed). Migrations are applied by
+**Migration 0013 (agreements) must be applied to production BEFORE the
+8 Oct branch merges** — the Pipeline reads the `agreements` table on every
+load to decide which won deals say "No agreement", so the page errors without
+it. It is additive (a new enum and a new table). Migrations 0000–0012 are
+applied (0012, lead assignment, on 23 Sep before its code deployed). Migrations are applied by
 hand through the Neon MCP connector BEFORE their code deploys, because the app
 queries those tables on page load — 0012 is read by the shell on EVERY page,
 for the Leads badge.
+
+### Agreement storage (8 Oct)
+
+00. **Uploading agreements needs a private Vercel Blob store connected to the
+   `good-deal-crm` project.** Vercel → Storage → Create → Blob, access
+   **Private**, connect it to the project for Production, Preview and
+   Development. That adds `BLOB_READ_WRITE_TOKEN` to the environment; redeploy
+   after. Until then the Customers page works and the Upload button says
+   "File storage is not set up yet". Never make the store public: the files
+   carry prices, and the app's own route (`/api/agreements/<id>`) is what keeps
+   ops and NOC out.
 
 ### Push notifications (23 Sep)
 
@@ -184,6 +200,15 @@ Change these only deliberately — a lot of code assumes them.
 | **`last_seen_at` is written with `after()`**, once the page has been sent. | It is the least important thing a request does; the page should not wait on it. |
 | **Deleting a deal goes straight to the Pipeline** — no `router.refresh()` first. | The refresh re-rendered the deleted deal's page before navigating, a whole extra server round trip. The action already revalidates `/pipeline`. |
 | **A Pipeline table row prefetches its deal on hover.** | A row is a `<tr onClick>`, not a Link, so Next never prefetched it and the click waited for the server before even showing the skeleton. |
+| **The Sales Closure Forecast has an Overdue column** (rose, leftmost, only when non-empty) for open deals whose expected closing month has passed; a note under the grid counts open deals with no closing date. The page passes no `from` to the query; `lib/forecast.ts` decides the column. | Vivek, 8 Oct: September's open deals were missing. The window started at the current month and silently dropped them. Not rolled into the current month: that overstates it and hides that the forecast slipped. The window's months now come from India's date, not UTC. |
+| **Deployments By month counts only vehicles still to go.** A fully deployed deal leaves the grid for a collapsed **Deployed** box under it, grouped by month; a part-sent fleet counts its remainder. The month span is the outstanding work's own. | Vivek, 8 Oct. This reverses the earlier "the grid stands for the whole page" choice: delivered trucks in a cell made a month read as more work than there was. `buildDeploymentGrid` returns `deployed`. |
+| **Customers** (`/customers`, `/customers/<id>`) — in the rail and the phone's ☰ menu, NOT the bottom bar. Admin and deal owners only (`requireSales()`). | Vivek, 8 Oct. A place to look something up, not one you are in all day. Customer page: tiles, agreements, deals grouped Won / Open / Lost-and-dormant with expansions under their parent, and the people we spoke to (from the leads that became its deals — deals have no contact fields). A deal page's customer name links here. |
+| **Agreements belong to the customer and may name one deal.** Type MSA / Addendum / Other, signed date (required), renewal date (optional), note. A won deal is **covered** by an agreement for the whole customer, for itself, or for the deal it grew out of (`isCovered` in `lib/agreements.ts`, mirrored in SQL as `hasAgreementSql` in `queries.ts` — change both together). | Vivek: usually one MSA per customer, sometimes one per deal, plus addendums. Expansions run on the parent's paper. |
+| **"No agreement" is a warning, never a block** — on won deals only, in the Pipeline (list, table, board), on the deal page and on the customer page. | Vivek: "Not yet" to requiring one at Closed Won. A win is recorded when it is won; the paper follows. |
+| **Agreement files live in a PRIVATE Vercel Blob store** and are read only through `/api/agreements/<id>`, which refuses ops and NOC and looks the row up inside the caller's organization. The blob URL never reaches a browser. | The files carry the price. A private store means the address alone opens nothing. |
+| **Uploads go browser → blob directly** (`upload()` from `@vercel/blob/client`, token from `/api/agreements/upload`), then `createAgreement` records them. The token route checks role, org and customer and pins the path to `agreements/<org>/<customer>/`; `createAgreement` checks the path AGAIN and asks the store (`head`) for the real size and type. | A Vercel function refuses bodies over 4.5 MB and scanned contracts are bigger. The second check matters because issuing a token proves nothing to the action. Limit 25 MB: PDF, JPG/PNG/HEIC/WebP, Word. The client library is imported on tap (it was 34 kB of the page). |
+| **Every deal owner and admin may upload, edit and delete agreements.** Upload/delete adds a line to the covered deal's timeline. | Vivek, 8 Oct. Delete removes the row first, then the file — an orphaned file is harmless, a row pointing at nothing is not. |
+| **Renewal reminders are in-app**: "Renewals due" at the top of Customers lists agreements renewing within 60 days or already past. One stops asking once the same customer has another agreement (same deal, or customer-wide) with a LATER renewal date — so uploading the renewal clears it. An addendum with no end date does not. | Vivek asked for expiry reminders. Push/email reminders are not built — see § 9. |
 
 ---
 
@@ -193,11 +218,14 @@ Change these only deliberately — a lot of code assumes them.
 src/
   app/
     (app)/            dashboard · leads · pipeline · forecast · opportunities/[id]
+                      customers · customers/[id]
                       deployments (ops, sales, admin) · settings (everyone)
                       admin/users · admin/master-data · admin/cost-defaults
                       every route has a loading.tsx beside its page.tsx
     api/export/deals  CSV export (org-scoped, UTF-8 BOM for Excel)
     api/warm          wakes Neon while someone is using the app (signed-in only)
+    api/agreements/upload  issues a blob upload token for one agreement file
+    api/agreements/[id]    streams one agreement from the private store
     sign-in, sign-up, no-access, offline
   components/
     app-shell.tsx     mobile header + tab bar + desktop rail + toast
@@ -216,6 +244,8 @@ src/
     admin/            master-data.tsx · users.tsx · cost-defaults.tsx
     skeletons.tsx     the shapes every loading.tsx is built from
     deployments/      board.tsx — the ops queue, partial counts and all
+    customers/        list.tsx · agreements.tsx (upload/edit/delete) ·
+                      no-agreement.tsx (the Pipeline's warning chip)
     install-app.tsx   PWA install: a real button on Android, steps on iOS
     ui/               Button, Input, Select, Sheet, Field, ChoiceGroup
     ui-server.tsx     Card, Badge, Avatar, EmptyState (no "use client")
@@ -229,6 +259,7 @@ src/
     invites.ts        asks Clerk to email a new joiner a sign-up link
     invite-url.ts     that link's landing URL — absolute, or not at all
     push.ts           Web Push to one user's browsers; off without VAPID keys
+    agreement-actions.ts  create / update / delete an agreement
   lib/
     deployment-groups.ts  how the ops queue is cut into sections (by due
                       date, or by city) — no React, so it tests
@@ -240,6 +271,8 @@ src/
                       figures have drifted from it — no React, so it tests
     deployment-grid.ts  the Deployments By month grid: which months get a
                       column, and what a cell counts — no React, so it tests
+    forecast.ts       which Forecast column a deal lands in (Overdue or a month)
+    agreements.ts     coverage, renewal reminders, allowed files, blob paths
 tests/
   stage-change.test.ts          planStageChange, runs anywhere
   cost-defaults.test.ts         the standard-rate matching rules, runs anywhere
@@ -248,6 +281,8 @@ tests/
   deployment-grid.test.ts       the By month grid's months and cells, anywhere
   lead-funnel.test.ts           the inbound rates and their denominators
   lead-assignment.test.ts       who may assign and act on a lead
+  forecast.test.ts              the Overdue boundary
+  agreements.test.ts            coverage, renewals, files and blob paths
   neon-http-driver.test.ts      no db.transaction() anywhere in src/, ever
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
@@ -264,6 +299,7 @@ drizzle/
   0010_*.sql          the noc role, lead_status, and the leads table
   0011_*.sql          leads.converted_at — the funnel's third timestamp
   0012_*.sql          leads.assigned_to/by/at + push_subscriptions, see § 0
+  0013_*.sql          agreement_type + agreements, see § 0
   meta/               drizzle's journal. Repaired on 22 Sep — see § 6
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
@@ -282,7 +318,7 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. A hundred and twelve (eight of them on lead assignment — who may assign and act); the older ones:
+`node --test` with `tsx` — no test framework, no new dependencies. A hundred and fifty: twenty-six on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"
@@ -536,6 +572,8 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL       /sign-in
 NEXT_PUBLIC_VAPID_PUBLIC_KEY        Web Push public key (safe to ship to browsers)
 VAPID_PRIVATE_KEY                   Web Push private key — a secret
 VAPID_SUBJECT                       mailto: contact the push services may use
+BLOB_READ_WRITE_TOKEN               private Vercel Blob store for agreements —
+                                    added by Vercel when the store is connected
 ```
 
 - **VAPID keys are generated once** (`npx web-push generate-vapid-keys`) and
@@ -646,11 +684,23 @@ Roughly in order of value to adoption:
 6. **Won-deal handover** to ops: the moment a deal is won, someone has to
    actually deliver the trucks. `parent_opportunity_id` already models the
    chain of deployments for one customer, so a handover view has its spine.
-7. **A customer page.** Repeat business is now linked deal-to-deal, but there
-   is no screen that says "everything we have ever done with Berger Paints".
-   `accounts` plus the expansion chain is most of the query.
+7. **Renewal reminders by push.** In-app only today (§ 2). A daily Vercel cron
+   calling `renewalsDue()` and `pushToUser()` for the owners of each
+   customer's won deals is the shape; decide who gets told first.
+8. **Merging duplicate customers.** `accounts` is unique on the exact name, so
+   "Flipkart" and "Flipkart India" are two customers. None exist today
+   (checked 8 Oct), but an admin merge on the Customers page is the fix.
 
 ## 10. Known rough edges
+
+- **Agreement upload was never driven end to end against a real Blob store**
+  from this sandbox (no store existed and Vercel's API is not reachable from
+  here). Everything around it was: the pages, the list, coverage and renewals
+  were checked in the browser against a local Postgres, and the server checks
+  are unit-tested. The first real upload after the store is connected is the
+  test.
+- **A customer cannot be deleted while it has agreements** (`ON DELETE
+  RESTRICT`), and nothing in the app deletes customers anyway.
 
 - **Push on an iPhone works only from the installed app** (Add to Home
   Screen, iOS 16.4+). In Safari the Settings switch says so. Android Chrome,

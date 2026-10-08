@@ -1,6 +1,5 @@
 "use client";
 
-import { upload } from "@vercel/blob/client";
 import { ExternalLink, FileText, Pencil, Trash2, Upload } from "lucide-react";
 import * as React from "react";
 
@@ -121,6 +120,9 @@ export function AgreementsPanel({
           if (problem) return setError(problem);
 
           setProgress(0);
+          // Loaded on the tap, not with the page: it is most of the page's
+          // JavaScript, and most visits only read the list.
+          const { upload } = await import("@vercel/blob/client");
           const blob = await upload(`${folder}${safeFileName(file.name)}`, file, {
             access: "private",
             handleUploadUrl: "/api/agreements/upload",

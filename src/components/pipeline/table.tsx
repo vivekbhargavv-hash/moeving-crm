@@ -335,7 +335,6 @@ export function PipelineList({
                           {stage.label}
                         </Badge>
                       </button>
-                      {missingAgreement(o) ? <NoAgreementMark /> : null}
                       {/* A costed deal says what one truck costs to run. An
                           uncosted one says nothing rather than printing a zero
                           that reads as break-even. */}
@@ -358,6 +357,13 @@ export function PipelineList({
                         {o.ownerName.split(" ")[0]}
                       </span>
                     </div>
+                    {/* Its own line: beside the stage and the cost on a 390px
+                        card it squeezed both into two lines each. */}
+                    {missingAgreement(o) ? (
+                      <div className="mt-2">
+                        <NoAgreementMark />
+                      </div>
+                    ) : null}
                   </div>
                 </li>
               );

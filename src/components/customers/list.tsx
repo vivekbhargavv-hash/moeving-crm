@@ -41,8 +41,6 @@ export function CustomerList({
   const [view, setView] = React.useState<View>("all");
   const [shown, setShown] = React.useState(PAGE);
 
-  const missing = customers.filter((c) => c.uncovered > 0).length;
-
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     return customers.filter(
@@ -82,7 +80,9 @@ export function CustomerList({
           options={[
             { value: "all", label: "All" },
             { value: "won", label: "Won" },
-            { value: "missing", label: `No agreement${missing ? ` (${missing})` : ""}` },
+            // No count here: at a third of a 390px screen "No agreement (3)"
+            // truncates, and each row already carries the badge.
+            { value: "missing", label: "No agreement" },
           ]}
         />
       </div>
@@ -199,8 +199,10 @@ function Renewals({ renewals, today }: { renewals: Renewal[]; today: string }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[14px] font-semibold">{r.accountName}</p>
                   <p className="truncate text-[12.5px] text-muted">
-                    {AGREEMENT_TYPE_LABEL[r.type]}
-                    {r.dealName ? ` · ${r.dealName}` : ""} · renews {formatDate(r.renewalOn)}
+                    {/* The date first: it is the reason the row is here,
+                        and a long deal name would truncate it away. */}
+                    {AGREEMENT_TYPE_LABEL[r.type]} · renews {formatDate(r.renewalOn)}
+                    {r.dealName ? ` · ${r.dealName}` : ""}
                   </p>
                 </div>
                 <span

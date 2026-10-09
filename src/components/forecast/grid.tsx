@@ -150,9 +150,15 @@ export function ForecastGrid({
               {months.map((m) => (
                 <th
                   key={m}
+                  // One width for every column, Overdue included: the word
+                  // is longer than "Oct", and left to itself the table gave
+                  // that column the extra space, which read as more weight.
+                  // The city column takes whatever width is left over.
                   className={cn(
-                    "px-1 py-2.5 text-center text-[12px] font-semibold uppercase tracking-wide",
-                    m === OVERDUE ? "text-rose-700" : "text-muted",
+                    "w-14 min-w-14 px-1 py-2.5 text-center font-semibold uppercase",
+                    m === OVERDUE
+                      ? "text-[10px] tracking-normal text-rose-700"
+                      : "text-[12px] tracking-wide text-muted",
                   )}
                 >
                   {columnLabel(m)}

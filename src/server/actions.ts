@@ -167,6 +167,15 @@ export async function createOpportunity(
   }
   const input = parsed.data;
 
+  // Vivek, 9 Oct: a new deal must say when it is expected to close. Without
+  // it the deal sits in no column of the Sales Closure Forecast — 16 open
+  // deals were invisible there. Required on creation (New deal, Duplicate,
+  // Convert to deal all come through here); an existing deal's date is
+  // still the owner's to edit.
+  if (!input.expectedCloseMonth) {
+    return { ok: false, error: "Pick an expected closing month" };
+  }
+
   // Deal owners always own what they create; only an admin may assign.
   const ownerUserId =
     session.role === "admin" && input.ownerUserId

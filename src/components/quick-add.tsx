@@ -14,6 +14,7 @@ import {
   Sheet,
   Textarea,
 } from "@/components/ui";
+import { CloseMonthChips } from "@/components/close-month-chips";
 import { CHARGING_ICONS, DRIVER_ICONS } from "@/components/choice-icons";
 import { Shimmer } from "@/components/skeletons";
 import { startNavigation } from "@/lib/busy";
@@ -23,7 +24,6 @@ import {
   cn,
   inrCompact,
   monthLabelLong,
-  monthLabelShort,
   upcomingMonths,
 } from "@/lib/utils";
 import type { DealPrefill } from "@/lib/new-deal";
@@ -422,30 +422,7 @@ export function QuickAdd({
           />
         </div>
 
-        <div>
-          <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
-            Expected closing month
-          </p>
-          <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-            {months.map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={month === m}
-                onClick={() => setMonth(m)}
-                className={cn(
-                  "h-11 shrink-0 rounded-xl border px-4 text-sm font-medium transition",
-                  month === m
-                    ? "border-brand bg-brand-soft text-brand-ink"
-                    : "border-line bg-white text-muted",
-                )}
-              >
-                {monthLabelShort(m)}
-              </button>
-            ))}
-          </div>
-          <input type="hidden" name="expectedCloseMonth" value={month} />
-        </div>
+        <CloseMonthChips months={months} value={month} onChange={setMonth} />
 
         {showMore ? (
           <div className="space-y-4 border-t border-line pt-4">

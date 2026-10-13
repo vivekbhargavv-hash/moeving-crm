@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
+import { CloseMonthChips } from "@/components/close-month-chips";
 import { LeadFunnel } from "@/components/leads/funnel";
 import type { MasterData } from "@/components/quick-add";
 import {
@@ -38,7 +39,7 @@ import {
   cn,
   formatDate,
   formatDateTimeInIndia,
-  monthLabelShort, num, todayInIndia, upcomingMonths } from "@/lib/utils";
+  num, todayInIndia, upcomingMonths } from "@/lib/utils";
 import { EnableNotifications } from "@/components/enable-notifications";
 import {
   awaitsMe,
@@ -1032,30 +1033,7 @@ function ConvertSheet({
           <input type="hidden" name="operatingDays" value={days ?? ""} />
         </div>
 
-        <div>
-          <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
-            Expected closing month
-          </p>
-          <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-            {months.map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={month === m}
-                onClick={() => setMonth(m)}
-                className={cn(
-                  "h-11 shrink-0 rounded-xl border px-4 text-sm font-medium transition",
-                  month === m
-                    ? "border-brand bg-brand-soft text-brand-ink"
-                    : "border-line bg-white text-muted",
-                )}
-              >
-                {monthLabelShort(m)}
-              </button>
-            ))}
-          </div>
-          <input type="hidden" name="expectedCloseMonth" value={month} />
-        </div>
+        <CloseMonthChips months={months} value={month} onChange={setMonth} />
 
         {error ? (
           <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">

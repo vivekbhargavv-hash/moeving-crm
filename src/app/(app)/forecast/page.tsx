@@ -32,11 +32,11 @@ export default async function ForecastPage({
   // still in the month before.
   const months = upcomingMonths(MONTH_COUNT, new Date(todayInIndia()));
   const filters: OpportunityFilters = {
-    cityId: one("city"),
-    vehicleTypeId: one("vehicle"),
-    ownerUserId: one("spoc"),
-    // Multi-select: "how do Negotiation and Contracting look together" is the
-    // question this page is usually opened with.
+    // Every filter is multi-select, one `?key=a,b` parameter each — the
+    // Pipeline's shape. A link saved when these took one value still works.
+    cityIds: list("city"),
+    vehicleTypeIds: list("vehicle"),
+    ownerIds: list("spoc"),
     stages: list("stage") as SalesStage[],
     // No `from`: a deal whose closing month has passed is still open, and
     // belongs in the Overdue column rather than off the edge of the grid.
@@ -52,7 +52,7 @@ export default async function ForecastPage({
     getForecast(months, filters),
     // Both are cheap grouped queries; fetching them together keeps switching
     // tabs instant instead of a round trip to Singapore each time.
-    getWins(winMonths, { ownerUserId: filters.ownerUserId }),
+    getWins(winMonths, { ownerIds: filters.ownerIds }),
     getMasterData(),
   ]);
 

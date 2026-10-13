@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { Badge, Button, Picker, Segmented, Sheet } from "@/components/ui";
-import type { PickerOption } from "@/components/ui";
+import { Badge, Button, Segmented, Sheet } from "@/components/ui";
 import { startNavigation } from "@/lib/busy";
 import { STAGES, STAGE_MAP } from "@/lib/constants";
 import type { SalesStage } from "@/db/schema";
@@ -448,9 +447,10 @@ function FilterBar({
   const router = useRouter();
   const [, startTransition] = React.useTransition();
 
-  function setParam(key: string, value: string) {
+  /** One `?key=a,b` parameter per filter — the shape the Pipeline uses. */
+  function setParam(key: string, values: string[]) {
     const url = new URL(window.location.href);
-    if (value) url.searchParams.set(key, value);
+    if (values.length) url.searchParams.set(key, values.join(","));
     else url.searchParams.delete(key);
     // A router navigation, not a full page load: the shell and the tab bar
     // stay put instead of the whole app being thrown away and rebuilt.
@@ -458,10 +458,8 @@ function FilterBar({
     startTransition(() => router.push(url.pathname + url.search, { scroll: false }));
   }
 
-  const all = (label: string, rows: { id: string; name: string }[]): PickerOption[] => [
-    { value: "", label },
-    ...rows.map((r) => ({ value: r.id, label: r.name })),
-  ];
+  const asOptions = (rows: { id: string; name: string }[]) =>
+    rows.map((r) => ({ value: r.id, label: r.name }));
 
   return (
     /* Two rows, not one scroller. As a single row these four controls came to
@@ -481,73 +479,110 @@ function FilterBar({
           { value: "value", label: "Value", icon: <IndianRupee size={16} /> },
         ]}
       />
+      {/* Every filter takes several answers (Vivek, 13 Oct): "Bangalore and
+          Hyderabad", "Ultra E7 and E9", two deal owners' books together. */}
       <div className="grid grid-cols-2 gap-2">
-      <Picker
-        label="City"
-        className={FIELD}
-        value={filters.cityId ?? ""}
-        onChange={(v) => setParam("city", v)}
-        options={all("All cities", options.cities)}
-      />
-      <Picker
-        label="Vehicle type"
-        className={FIELD}
-        value={filters.vehicleTypeId ?? ""}
-        onChange={(v) => setParam("vehicle", v)}
-        options={all("All vehicles", options.vehicleTypes)}
-      />
-      <Picker
-        label="Deal owner"
-        className={FIELD}
-        value={filters.ownerUserId ?? ""}
-        onChange={(v) => setParam("spoc", v)}
-        options={all("All owners", options.users)}
-      />
-      <StagePicker
-        className={FIELD}
-        selected={filters.stages ?? []}
-        onChange={(next) => setParam("stage", next.join(","))}
-      />
+        <MultiPicker
+          title="City"
+          allLabel="All cities"
+          many="cities"
+          className={FIELD}
+          selected={filters.cityIds ?? []}
+          onChange={(next) => setParam("city", next)}
+          options={asOptions(options.cities)}
+        />
+        <MultiPicker
+          title="Vehicle type"
+          allLabel="All vehicles"
+          many="vehicles"
+          className={FIELD}
+          selected={filters.vehicleTypeIds ?? []}
+          onChange={(next) => setParam("vehicle", next)}
+          options={asOptions(options.vehicleTypes)}
+        />
+        <MultiPicker
+          title="Deal owner"
+          allLabel="All owners"
+          many="owners"
+          className={FIELD}
+          selected={filters.ownerIds ?? []}
+          onChange={(next) => setParam("spoc", next)}
+          options={asOptions(options.users)}
+        />
+        <MultiPicker
+          title="Stage"
+          allLabel="All open stages"
+          many="stages"
+          className={FIELD}
+          selected={filters.stages ?? []}
+          onChange={(next) => setParam("stage", next)}
+          options={STAGES.filter((s) => s.open).map((s) => ({
+            value: s.value,
+            label: s.label,
+            dot: s.dot,
+          }))}
+          note="Closed deals are never in the forecast — won ones are in Wins."
+        />
       </div>
     </div>
   );
 }
 
-
 /**
- * Stage, as several answers rather than one.
+ * A filter that takes several answers: chips in the app's own sheet.
  *
- * "How does Negotiation plus Contracting look this quarter" is the question
- * this page is usually opened with, and a single-value dropdown could not be
- * asked it. Chips in a sheet, like the pipeline's filter, rather than a
- * multi-select box: a native select sizes itself to its longest option and
- * stretches the layout viewport on a phone.
+ * Chips rather than a multi-select box: a native select sizes itself to its
+ * longest option and stretches the layout viewport on a phone. Choices are
+ * drafted in the sheet and applied once on Done, so picking three cities is
+ * one page load, not three. Pick none for all of them.
  */
-function StagePicker({
+function MultiPicker({
+  title,
+  allLabel,
+  many,
+  options,
   selected,
   onChange,
   className,
+  note,
 }: {
-  selected: SalesStage[];
-  onChange: (next: SalesStage[]) => void;
+  title: string;
+  allLabel: string;
+  /** "cities" — for the trigger's "3 cities". */
+  many: string;
+  options: { value: string; label: string; dot?: string }[];
+  selected: string[];
+  onChange: (next: string[]) => void;
   className?: string;
+  note?: string;
 }) {
   const [open, setOpen] = React.useState(false);
-  const openStages = STAGES.filter((s) => s.open);
+  const [draft, setDraft] = React.useState<string[]>(selected);
 
+  // A fresh draft each time the sheet opens, from what is applied now.
+  React.useEffect(() => {
+    if (open) setDraft(selected);
+  }, [open, selected]);
+
+  // Only choices that still exist count — a switched-off city in an old link
+  // must not read as "1 city" while filtering nothing.
+  const known = selected.filter((v) => options.some((o) => o.value === v));
   const label =
-    selected.length === 0
-      ? "All open stages"
-      : selected.length === 1
-        ? STAGE_MAP[selected[0]!].label
-        : `${selected.length} stages`;
+    known.length === 0
+      ? allLabel
+      : known.length === 1
+        ? (options.find((o) => o.value === known[0])?.label ?? allLabel)
+        : `${known.length} ${many}`;
 
-  function toggle(stage: SalesStage) {
-    onChange(
-      selected.includes(stage)
-        ? selected.filter((v) => v !== stage)
-        : [...selected, stage],
-    );
+  function toggle(value: string) {
+    setDraft((d) => (d.includes(value) ? d.filter((v) => v !== value) : [...d, value]));
+  }
+
+  function apply() {
+    setOpen(false);
+    const same =
+      draft.length === selected.length && draft.every((v) => selected.includes(v));
+    if (!same) onChange(draft);
   }
 
   return (
@@ -555,9 +590,10 @@ function StagePicker({
       <button
         type="button"
         onClick={() => setOpen(true)}
+        aria-label={`${title}: ${label}`}
         className={cn(
           "flex items-center justify-between gap-1 border bg-white text-left",
-          selected.length
+          known.length
             ? "border-brand bg-brand-soft text-brand-ink"
             : "border-line text-ink",
           className,
@@ -567,16 +603,16 @@ function StagePicker({
         <ChevronRight size={14} className="shrink-0 rotate-90 opacity-50" />
       </button>
 
-      <Sheet open={open} onClose={() => setOpen(false)} title="Stage">
+      <Sheet open={open} onClose={apply} title={title}>
         <div className="flex flex-wrap gap-2">
-          {openStages.map((s) => {
-            const on = selected.includes(s.value);
+          {options.map((o) => {
+            const on = draft.includes(o.value);
             return (
               <button
-                key={s.value}
+                key={o.value}
                 type="button"
                 aria-pressed={on}
-                onClick={() => toggle(s.value)}
+                onClick={() => toggle(o.value)}
                 className={cn(
                   "flex h-10 items-center gap-2 rounded-full border px-3.5 text-[13px] font-semibold transition active:scale-[0.98]",
                   on
@@ -584,31 +620,26 @@ function StagePicker({
                     : "border-line bg-white text-muted",
                 )}
               >
-                <span className={cn("h-2 w-2 rounded-full", s.dot)} />
-                {s.label}
+                {o.dot ? <span className={cn("h-2 w-2 rounded-full", o.dot)} /> : null}
+                {o.label}
               </button>
             );
           })}
         </div>
         <p className="mt-3 text-[13px] text-muted">
-          Pick none to see every open stage. Closed deals are never in the
-          forecast — won ones are in Wins.
+          Pick as many as you like, or none for {allLabel.toLowerCase()}.
+          {note ? ` ${note}` : ""}
         </p>
         <div className="mt-4 flex gap-2">
           <Button
             type="button"
             variant="secondary"
-            disabled={!selected.length}
-            onClick={() => onChange([])}
+            disabled={!draft.length}
+            onClick={() => setDraft([])}
           >
             Clear
           </Button>
-          <Button
-            type="button"
-            variant="brand"
-            className="flex-1"
-            onClick={() => setOpen(false)}
-          >
+          <Button type="button" variant="brand" className="flex-1" onClick={apply}>
             Done
           </Button>
         </div>

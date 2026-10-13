@@ -150,7 +150,9 @@ const ITEMS: Item[] = [
         An open deal whose closing month has already passed sits in the red{" "}
         <b>Overdue</b> column until its date or stage is updated. A new deal
         cannot be saved without an expected closing month; older deals with
-        none are in no column, and the note under the grid counts them. <b>Wins</b> count on the day a deal is marked won, not
+        none are in no column, and the note under the grid counts them. Every
+        filter — city, vehicle, deal owner, stage — takes several choices at
+        once; pick none for all. <b>Wins</b> count on the day a deal is marked won, not
         its expected month.
       </>
     ),

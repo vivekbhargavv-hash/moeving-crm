@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2, Wand2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 
@@ -73,6 +73,8 @@ export function CostDefaultsEditor({
   const [draft, setDraft] = React.useState<Record<string, string>>({});
   const [state, setState] = React.useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = React.useState<string | null>(null);
+  /** What the automatic fill did after the last save, if anything. */
+  const [filled, setFilled] = React.useState<string | null>(null);
 
   // A refresh brings back what was just written. Anything still different
   // from it is a genuine unsaved edit, so the draft is pruned rather than
@@ -115,11 +117,21 @@ export function CostDefaultsEditor({
         });
         if (!result.ok) throw new Error(`${cell.label}: ${result.error}`);
       }
+      // Then carry the rates onto every deal with a blank line, so nobody has
+      // to remember a second button. Figures already on a deal stay.
+      const filled = await applyCostDefaults();
+      if (!filled.ok) throw new Error(filled.error);
+      return filled.data!;
     })()
-      .then(() => {
+      .then(({ deals, figures }) => {
+        setFilled(
+          deals === 0
+            ? null
+            : `Filled ${num(figures)} blank ${figures === 1 ? "figure" : "figures"} on ${num(deals)} ${deals === 1 ? "deal" : "deals"}.`,
+        );
         setState("saved");
         router.refresh();
-        setTimeout(() => setState((s) => (s === "saved" ? "idle" : s)), 2400);
+        setTimeout(() => setState((s) => (s === "saved" ? "idle" : s)), 6000);
       })
       .catch((e: unknown) => {
         setState("idle");
@@ -144,8 +156,6 @@ export function CostDefaultsEditor({
         />
       ))}
 
-      <ApplyToDeals disabled={changed.length > 0} />
-
       {/* The save bar sits above the tab bar on a phone and at the foot of
           the page on desktop, so the button is never a scroll away from the
           box that was just typed into. */}
@@ -157,6 +167,7 @@ export function CostDefaultsEditor({
             ) : state === "saved" ? (
               <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
                 <Check size={15} /> Standard rates saved
+                {filled ? ` · ${filled}` : null}
               </span>
             ) : changed.length ? (
               `${changed.length} unsaved ${changed.length === 1 ? "change" : "changes"}`
@@ -182,82 +193,6 @@ export function CostDefaultsEditor({
         </div>
       </div>
     </div>
-  );
-}
-
-/**
- * Carrying the rates onto the deals that are already in the pipeline.
- *
- * A standard rate on its own changes nothing about a deal — it pre-fills the
- * cost sheet the next time somebody opens one. Every deal raised before the
- * rates existed therefore shows no cost and no margin in the Pipeline until a
- * person opens it, which on a real pipeline is nobody's afternoon.
- *
- * This fills the blanks and only the blanks, so a costed deal keeps its
- * figures and a won deal — which cannot have a blank — is left alone entirely.
- */
-function ApplyToDeals({ disabled }: { disabled: boolean }) {
-  const router = useRouter();
-  const [pending, startTransition] = React.useTransition();
-  const [result, setResult] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-
-  function apply() {
-    setError(null);
-    setResult(null);
-    startTransition(async () => {
-      const outcome = await applyCostDefaults();
-      if (!outcome.ok) return setError(outcome.error);
-      const { deals, figures } = outcome.data!;
-      setResult(
-        deals === 0
-          ? "Every deal already carries its figures — nothing was blank."
-          : `Filled ${num(figures)} blank ${figures === 1 ? "figure" : "figures"} across ${num(deals)} ${deals === 1 ? "deal" : "deals"}.`,
-      );
-      router.refresh();
-    });
-  }
-
-  return (
-    <Card>
-      <CardHeader title="Apply these rates to deals already in the pipeline" />
-      <div className="px-4 pb-4">
-        <p className="text-[13px] text-muted">
-          Fills in cost lines that are still blank, on deals nobody has costed
-          yet. Figures somebody has already typed are never changed, and a
-          recorded win — whose margin has been reported — cannot have a blank,
-          so none are touched.
-        </p>
-        <Button
-          variant="secondary"
-          size="lg"
-          className="mt-3 w-full sm:w-auto"
-          disabled={pending || disabled}
-          onClick={apply}
-        >
-          {pending ? (
-            <>
-              <Loader2 size={16} className="animate-spin" /> Applying…
-            </>
-          ) : (
-            <>
-              <Wand2 size={16} /> Fill in the blanks
-            </>
-          )}
-        </Button>
-        {disabled ? (
-          <p className="mt-2 text-[12.5px] text-muted">
-            Save your changes above first, so the deals get the rates you meant.
-          </p>
-        ) : null}
-        {result ? (
-          <p className="mt-2 text-[12.5px] font-medium text-emerald-700">{result}</p>
-        ) : null}
-        {error ? (
-          <p role="alert" className="mt-2 text-[12.5px] font-medium text-rose-700">{error}</p>
-        ) : null}
-      </div>
-    </Card>
   );
 }
 

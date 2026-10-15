@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronRight, ListFilter, MapPin } from "lucide-react";
+import { Check, ChevronRight, Download, ListFilter, MapPin } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
@@ -135,6 +135,10 @@ export function DeploymentsBoard({
   );
 
   const filterCount = cityIds.length + vehicleIds.length;
+  const exportParams = new URLSearchParams();
+  if (cityIds.length) exportParams.set("city", cityIds.join(","));
+  if (vehicleIds.length) exportParams.set("vehicle", vehicleIds.join(","));
+  const exportHref = `/api/export/deployments${exportParams.size ? `?${exportParams}` : ""}`;
 
   return (
     <div>
@@ -181,6 +185,14 @@ export function DeploymentsBoard({
             </span>
           ) : null}
         </button>
+        {/* Desktop only (Vivek, 15 Oct). Carries the filters applied here. */}
+        <a
+          href={exportHref}
+          aria-label="Export to a spreadsheet"
+          className="hidden h-12 shrink-0 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-sm font-medium text-muted hover:bg-canvas md:flex"
+        >
+          <Download size={16} /> Export
+        </a>
       </div>
 
       {view === "month" ? (

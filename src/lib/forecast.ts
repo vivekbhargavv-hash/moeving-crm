@@ -13,6 +13,9 @@
  * Kept free of React and the database, so the boundary is tested.
  */
 
+/** How many months the forecast looks ahead, the current one included. */
+export const FORECAST_MONTHS = 6;
+
 /** The key of the Overdue column, alongside "2026-10"-style month keys. */
 export const OVERDUE = "overdue";
 

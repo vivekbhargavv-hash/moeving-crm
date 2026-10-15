@@ -118,6 +118,20 @@ const ITEMS: Item[] = [
     ),
   },
   {
+    q: "Where do the cost figures on a new deal come from?",
+    for: SELLERS,
+    a: (
+      <>
+        From the standard rates an admin sets (Admin → Cost defaults). When a
+        deal is created or edited, every cost line that is still blank fills
+        in by itself from the rate for its vehicle, charging and operating
+        days. Change any figure on the deal&apos;s cost sheet and your figure
+        stays — a filled-in line is never overwritten. A line with no standard
+        rate stays blank for you to fill.
+      </>
+    ),
+  },
+  {
     q: "How is the deal name set?",
     for: SELLERS,
     a: (
@@ -135,7 +149,8 @@ const ITEMS: Item[] = [
       <>
         <b>Duplicate this deal</b> starts a new deal at First Contact with the
         same customer, vehicle and terms — for another city or another phase.
-        Costs are not copied. <b>Deploy more vehicles</b>, on a won deal, is
+        Its costs are not copied — the standard rates fill in instead.{" "}
+        <b>Deploy more vehicles</b>, on a won deal, is
         repeat business under the same contract: it is linked to that win and
         counts as won on the day you raise it.
       </>
@@ -152,7 +167,8 @@ const ITEMS: Item[] = [
         cannot be saved without an expected closing month; older deals with
         none are in no column, and the note under the grid counts them. Every
         filter — city, vehicle, deal owner, stage — takes several choices at
-        once; pick none for all. <b>Wins</b> count on the day a deal is marked won, not
+        once; pick none for all. On a computer, <b>Export</b> downloads the
+        deals behind the grid, with your filters, as a spreadsheet. <b>Wins</b> count on the day a deal is marked won, not
         its expected month.
       </>
     ),
@@ -168,7 +184,8 @@ const ITEMS: Item[] = [
         vehicles as they go out — part of a fleet is fine (&ldquo;8 of
         12&rdquo;). <b>By month</b> counts only vehicles still to go out; a
         deal with every vehicle on the road moves to <b>Deployed</b> under the
-        grid.
+        grid. On a computer, <b>Export</b> downloads the list, with your
+        filters, as a spreadsheet.
       </>
     ),
   },

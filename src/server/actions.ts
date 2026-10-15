@@ -20,7 +20,7 @@ import {
 } from "@/db/schema";
 import type { SalesStage } from "@/db/schema";
 import { COST_FIELDS, OPERATING_DAYS } from "@/lib/constants";
-import { defaultsFor, type CostSuggestions } from "@/lib/cost-defaults";
+import { blankFills, defaultsFor, type CostSuggestions } from "@/lib/cost-defaults";
 import { inr, todayInIndia } from "@/lib/utils";
 import {
   requireAdmin,
@@ -214,6 +214,18 @@ export async function createOpportunity(
     }
   }
 
+  // Every cost line with a standard rate starts filled in (Vivek, 15 Oct), so
+  // a new deal shows its cost and margin without anybody opening the sheet.
+  // The deal owner overrides any of them on the cost sheet.
+  const fills = blankFills(
+    {
+      vehicleTypeId: input.vehicleTypeId,
+      chargingScope: input.chargingScope ?? null,
+      operatingDays: input.operatingDays,
+    },
+    await getCostDefaults(),
+  );
+
   const baseName = input.name;
   const created = await db
     .insert(opportunities)
@@ -247,6 +259,7 @@ export async function createOpportunity(
         expectedCloseDate: input.expectedCloseMonth,
         ownerUserId,
         notes: input.notes ?? null,
+        ...fills,
       })),
     )
     .returning();
@@ -326,9 +339,23 @@ export async function updateOpportunity(
     };
   }
 
+  // Choosing the vehicle, charging or operating days answers what a cost line
+  // varies by, so its standard rate can now fill the blank. Blanks only: a
+  // figure on the sheet — typed, or filled earlier — is never changed here.
+  const fills = blankFills(
+    {
+      ...existing,
+      vehicleTypeId: input.vehicleTypeId,
+      chargingScope: input.chargingScope ?? null,
+      operatingDays: input.operatingDays,
+    },
+    await getCostDefaults(),
+  );
+
   await db
     .update(opportunities)
     .set({
+      ...fills,
       accountId,
       vehiclesDeployed,
       deploymentDate: input.deploymentDate ?? null,
@@ -726,15 +753,13 @@ export async function saveCostDefault(input: {
 }
 
 /**
- * Filling the blanks on deals nobody has costed yet.
+ * Filling the blanks on every deal, run automatically after an admin saves the
+ * standard rates (Vivek, 15 Oct — it used to wait for a "Fill in the blanks"
+ * button nobody remembered to press).
  *
- * Setting a standard rate in Admin does nothing to a deal on its own — the
- * rules pre-fill the cost sheet the next time somebody opens it, which means
- * a pipeline of deals raised before the rates existed shows no cost and no
- * margin until each one is opened by hand. This is the one deliberate act
- * that closes that gap.
- *
- * It obeys the same rule the sheet does, and that is the whole reason it is
+ * New and edited deals fill their own blanks (`createOpportunity`,
+ * `updateOpportunity`); this carries a NEW or changed rate onto deals that
+ * already exist. It obeys the same rule, and that is the whole reason it is
  * safe: a figure already saved is never touched, only a blank one is filled.
  * A won deal cannot have a blank (`opps_won_requires_costs` sees to that), so
  * nothing here can restate a margin already reported.
@@ -744,11 +769,8 @@ export async function applyCostDefaults(): Promise<
 > {
   const session = await requireAdmin();
   const defaults = await getCostDefaults();
-  if (!defaults.length) {
-    return { ok: false, error: "No standard rates are set yet." };
-  }
 
-  const open = await db
+  const all = await db
     .select()
     .from(opportunities)
     .where(eq(opportunities.organizationId, session.organizationId));
@@ -756,42 +778,25 @@ export async function applyCostDefaults(): Promise<
   let deals = 0;
   let figures = 0;
 
-  for (const deal of open) {
-    const suggested = defaultsFor(
-      {
-        vehicleTypeId: deal.vehicleTypeId,
-        chargingScope: deal.chargingScope,
-        operatingDays: deal.operatingDays,
-      },
-      defaults,
-    );
-
-    const patch: Partial<Record<EconomicsKey, number>> = {};
+  for (const deal of all) {
+    const patch: Partial<Record<EconomicsKey, number>> = blankFills(deal, defaults);
 
     // A deal quoted before revenue was written from price carries a price and
     // no revenue, which leaves every generated margin column blank. The two
     // are the same figure, so this is a repair, not a restatement.
-    if (deal.revenue === null && deal.price !== null) {
-      patch.revenue = deal.price;
-      figures += 1;
-    }
+    if (deal.revenue === null && deal.price !== null) patch.revenue = deal.price;
 
-    for (const field of COST_FIELDS) {
-      const rate = suggested[field.key];
-      // Blank only. A typed figure — and every figure on a won deal is one —
-      // stays exactly as it was saved.
-      if (rate !== undefined && deal[field.key] === null) {
-        patch[field.key] = rate;
-        figures += 1;
-      }
-    }
-    if (Object.keys(patch).length === 0) continue;
+    const count = Object.keys(patch).length;
+    if (count === 0) continue;
 
+    // `updatedAt` is left alone on purpose: the Pipeline sorts by it to show
+    // what somebody moved, and a rate change in Admin moved nothing.
     await db
       .update(opportunities)
-      .set({ ...patch, updatedAt: new Date() })
+      .set(patch)
       .where(eq(opportunities.id, deal.id));
     deals += 1;
+    figures += count;
   }
 
   revalidatePath("/admin/cost-defaults");

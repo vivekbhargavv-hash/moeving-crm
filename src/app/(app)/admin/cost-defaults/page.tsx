@@ -36,9 +36,11 @@ export default async function CostDefaultsPage() {
           Unit economics defaults
         </h1>
         <p className="text-sm text-muted">
-          What each cost line starts at when somebody costs a deal. They are a
-          starting point, not a rule: whoever closes the deal can change any
-          figure, and nothing already saved is ever rewritten from here.
+          The standard rate for each cost line. A deal&apos;s blank lines fill
+          in from these by themselves — when it is created or edited, and on
+          every deal when you save here. They are a starting point, not a
+          rule: anyone can change a figure on the deal, and a figure already
+          on a deal is never rewritten from here.
         </p>
       </div>
 

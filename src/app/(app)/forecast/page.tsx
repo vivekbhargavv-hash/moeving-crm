@@ -2,6 +2,7 @@ import { ForecastGrid } from "@/components/forecast/grid";
 import { ForecastTabs } from "@/components/forecast/tabs";
 import { WinsGrid } from "@/components/forecast/wins";
 import type { SalesStage } from "@/db/schema";
+import { FORECAST_MONTHS } from "@/lib/forecast";
 import { cn, pastMonths, todayInIndia, upcomingMonths } from "@/lib/utils";
 import { requireSales } from "@/server/auth";
 import {
@@ -12,8 +13,6 @@ import {
 } from "@/server/queries";
 
 export const dynamic = "force-dynamic";
-
-const MONTH_COUNT = 6;
 
 export default async function ForecastPage({
   searchParams,
@@ -30,7 +29,7 @@ export default async function ForecastPage({
 
   // India's month, not the server's: from midnight to 05:30 on the 1st, UTC is
   // still in the month before.
-  const months = upcomingMonths(MONTH_COUNT, new Date(todayInIndia()));
+  const months = upcomingMonths(FORECAST_MONTHS, new Date(todayInIndia()));
   const filters: OpportunityFilters = {
     // Every filter is multi-select, one `?key=a,b` parameter each — the
     // Pipeline's shape. A link saved when these took one value still works.

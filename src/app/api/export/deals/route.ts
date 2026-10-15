@@ -16,16 +16,10 @@ import {
   DRIVER_TYPE_LABEL,
   STAGE_MAP,
 } from "@/lib/constants";
+import { csvCell } from "@/lib/csv";
 import { requireSession } from "@/server/auth";
 
 export const dynamic = "force-dynamic";
-
-/** RFC 4180: quote everything, double any inner quote. Excel opens it cleanly. */
-function csvCell(value: unknown) {
-  if (value === null || value === undefined) return "";
-  const s = String(value);
-  return `"${s.replace(/"/g, '""')}"`;
-}
 
 /**
  * Every deal as a spreadsheet, scoped to the caller's organization.

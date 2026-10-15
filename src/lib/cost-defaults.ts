@@ -64,6 +64,30 @@ export function defaultsFor(
 }
 
 /**
+ * The standard rates for the cost lines this deal has left BLANK — the patch
+ * that fills them in.
+ *
+ * Applied automatically whenever a deal is created or edited, and across every
+ * deal when an admin saves the rates (Vivek, 15 Oct: no more pressing "Fill in
+ * the blanks"). A figure already on the deal — typed, or filled earlier — is
+ * never in the patch, so an override somebody made on the cost sheet stays.
+ */
+export function blankFills(
+  deal: DealAttributes & Partial<Record<CostFieldKey, number | null>>,
+  rows: CostDefault[],
+): CostSuggestions {
+  const suggested = defaultsFor(deal, rows);
+  const out: CostSuggestions = {};
+  for (const field of COST_FIELDS) {
+    const rate = suggested[field.key];
+    if (rate !== undefined && (deal[field.key] ?? null) === null) {
+      out[field.key] = rate;
+    }
+  }
+  return out;
+}
+
+/**
  * The deal's answers for the dimensions a line uses, or null when one of them
  * is unanswered.
  */

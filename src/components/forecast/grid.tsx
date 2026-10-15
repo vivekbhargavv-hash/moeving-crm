@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, IndianRupee, Loader2, Truck } from "lucide-react";
+import { ChevronRight, Download, IndianRupee, Loader2, Truck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -458,6 +458,17 @@ function FilterBar({
     startTransition(() => router.push(url.pathname + url.search, { scroll: false }));
   }
 
+  const exportParams = new URLSearchParams();
+  for (const [key, values] of [
+    ["city", filters.cityIds],
+    ["vehicle", filters.vehicleTypeIds],
+    ["spoc", filters.ownerIds],
+    ["stage", filters.stages],
+  ] as const) {
+    if (values?.length) exportParams.set(key, values.join(","));
+  }
+  const exportHref = `/api/export/forecast${exportParams.size ? `?${exportParams}` : ""}`;
+
   const asOptions = (rows: { id: string; name: string }[]) =>
     rows.map((r) => ({ value: r.id, label: r.name }));
 
@@ -469,16 +480,26 @@ function FilterBar({
     <div className="mb-4 space-y-2">
       {/* Full width on a phone, a sized switch on desktop: a bordered bar
           stretched across a wide screen stops reading as a control. */}
-      <Segmented
-        label="Measure"
-        className="md:w-[220px]"
-        value={metric}
-        onChange={setMetric}
-        options={[
-          { value: "fleet", label: "Vehicles", icon: <Truck size={16} /> },
-          { value: "value", label: "Value", icon: <IndianRupee size={16} /> },
-        ]}
-      />
+      <div className="flex items-center gap-2">
+        <Segmented
+          label="Measure"
+          className="min-w-0 flex-1 md:w-[220px] md:flex-none"
+          value={metric}
+          onChange={setMetric}
+          options={[
+            { value: "fleet", label: "Vehicles", icon: <Truck size={16} /> },
+            { value: "value", label: "Value", icon: <IndianRupee size={16} /> },
+          ]}
+        />
+        {/* Desktop only (Vivek, 15 Oct): a spreadsheet is a laptop job. The
+            download carries the filters applied here. */}
+        <a
+          href={exportHref}
+          className="ml-auto hidden h-11 shrink-0 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-sm font-medium text-muted hover:bg-canvas md:flex"
+        >
+          <Download size={16} /> Export
+        </a>
+      </div>
       {/* Every filter takes several answers (Vivek, 13 Oct): "Bangalore and
           Hyderabad", "Ultra E7 and E9", two deal owners' books together. */}
       <div className="grid grid-cols-2 gap-2">

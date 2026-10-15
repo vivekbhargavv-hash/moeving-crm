@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { defaultsFor, driftedFrom, type CostDefault } from "@/lib/cost-defaults";
+import {
+  blankFills,
+  defaultsFor,
+  driftedFrom,
+  type CostDefault,
+} from "@/lib/cost-defaults";
 
 const ACE = "11111111-1111-4111-8111-111111111111";
 const EICHER = "22222222-2222-4222-8222-222222222222";
@@ -134,5 +139,44 @@ describe("driftedFrom", () => {
 
   it("counts a stored zero against a non-zero default", () => {
     assert.deepEqual(driftedFrom({ driverCost: 0 }, defaults), ["driverCost"]);
+  });
+});
+
+describe("blankFills", () => {
+  const ace = { vehicleTypeId: ACE, chargingScope: "moeving" as const, operatingDays: 26 };
+
+  it("fills every line on a brand-new deal that has the answers", () => {
+    assert.deepEqual(blankFills(ace, rows), defaultsFor(ace, rows));
+  });
+
+  it("never touches a figure somebody typed", () => {
+    const out = blankFills({ ...ace, leaseCost: 19500, miscCost: 300 }, rows);
+    assert.equal(out.leaseCost, undefined);
+    assert.equal(out.miscCost, undefined);
+    assert.equal(out.driverCost, 21000);
+  });
+
+  it("keeps a typed zero as an answer, not a blank", () => {
+    const out = blankFills({ ...ace, chargingCost: 0 }, rows);
+    assert.equal(out.chargingCost, undefined);
+  });
+
+  it("fills only what the deal can answer, and later the rest", () => {
+    // Created with no vehicle chosen: lease and charging wait.
+    const first = blankFills(
+      { vehicleTypeId: null, chargingScope: null, operatingDays: 26 },
+      rows,
+    );
+    assert.equal(first.leaseCost, undefined);
+    assert.equal(first.chargingCost, undefined);
+    assert.equal(first.driverCost, 21000);
+    // Edited to name the vehicle and charging: the gaps fill, the rest stay.
+    const second = blankFills({ ...ace, ...first }, rows);
+    assert.deepEqual(second, { leaseCost: 22000, chargingCost: 5000, parkingCost: 1500 });
+  });
+
+  it("leaves a line with no standard rate blank", () => {
+    const out = blankFills(ace, rows.filter((r) => r.costKey !== "leaseCost"));
+    assert.equal("leaseCost" in out, false);
   });
 });

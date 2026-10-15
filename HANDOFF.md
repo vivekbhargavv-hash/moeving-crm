@@ -1,8 +1,9 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 8 October 2026 (eleventh session: Forecast Overdue column,
-Deployments by month without delivered work, Customers page with signed
-agreements)
+**Last updated:** 15 October 2026 (Forecast and Deployments export on
+desktop; standard cost rates fill blank cost lines automatically). Before
+that, 8 October (Forecast Overdue column, Deployments by month without
+delivered work, Customers page with signed agreements)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main`. Cloud sessions work
 on a `claude/*` branch and open a PR; Vivek asks for it to be merged (squash,
@@ -82,13 +83,11 @@ for the Leads badge.
    are deliberately blank** — nobody gave those figures, and a blank means the
    cost sheet leaves that line alone rather than inventing one.
 
-   The screen now has a **Save changes** button (it used to save each box on
-   blur, silently), and under the grids a **Fill in the blanks** button that
-   carries the rates onto deals already in the pipeline. Setting a rate does
-   nothing to an existing deal on its own — it pre-fills the cost sheet the
-   next time somebody opens one — so without that button a pipeline raised
-   before the rates existed shows no cost and no margin. It fills blanks only:
-   a typed figure is never touched, and a won deal cannot have a blank.
+   **Since 15 Oct the fill is automatic** — the "Fill in the blanks" button is
+   gone. Saving rates (Save changes) carries them onto every deal's blank
+   lines, and a deal fills its own blanks whenever it is created or edited.
+   Blanks only: a typed figure is never touched, and a won deal cannot have a
+   blank. Deals that are blank today fill the next time an admin saves a rate.
 3. **Give the phone desk the NOC role.** Admin → Users → role **NOC**. They see
    Leads and nothing else. Until somebody has it, leads can only be added by an
    admin.
@@ -234,6 +233,8 @@ Change these only deliberately — a lot of code assumes them.
 | **Every Forecast filter is multi-select** — City, Vehicle, Deal owner and Stage, each a `MultiPicker` (chips in a sheet, drafted and applied once on Done). URL `?city=a,b&vehicle=…&spoc=…&stage=…`, read into `cityIds`/`vehicleTypeIds`/`ownerIds`/`stages` — the Pipeline's filter shape, so `filterConditions` needed nothing new. Wins follows the owner filter. An old single-value link still works. | Vivek, 13 Oct. Chips, not a multi-select box: a native select stretches the layout viewport on a phone. Applied on Done so three cities is one page load, not three. |
 | **Every Forecast column is the same width** (`w-14 min-w-14`), Overdue included; its header is set at 10px to fit. | Left to itself the table gave the longer word "Overdue" the wider column, which read as extra weight. |
 | **An admin may delete a customer with no deals and no agreements** — the bin on its Customers row (reached through the "N customers have no deals" note) or "Delete this customer" on its page. `deleteCustomer` in `server/customer-actions.ts` re-checks both, and the RESTRICT foreign keys from deals and agreements back it if one appears in between. | Vivek, 8 Oct: clean up misspelt or abandoned customers (8 of 68 had no deals that day). A customer with any deal is how that history is found; agreements are deleted one by one on purpose, never as a side effect. Customers come back by name the next time a deal is raised (`resolveAccount`). |
+| **Standard cost rates fill blank cost lines automatically** (Vivek, 15 Oct): on `createOpportunity` (New deal, Duplicate, Convert), on `updateOpportunity`, and across every deal after an admin saves rates (`applyCostDefaults`, now called by the Save button — the "Fill in the blanks" button is gone). One rule, `blankFills` in `lib/cost-defaults.ts`: blanks only, so an override on the cost sheet stays, and a typed 0 is an answer. The bulk fill leaves `updated_at` alone. | Vivek: nobody should have to press a button every time a deal is entered. The catch, accepted: a filled-in rate and a typed one look the same afterwards, so changing a deal's vehicle later does NOT swap its lease — the cost card's "differs from the standard rate" note says so. Clearing a line on the sheet refills it at the next edit. |
+| **Forecast and Deployments have a desktop-only Export** (`/api/export/forecast`, `/api/export/deployments`, CSV via `lib/csv.ts`), carrying the filters applied on screen. Forecast: one row per open deal with the column it lands in (Overdue / month / No closing month) — a pivot of city × month IS the grid. Deployments: the rows the screen holds, status, deployed and still to go — no money, so ops may download it; NOC may not. | Vivek, 15 Oct. Hidden below `md`: a spreadsheet is a laptop job. |
 | **Renewal reminders are in-app**: "Renewals due" at the top of Customers lists agreements renewing within 60 days or already past. One stops asking once the same customer has another agreement (same deal, or customer-wide) with a LATER renewal date — so uploading the renewal clears it, as does moving the date forward with Edit. Papers for the same customer and deal renewing on the same day are ONE reminder, named by the MSA. | Vivek asked for expiry reminders, and made the renewal date mandatory so every agreement has one. Without the same-day merge, an MSA and its addendum would nag twice. Push/email reminders are not built — see § 9. |
 
 ---
@@ -249,6 +250,8 @@ src/
                       admin/users · admin/master-data · admin/cost-defaults
                       every route has a loading.tsx beside its page.tsx
     api/export/deals  CSV export (org-scoped, UTF-8 BOM for Excel)
+    api/export/forecast     the Forecast's deals, filtered as on screen
+    api/export/deployments  the Deployments rows, filtered as on screen
     api/warm          wakes Neon while someone is using the app (signed-in only)
     api/agreements/upload  issues a blob upload token for one agreement file
     api/agreements/[id]    streams one agreement from the private store
@@ -299,6 +302,7 @@ src/
                       column, and what a cell counts — no React, so it tests
     forecast.ts       which Forecast column a deal lands in (Overdue or a month)
     agreements.ts     coverage, renewal reminders, allowed files, blob paths
+    csv.ts            the CSV cell/response helpers every export uses
 tests/
   stage-change.test.ts          planStageChange, runs anywhere
   cost-defaults.test.ts         the standard-rate matching rules, runs anywhere
@@ -344,7 +348,7 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. A hundred and fifty-one: twenty-seven on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
+`node --test` with `tsx` — no test framework, no new dependencies. A hundred and fifty-six: five on `blankFills` (the automatic cost fill: typed figures and a typed 0 survive, a deal fills more as it gains answers); twenty-seven on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"

@@ -9,6 +9,7 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   lte,
   or,
   sql,
@@ -736,6 +737,74 @@ export async function getForecast(
     monthTotals,
     undated: Number(undated?.count ?? 0),
   };
+}
+
+/**
+ * The deals behind the forecast grid, one row each, for the CSV export.
+ *
+ * The same filters and the same window as `getForecast`: open deals closing up
+ * to the window's last month, including every slipped one (the Overdue
+ * column). Open deals with no closing month are included too — they are in no
+ * column, and the export is where somebody goes to chase them.
+ */
+export async function listForecastDeals(
+  months: string[],
+  filters: OpportunityFilters = {},
+) {
+  const session = await requireSession();
+  const stages = filters.stages?.length
+    ? filters.stages.filter((s) => OPEN_STAGES.includes(s))
+    : (OPEN_STAGES as SalesStage[]);
+  const last = months[months.length - 1]!;
+  const [y, m] = last.split("-").map(Number);
+  const to = new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
+
+  const rows = await db
+    .select({
+      accountName: accounts.name,
+      name: opportunities.name,
+      stage: opportunities.stage,
+      city: cities.name,
+      vehicleType: vehicleTypes.name,
+      fleetSize: opportunities.fleetSize,
+      price: opportunities.price,
+      expectedCloseDate: opportunities.expectedCloseDate,
+      ownerName: users.name,
+    })
+    .from(opportunities)
+    .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
+    .innerJoin(users, eq(users.id, opportunities.ownerUserId))
+    .leftJoin(cities, eq(cities.id, opportunities.cityId))
+    .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
+    .where(
+      and(
+        ...filterConditions(session.organizationId, session.userId, {
+          ...filters,
+          stage: undefined,
+          stages: undefined,
+          from: undefined,
+          to: undefined,
+        }),
+        inArray(opportunities.stage, stages.length ? stages : OPEN_STAGES),
+        or(
+          lte(opportunities.expectedCloseDate, to),
+          isNull(opportunities.expectedCloseDate),
+        )!,
+      ),
+    )
+    .orderBy(
+      sql`${opportunities.expectedCloseDate} asc nulls last`,
+      asc(cities.name),
+      asc(accounts.name),
+    )
+    .limit(5000);
+
+  return rows.map((r) => ({
+    ...r,
+    column: r.expectedCloseDate
+      ? forecastColumn(r.expectedCloseDate.slice(0, 7), months)
+      : null,
+  }));
 }
 
 /** Drill-down: one city + one month, grouped by vehicle type. */

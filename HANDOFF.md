@@ -1,8 +1,9 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 8 October 2026 (eleventh session: Forecast Overdue column,
-Deployments by month without delivered work, Customers page with signed
-agreements)
+**Last updated:** 15 October 2026 (eleventh session, 8–13 Oct: Forecast
+Overdue column and multi-select filters, Deployments by month without delivered
+work, Customers page with signed agreements, required closing month on new
+deals)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main`. Cloud sessions work
 on a `claude/*` branch and open a PR; Vivek asks for it to be merged (squash,
@@ -15,30 +16,30 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-### Where things stand (end of 8 Oct)
+### Where things stand (15 Oct)
 
-- **PR #29 is merged** (`971bc2d`) and **live in production**: Forecast
-  Overdue column, Deployments By month without delivered work, Customers page,
-  signed agreements with renewal reminders, admin delete for customers with no
-  deals. Production deployment READY with no runtime errors after release.
-- **Agreements on file: none yet.** The test PDF was deleted, so all **6 won
-  deals show "No agreement"** until the real signed agreements are uploaded
-  (Customers → customer → Upload). That is the next thing for the team to do,
-  not code.
-- **Customers: 61**, of which **1** has no deals (Vivek deleted the others on
-  8 Oct with the new admin delete).
-- **Forecast hygiene:** 4 open deals are in the Overdue column and 16 open
-  deals have no expected closing date. Their owners need to move the date or
-  the stage — the app now shows both, it does not fix them.
+- **Live in production, all merged to `main`:** #29 (Forecast Overdue
+  column, Deployments By month, Customers page, agreements, admin customer
+  delete), #30 (handoff), #31 (closing month required on new deals; Forecast
+  columns one width), #32 (every Forecast filter multi-select). No
+  migration since 0013.
+- **Agreements on file: 1. Won deals still showing "No agreement": 7.**
+  Uploading the real signed agreements is the team's job, not code.
+- **Customers: 73**, none without deals.
+- **Open pipeline: 74 deals, 222 vehicles.** No open deal is overdue and none
+  is missing a closing month — the 16 undated ones were fixed by their
+  owners, and the 10 deals created since the month became required (13 Oct)
+  all have one.
+- **On 9 Oct Vivek asked why the Forecast fell from ~330 to ~120 vehicles.**
+  Investigated and closed at his word ("the count looks fine"): the grid
+  matched the database exactly; the 22 Sep `delete-fix-verify` branch showed
+  only 81 open vehicles then, nothing lost from that set, and only one deal
+  (a dormant one) deleted. Neon keeps 6 hours of history on the free plan, so
+  nothing in between could be checked. **"updated" events record no detail**
+  — `opportunity_events` cannot say what an edit changed (fleet, date,
+  price). If a number is ever questioned again, that is the gap; logging
+  before/after on fleet, price and closing date is the cheap fix.
 - **Not yet exercised:** an agreement file over 8 MB (it uploads in parts).
-
-**Migrations 0000–0013 are all applied to production** (0013, agreements,
-on 8 Oct before its code merged — renewal date NOT NULL; at that moment 6 won
-deals had no agreement and will say so). Migrations 0000–0012 are
-applied (0012, lead assignment, on 23 Sep before its code deployed). Migrations are applied by
-hand through the Neon MCP connector BEFORE their code deploys, because the app
-queries those tables on page load — 0012 is read by the shell on EVERY page,
-for the Leads badge.
 
 ### Agreement storage (8 Oct)
 
@@ -749,6 +750,12 @@ Roughly in order of value to adoption:
 8. **Merging duplicate customers.** `accounts` is unique on the exact name, so
    "Flipkart" and "Flipkart India" are two customers. None exist today
    (checked 8 Oct), but an admin merge on the Customers page is the fix.
+9. **Say what an edit changed.** `updateOpportunity` writes an `updated`
+   event with no body, so the timeline (and anyone investigating a number)
+   cannot tell a fleet change from a typo fix. Writing "Fleet 10 → 3",
+   "Closing Nov → Dec", "Price ₹52,000 → ₹48,000" into that body — the way a
+   won deal's price edit already does — would have answered the 9 Oct
+   question in one query.
 
 ## 10. Known rough edges
 

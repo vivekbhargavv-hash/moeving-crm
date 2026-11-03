@@ -215,7 +215,9 @@ const ITEMS: Item[] = [
         DP-0031 — in the spreadsheet exports. A deal carries the Lead ID it
         came from and, for a repeat order, its parent Deal ID. A Contracting
         deal appears in both the Pipeline and Deployments exports with the
-        <b> same Deal ID</b>, so match or de-duplicate on that column.
+        <b> same Deal ID</b>, so match or de-duplicate on that column. On a
+        laptop, <b>Export</b> on Leads downloads every lead with its Lead ID,
+        the Deal ID it became and that deal&rsquo;s stage.
       </>
     ),
   },

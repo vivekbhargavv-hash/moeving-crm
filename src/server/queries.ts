@@ -996,6 +996,9 @@ export async function getWinsDrilldown(ownerId: string, month: string) {
 
 export type LeadRow = {
   id: string;
+  /** Lead ID number (L-0012), and the Deal ID number it became, if any. */
+  ref: number;
+  dealRef: number | null;
   enquiryDate: string;
   companyName: string;
   typeOfGoods: string | null;
@@ -1046,6 +1049,8 @@ export async function listLeads(): Promise<LeadRow[]> {
   return db
     .select({
       id: leads.id,
+      ref: leads.ref,
+      dealRef: opportunities.ref,
       enquiryDate: leads.enquiryDate,
       companyName: leads.companyName,
       typeOfGoods: leads.typeOfGoods,

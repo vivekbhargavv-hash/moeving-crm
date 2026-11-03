@@ -17,7 +17,7 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-### Migration 0014 — apply BEFORE merging the 3 Nov PR
+### Migration 0014 — APPLIED to production on 3 Nov (before its code merged)
 
 `drizzle/0014_record_ids_and_deployment_log.sql` adds `leads.ref`,
 `opportunities.ref`, `opportunities.vehicles_dropped`, the
@@ -30,7 +30,10 @@ carries every deal's current deployed count into the log as one undated row
 per deal. Verified on a local Postgres with 0000–0013 + demo data; run it
 through the Neon connector (`run_sql_transaction`, one statement per entry,
 or the file as is), then check `select count(*) from deployment_events`
-equals the number of deals with `vehicles_deployed > 0`.
+equals the number of deals with `vehicles_deployed > 0`. **Done 3 Nov** in
+one `run_sql_transaction`: 37 leads → L-1..37, 132 deals → D-1..132, 2 log
+rows carrying the 10 vehicles already out. The code running before the merge
+is unaffected — its inserts take the identity default.
 
 ### Where things stand (end of 8 Oct)
 
@@ -272,6 +275,7 @@ src/
     api/export/forecast     the Forecast's deals, filtered as on screen
     api/export/deployments  the Deployments rows, filtered as on screen
     api/export/deployment-log  every Deployment ID: deployed / dropped, when, why
+    api/export/leads  every lead with its Lead ID, Deal ID and deal stage
     api/warm          wakes Neon while someone is using the app (signed-in only)
     api/agreements/upload  issues a blob upload token for one agreement file
     api/agreements/[id]    streams one agreement from the private store
@@ -837,9 +841,11 @@ Roughly in order of value to adoption:
   each deal's count into the deployment log as one undated row; from then on
   every change is dated. A Deployment ID is one SAVE on the sheet, not a
   physical batch — ops typing 4, then correcting to 5, is two rows (+4, +1).
-- **Leads have no export.** Lead IDs appear in the deal, forecast,
-  deployment and log exports (for leads that became deals). A leads export,
-  if wanted, is the same shape as the others; decide whether NOC may have it.
+- **The leads export (`/api/export/leads`) is admin and deal owners only**,
+  from `lg` up (between `md` and ~900px the Leads control row has no room
+  for it). NOC is refused because the file carries each lead's deal stage —
+  pipeline information they are kept from. Allowing them a version without
+  the Deal stage column is a two-line change if Vivek asks.
 - **The delete-a-deal path is two statements, not a transaction** (see § 6).
   If the delete fails after the lead has been detached, the lead sits back in
   the desk's queue while its deal still exists — visible, and one re-conversion

@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  Download,
   MapPin,
   Phone,
   Plus,
@@ -284,7 +285,7 @@ export function LeadsBoard({
             views.length > 3
               ? "sm:w-[380px]"
               : views.length > 2
-                ? "sm:w-[250px]"
+                ? "sm:w-[290px]"
                 : "sm:w-[190px]",
           )}
           value={filter}
@@ -303,6 +304,17 @@ export function LeadsBoard({
           >
             <Plus size={17} /> <span className="hidden sm:inline">New lead</span>
           </Button>
+        ) : null}
+        {/* Laptop widths only (lg): between md and ~900px the row has no room. Admin and deal owners: it
+            carries what became of each lead, which the NOC desk does not see. */}
+        {viewer.role === "admin" || viewer.role === "sales" ? (
+          <a
+            href="/api/export/leads"
+            aria-label="Export leads to a spreadsheet"
+            className="order-4 hidden h-12 shrink-0 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-sm font-medium text-muted hover:bg-canvas lg:flex"
+          >
+            <Download size={16} /> Export
+          </a>
         ) : null}
       </div>
 

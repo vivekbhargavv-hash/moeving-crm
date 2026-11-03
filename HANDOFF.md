@@ -1,8 +1,9 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 15 October 2026 (Forecast and Deployments export on
-desktop; standard cost rates fill blank cost lines automatically). Before
-that, 8 October (Forecast Overdue column, Deployments by month without
+**Last updated:** 3 November 2026 (Lead / Deal / Deployment IDs in every
+export; a deployment log; dropping sold vehicles that will never go out).
+Before that, 15 October (Forecast and Deployments export on desktop;
+standard cost rates fill blank cost lines automatically), and 8 October (Forecast Overdue column, Deployments by month without
 delivered work, Customers page with signed agreements)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
 **Repo:** `vivekbhargavv-hash/moeving-crm`, branch `main`. Cloud sessions work
@@ -15,6 +16,24 @@ Read this, then `README.md` for setup mechanics.
 ---
 
 ## 0. START HERE — the things waiting on a human
+
+### Migration 0014 — APPLIED to production on 3 Nov (before its code merged)
+
+`drizzle/0014_record_ids_and_deployment_log.sql` adds `leads.ref`,
+`opportunities.ref`, `opportunities.vehicles_dropped`, the
+`deployment_events` table (with its two enums) and widens
+`opps_deployed_within_fleet` to deployed + dropped <= fleet. The Deployments
+screen and every export select these columns, so the code fails without it.
+Additive, plain statements (no DO blocks), safe to run ahead of the code.
+It numbers existing leads by enquiry date and deals by creation date, and
+carries every deal's current deployed count into the log as one undated row
+per deal. Verified on a local Postgres with 0000–0013 + demo data; run it
+through the Neon connector (`run_sql_transaction`, one statement per entry,
+or the file as is), then check `select count(*) from deployment_events`
+equals the number of deals with `vehicles_deployed > 0`. **Done 3 Nov** in
+one `run_sql_transaction`: 37 leads → L-1..37, 132 deals → D-1..132, 2 log
+rows carrying the 10 vehicles already out. The code running before the merge
+is unaffected — its inserts take the identity default.
 
 ### Where things stand (end of 8 Oct)
 
@@ -235,6 +254,9 @@ Change these only deliberately — a lot of code assumes them.
 | **An admin may delete a customer with no deals and no agreements** — the bin on its Customers row (reached through the "N customers have no deals" note) or "Delete this customer" on its page. `deleteCustomer` in `server/customer-actions.ts` re-checks both, and the RESTRICT foreign keys from deals and agreements back it if one appears in between. | Vivek, 8 Oct: clean up misspelt or abandoned customers (8 of 68 had no deals that day). A customer with any deal is how that history is found; agreements are deleted one by one on purpose, never as a side effect. Customers come back by name the next time a deal is raised (`resolveAccount`). |
 | **Standard cost rates fill blank cost lines automatically** (Vivek, 15 Oct): on `createOpportunity` (New deal, Duplicate, Convert), on `updateOpportunity`, and across every deal after an admin saves rates (`applyCostDefaults`, now called by the Save button — the "Fill in the blanks" button is gone). One rule, `blankFills` in `lib/cost-defaults.ts`: blanks only, so an override on the cost sheet stays, and a typed 0 is an answer. The bulk fill leaves `updated_at` alone. | Vivek: nobody should have to press a button every time a deal is entered. The catch, accepted: a filled-in rate and a typed one look the same afterwards, so changing a deal's vehicle later does NOT swap its lease — the cost card's "differs from the standard rate" note says so. Clearing a line on the sheet refills it at the next edit. |
 | **Forecast and Deployments have a desktop-only Export** (`/api/export/forecast`, `/api/export/deployments`, CSV via `lib/csv.ts`), carrying the filters applied on screen. Forecast: one row per open deal with the column it lands in (Overdue / month / No closing month) — a pivot of city × month IS the grid. Deployments: the rows the screen holds, status, deployed and still to go — no money, so ops may download it; NOC may not. | Vivek, 15 Oct. Hidden below `md`: a spreadsheet is a laptop job. |
+| **Every lead, deal and deployment-log row has a short running ID** — `ref`, shown as L-0012 / D-0045 / DP-0031 by `lib/record-ids.ts`. A Postgres identity column, so the DATABASE numbers it; global, not per organization. Gaps are normal (a refused insert uses a number). The uuid stays the key; nothing on screen shows the IDs. | Vivek, 3 Nov: trace lead → deal → deployment in exports, and stop double counting a Contracting deal that is in both the Pipeline and Deployments exports. Those are ONE row — a deployment is not its own record, it is the won/Contracting deal — so the Deal ID is the join and de-duplication key. Every export carries it; the Pipeline export adds Lead ID and Parent Deal ID (`sourceLeadRefSql` / `parentDealRefSql` in `queries.ts`). |
+| **Sold vehicles that will never go out are DROPPED, not removed from the fleet** (`opportunities.vehicles_dropped`). `fleet_size` stays what was sold; deployed + dropped <= fleet is the check; a deal leaves the queue once deployed + dropped covers it (`lib/deployment-progress.ts`: `stillToGo`, `isClosedOut`, `planDrop`). Reasons are a fixed enum: vehicle unavailable, driver unavailable, charging constraint, demand does not exist anymore, others (Others needs a note — a check constraint). Ops, deal owners and admins may drop (`requireDeployments()`); **Restore** undoes it. | Vivek, 3 Nov: 7 won, 4 deployed, demand for 3 gone. Cutting the fleet would restate a reported win and erase the fact demand was lost. The Deployments sheet's "Some vehicles won't be deployed" is the only UI change; everything else is exports. |
+| **The deployment log (`deployment_events`)** holds one row per change to deployed or dropped — the CHANGE (+4, +3, −1), the India day, reason, note, who — each a Deployment ID. Rows for a deal sum to its totals. `recordDeployment`, `dropVehicles`, `restoreDroppedVehicles` and a fleet cut in `updateOpportunity` all write it. The counter updates are guarded on the value they read, so two saves at once cannot both log against the same start. Desktop **Log** button → `/api/export/deployment-log`. | This is the `deployed_at` that § 10 said was missing: "what did we deploy in October" is now a filter on Date. Rows carried over by 0014 have no date — nobody recorded one. Not atomic with the counter update (no transactions on neon-http, § 6): if the log insert fails after the update, the totals are right and the log is one row short. |
 | **Renewal reminders are in-app**: "Renewals due" at the top of Customers lists agreements renewing within 60 days or already past. One stops asking once the same customer has another agreement (same deal, or customer-wide) with a LATER renewal date — so uploading the renewal clears it, as does moving the date forward with Edit. Papers for the same customer and deal renewing on the same day are ONE reminder, named by the MSA. | Vivek asked for expiry reminders, and made the renewal date mandatory so every agreement has one. Without the same-day merge, an MSA and its addendum would nag twice. Push/email reminders are not built — see § 9. |
 
 ---
@@ -252,6 +274,8 @@ src/
     api/export/deals  CSV export (org-scoped, UTF-8 BOM for Excel)
     api/export/forecast     the Forecast's deals, filtered as on screen
     api/export/deployments  the Deployments rows, filtered as on screen
+    api/export/deployment-log  every Deployment ID: deployed / dropped, when, why
+    api/export/leads  every lead with its Lead ID, Deal ID and deal stage
     api/warm          wakes Neon while someone is using the app (signed-in only)
     api/agreements/upload  issues a blob upload token for one agreement file
     api/agreements/[id]    streams one agreement from the private store
@@ -303,6 +327,8 @@ src/
     forecast.ts       which Forecast column a deal lands in (Overdue or a month)
     agreements.ts     coverage, renewal reminders, allowed files, blob paths
     csv.ts            the CSV cell/response helpers every export uses
+    record-ids.ts     L-0012 / D-0045 / DP-0031 from a row's ref
+    deployment-progress.ts  still to go, closed out, and the drop rules
 tests/
   stage-change.test.ts          planStageChange, runs anywhere
   cost-defaults.test.ts         the standard-rate matching rules, runs anywhere
@@ -313,6 +339,7 @@ tests/
   lead-assignment.test.ts       who may assign and act on a lead
   forecast.test.ts              the Overdue boundary
   agreements.test.ts            coverage, renewals, files and blob paths
+  deployment-progress.test.ts   dropped vehicles, the drop rules, record IDs
   neon-http-driver.test.ts      no db.transaction() anywhere in src/, ever
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
@@ -330,6 +357,7 @@ drizzle/
   0011_*.sql          leads.converted_at — the funnel's third timestamp
   0012_*.sql          leads.assigned_to/by/at + push_subscriptions, see § 0
   0013_*.sql          agreement_type + agreements, see § 0
+  0014_*.sql          record IDs, vehicles_dropped, deployment_events, see § 0
   meta/               drizzle's journal. Repaired on 22 Sep — see § 6
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
@@ -348,7 +376,7 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. A hundred and fifty-six: five on `blankFills` (the automatic cost fill: typed figures and a typed 0 survive, a deal fills more as it gains answers); twenty-seven on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
+`node --test` with `tsx` — no test framework, no new dependencies. A hundred and sixty-eight: twelve on dropped vehicles and record IDs (still to go, when a deal closes out, what may be dropped, the By month grid with drops, the ID formats); five on `blankFills` (the automatic cost fill: typed figures and a typed 0 survive, a deal fills more as it gains answers); twenty-seven on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"
@@ -809,11 +837,15 @@ Roughly in order of value to adoption:
   Deployments page changes it. When ops slips a delivery they can only record
   fewer vehicles, not move the date — an editable date on that page is the
   obvious next addition.
-- **Nothing records WHEN a deployment completed**, only how many are out. The
-  count is in `opportunity_events` as a note, so "what did we deploy in
-  October" needs parsing text. A `deployed_at` column would fix it properly.
-  This is the ONE date in the deal's life that is not captured: created,
-  expected close, actual close (`closed_at`) and expected deployment all are.
+- **Deployments recorded before 3 Nov have no date.** Migration 0014 carried
+  each deal's count into the deployment log as one undated row; from then on
+  every change is dated. A Deployment ID is one SAVE on the sheet, not a
+  physical batch — ops typing 4, then correcting to 5, is two rows (+4, +1).
+- **The leads export (`/api/export/leads`) is admin and deal owners only**,
+  from `lg` up (between `md` and ~900px the Leads control row has no room
+  for it). NOC is refused because the file carries each lead's deal stage —
+  pipeline information they are kept from. Allowing them a version without
+  the Deal stage column is a two-line change if Vivek asks.
 - **The delete-a-deal path is two statements, not a transaction** (see § 6).
   If the delete fails after the lead has been detached, the lead sits back in
   the desk's queue while its deal still exists — visible, and one re-conversion

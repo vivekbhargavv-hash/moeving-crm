@@ -1,4 +1,5 @@
 import type { Groupable } from "@/lib/deployment-groups";
+import { committed, isClosedOut, stillToGo } from "@/lib/deployment-progress";
 
 /**
  * The deployments queue read the way the forecast is: city down the side,
@@ -50,15 +51,18 @@ export type DeploymentGrid<T> = {
   deployed: T[];
 };
 
-/** Every vehicle on the road, or more — an edit can shrink a fleet after. */
-export const isFullyDeployed = (row: Groupable) =>
-  row.vehiclesDeployed >= row.fleetSize;
+/**
+ * Nothing left to send: every vehicle is on the road or was dropped (or more
+ * — an edit can shrink a fleet after).
+ */
+export const isFullyDeployed = (row: Groupable) => isClosedOut(row);
 
 const empty = <T>(): GridCell<T> => ({ vehicles: 0, remaining: 0, items: [] });
 
 function add<T extends Groupable>(cell: GridCell<T>, row: T) {
-  cell.vehicles += row.fleetSize;
-  cell.remaining += Math.max(0, row.fleetSize - row.vehiclesDeployed);
+  // Dropped vehicles are not coming, so they are not "promised" either.
+  cell.vehicles += committed(row);
+  cell.remaining += stillToGo(row);
   cell.items.push(row);
 }
 

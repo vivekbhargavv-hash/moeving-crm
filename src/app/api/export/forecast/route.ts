@@ -2,6 +2,7 @@ import type { SalesStage } from "@/db/schema";
 import { STAGE_MAP } from "@/lib/constants";
 import { csvResponse, listParam } from "@/lib/csv";
 import { FORECAST_MONTHS, OVERDUE } from "@/lib/forecast";
+import { dealId, leadId } from "@/lib/record-ids";
 import { monthLabelLong, todayInIndia, upcomingMonths } from "@/lib/utils";
 import { requireSession } from "@/server/auth";
 import { listForecastDeals } from "@/server/queries";
@@ -34,6 +35,8 @@ export async function GET(request: Request) {
   });
 
   const header = [
+    "Deal ID",
+    "Lead ID",
     "Forecast month",
     "Expected closing",
     "Customer",
@@ -48,6 +51,8 @@ export async function GET(request: Request) {
   ];
 
   const rows = deals.map((d) => [
+    dealId(d.ref),
+    leadId(d.leadRef),
     d.column === OVERDUE
       ? "Overdue"
       : d.column

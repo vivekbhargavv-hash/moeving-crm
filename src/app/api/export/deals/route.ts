@@ -17,7 +17,9 @@ import {
   STAGE_MAP,
 } from "@/lib/constants";
 import { csvCell } from "@/lib/csv";
+import { dealId, leadId } from "@/lib/record-ids";
 import { requireSession } from "@/server/auth";
+import { parentDealRefSql, sourceLeadRefSql } from "@/server/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,8 @@ export async function GET(request: Request) {
   const rows = await db
     .select({
       opp: opportunities,
+      leadRef: sourceLeadRefSql,
+      parentRef: parentDealRefSql,
       accountName: accounts.name,
       city: cities.name,
       vehicleType: vehicleTypes.name,
@@ -62,6 +66,11 @@ export async function GET(request: Request) {
     .orderBy(asc(opportunities.expectedCloseDate));
 
   const header = [
+    // Deal ID is the key across every export: a Contracting deal is in this
+    // file and the Deployments one with the same ID.
+    "Deal ID",
+    "Lead ID",
+    "Parent Deal ID",
     "Customer",
     "Opportunity",
     "Stage",
@@ -74,6 +83,9 @@ export async function GET(request: Request) {
     "Operating days per month",
     "Monthly deal value",
     "Expected closing",
+    "Deployment date",
+    "Vehicles deployed",
+    "Vehicles dropped",
     "Deal Owner",
     "Closed on",
     "Lost reason",
@@ -90,6 +102,9 @@ export async function GET(request: Request) {
 
   const body = rows.map(({ opp, ...joined }) =>
     [
+      dealId(opp.ref),
+      leadId(joined.leadRef),
+      dealId(joined.parentRef),
       joined.accountName,
       opp.name,
       STAGE_MAP[opp.stage].label,
@@ -102,6 +117,9 @@ export async function GET(request: Request) {
       opp.operatingDays,
       (opp.price ?? 0) * opp.fleetSize,
       opp.expectedCloseDate,
+      opp.deploymentDate,
+      opp.vehiclesDeployed,
+      opp.vehiclesDropped,
       joined.ownerName,
       opp.closedAt ? opp.closedAt.toISOString().slice(0, 10) : "",
       joined.lostReason,

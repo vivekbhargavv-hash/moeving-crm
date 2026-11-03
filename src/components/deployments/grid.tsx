@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react";
 import * as React from "react";
 
 import { buildDeploymentGrid } from "@/lib/deployment-grid";
+import { stillToGo } from "@/lib/deployment-progress";
 import { cn, formatDateCompact, monthLabel, monthLabelLong, num } from "@/lib/utils";
 import type { Deployment } from "@/server/queries";
 
@@ -317,7 +318,7 @@ function ClientRow({
   d: Deployment;
   canOpenDeals: boolean;
 }) {
-  const left = Math.max(0, d.fleetSize - d.vehiclesDeployed);
+  const left = stillToGo(d);
 
   // Two lines, not four columns. Four columns on a 326px panel left the
   // customer's name eight characters wide — and the name is the reason
@@ -341,7 +342,9 @@ function ClientRow({
           )}
         >
           {left === 0
-            ? "all out"
+            ? d.vehiclesDropped
+              ? `${d.vehiclesDeployed} out · ${d.vehiclesDropped} dropped`
+              : "all out"
             : d.vehiclesDeployed > 0
               ? `${left} left · ${d.vehiclesDeployed} out`
               : `${left} left`}

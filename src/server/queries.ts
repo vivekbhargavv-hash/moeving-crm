@@ -22,6 +22,7 @@ import {
   accounts,
   agreements,
   costDefaults,
+  deploymentEvents,
   leads,
   cities,
   lostReasons,
@@ -516,6 +517,17 @@ export async function getDashboard(
   );
 }
 
+/* --------------------------------------------------------------- record IDs */
+
+/**
+ * The Lead ID behind a deal and the Deal ID it grew out of, for exports.
+ * Table names are spelt out on purpose: Drizzle renders a column inside a
+ * `sql` template unqualified, which inside a subquery would compare the inner
+ * table with itself (HANDOFF § 6). Only valid in a query FROM opportunities.
+ */
+export const sourceLeadRefSql = sql<number | null>`(select min(l.ref) from leads l where l.opportunity_id = "opportunities"."id")`;
+export const parentDealRefSql = sql<number | null>`(select p.ref from opportunities p where p.id = "opportunities"."parent_opportunity_id")`;
+
 /* ------------------------------------------------------------- deployments */
 
 export type Deployment = {
@@ -527,6 +539,12 @@ export type Deployment = {
   vehicleTypeId: string | null;
   fleetSize: number;
   vehiclesDeployed: number;
+  /** Sold but never going out, with a reason in the deployment log. */
+  vehiclesDropped: number;
+  /** Deal ID number (D-0045), and the lead / parent deal behind it. */
+  ref: number;
+  leadRef: number | null;
+  parentRef: number | null;
   /** Null only for a won deal that predates the deployment date column. */
   deploymentDate: string | null;
   ownerName: string;
@@ -565,6 +583,10 @@ export async function listDeployments(): Promise<Deployment[]> {
       vehicleTypeId: opportunities.vehicleTypeId,
       fleetSize: opportunities.fleetSize,
       vehiclesDeployed: opportunities.vehiclesDeployed,
+      vehiclesDropped: opportunities.vehiclesDropped,
+      ref: opportunities.ref,
+      leadRef: sourceLeadRefSql,
+      parentRef: parentDealRefSql,
       deploymentDate: opportunities.deploymentDate,
       ownerName: users.name,
       parentOpportunityId: opportunities.parentOpportunityId,
@@ -594,7 +616,7 @@ export async function listDeployments(): Promise<Deployment[]> {
         // this grows forever: every deployment the company has ever made was
         // being sent to a phone, oldest first.
         or(
-          sql`${opportunities.vehiclesDeployed} < ${opportunities.fleetSize}`,
+          sql`${opportunities.vehiclesDeployed} + ${opportunities.vehiclesDropped} < ${opportunities.fleetSize}`,
           gte(
             opportunities.deploymentDate,
             sql`(current_date - interval '90 days')`,
@@ -602,8 +624,6 @@ export async function listDeployments(): Promise<Deployment[]> {
         ),
       ),
     )
-    // Soonest first; a won deal with no date yet sorts last rather than
-    // pretending to be urgent.
     // Soonest first; a won deal with no date yet sorts last rather than
     // pretending to be urgent.
     .orderBy(asc(opportunities.deploymentDate), asc(accounts.name))
@@ -761,6 +781,8 @@ export async function listForecastDeals(
 
   const rows = await db
     .select({
+      ref: opportunities.ref,
+      leadRef: sourceLeadRefSql,
       accountName: accounts.name,
       name: opportunities.name,
       stage: opportunities.stage,
@@ -974,6 +996,9 @@ export async function getWinsDrilldown(ownerId: string, month: string) {
 
 export type LeadRow = {
   id: string;
+  /** Lead ID number (L-0012), and the Deal ID number it became, if any. */
+  ref: number;
+  dealRef: number | null;
   enquiryDate: string;
   companyName: string;
   typeOfGoods: string | null;
@@ -1024,6 +1049,8 @@ export async function listLeads(): Promise<LeadRow[]> {
   return db
     .select({
       id: leads.id,
+      ref: leads.ref,
+      dealRef: opportunities.ref,
       enquiryDate: leads.enquiryDate,
       companyName: leads.companyName,
       typeOfGoods: leads.typeOfGoods,
@@ -1260,4 +1287,55 @@ export async function getCustomer(id: string) {
   ]);
 
   return { account, deals, agreements: papers, contacts };
+}
+
+/* ---------------------------------------------------------- deployment log */
+
+/**
+ * Every row of the deployment log, newest first, for the export. Like
+ * `listDeployments()` it carries no money, so ops may download it.
+ */
+export async function listDeploymentLog(filters: {
+  cityIds?: string[];
+  vehicleTypeIds?: string[];
+}) {
+  const session = await requireSession();
+  return db
+    .select({
+      ref: deploymentEvents.ref,
+      kind: deploymentEvents.kind,
+      vehicles: deploymentEvents.vehicles,
+      happenedOn: deploymentEvents.happenedOn,
+      reason: deploymentEvents.reason,
+      note: deploymentEvents.note,
+      createdAt: deploymentEvents.createdAt,
+      recordedBy: users.name,
+      dealRef: opportunities.ref,
+      leadRef: sourceLeadRefSql,
+      parentRef: parentDealRefSql,
+      dealName: opportunities.name,
+      accountName: accounts.name,
+      city: cities.name,
+      vehicleType: vehicleTypes.name,
+      fleetSize: opportunities.fleetSize,
+    })
+    .from(deploymentEvents)
+    .innerJoin(opportunities, eq(opportunities.id, deploymentEvents.opportunityId))
+    .innerJoin(accounts, eq(accounts.id, opportunities.accountId))
+    .leftJoin(users, eq(users.id, deploymentEvents.userId))
+    .leftJoin(cities, eq(cities.id, opportunities.cityId))
+    .leftJoin(vehicleTypes, eq(vehicleTypes.id, opportunities.vehicleTypeId))
+    .where(
+      and(
+        eq(deploymentEvents.organizationId, session.organizationId),
+        filters.cityIds?.length
+          ? inArray(opportunities.cityId, filters.cityIds)
+          : undefined,
+        filters.vehicleTypeIds?.length
+          ? inArray(opportunities.vehicleTypeId, filters.vehicleTypeIds)
+          : undefined,
+      ),
+    )
+    .orderBy(desc(deploymentEvents.ref))
+    .limit(20000);
 }

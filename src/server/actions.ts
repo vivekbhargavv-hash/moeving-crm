@@ -9,6 +9,7 @@ import {
   accounts,
   cities as cityTable,
   costDefaults,
+  deploymentEvents,
   leads,
   lostReasons,
   opportunities,
@@ -18,9 +19,10 @@ import {
   users,
   vehicleTypes,
 } from "@/db/schema";
-import type { SalesStage } from "@/db/schema";
+import type { DropReason, SalesStage } from "@/db/schema";
 import { COST_FIELDS, OPERATING_DAYS } from "@/lib/constants";
 import { blankFills, defaultsFor, type CostSuggestions } from "@/lib/cost-defaults";
+import { DROP_REASON_LABEL, planDrop } from "@/lib/deployment-progress";
 import { inr, todayInIndia } from "@/lib/utils";
 import {
   requireAdmin,
@@ -308,6 +310,11 @@ export async function updateOpportunity(
   // otherwise trip `opps_deployed_within_fleet`. The trucks that went out did
   // go out, so the count follows the fleet down rather than the edit failing.
   const vehiclesDeployed = Math.min(existing.vehiclesDeployed, input.fleetSize);
+  // Dropped vehicles follow the same way, after the ones that did go out.
+  const vehiclesDropped = Math.min(
+    existing.vehiclesDropped,
+    input.fleetSize - vehiclesDeployed,
+  );
 
   /**
    * A price change is a revenue change.
@@ -358,6 +365,7 @@ export async function updateOpportunity(
       ...fills,
       accountId,
       vehiclesDeployed,
+      vehiclesDropped,
       deploymentDate: input.deploymentDate ?? null,
       name: input.name,
       cityId: input.cityId,
@@ -389,6 +397,27 @@ export async function updateOpportunity(
     userId: session.userId,
     kind: "updated",
   });
+
+  // A smaller fleet pulled the counts down with it; the deployment log says
+  // so, so its rows still add up to the deal's totals.
+  const today = todayInIndia();
+  const corrections = [
+    { kind: "deployed" as const, change: vehiclesDeployed - existing.vehiclesDeployed },
+    { kind: "dropped" as const, change: vehiclesDropped - existing.vehiclesDropped },
+  ].filter((c) => c.change !== 0);
+  if (corrections.length) {
+    await db.insert(deploymentEvents).values(
+      corrections.map((c) => ({
+        organizationId: session.organizationId,
+        opportunityId: id,
+        kind: c.kind,
+        vehicles: c.change,
+        happenedOn: today,
+        note: `Fleet reduced to ${input.fleetSize} on the deal.`,
+        userId: session.userId,
+      })),
+    );
+  }
 
   // Repricing a won deal restates a month that has already been reported, so
   // it is never silent: the deal's own timeline carries the before and after.
@@ -574,26 +603,47 @@ export async function recordDeployment(
     .number()
     .int()
     .min(0)
-    .max(existing.fleetSize)
+    .max(existing.fleetSize - existing.vehiclesDropped)
     .safeParse(vehiclesDeployed);
   if (!parsed.success) {
+    const max = existing.fleetSize - existing.vehiclesDropped;
     return {
       ok: false,
-      error: `This deal is for ${existing.fleetSize} vehicles, so that number has to be between 0 and ${existing.fleetSize}.`,
+      error: existing.vehiclesDropped
+        ? `This deal is for ${existing.fleetSize} vehicles and ${existing.vehiclesDropped} were dropped, so that number has to be between 0 and ${max}.`
+        : `This deal is for ${existing.fleetSize} vehicles, so that number has to be between 0 and ${max}.`,
     };
   }
   const next = parsed.data;
   if (next === existing.vehiclesDeployed) return { ok: true };
 
-  await db
+  // Guarded on the count it was read with: two people saving at once must not
+  // both log their change against the same starting number.
+  const updated = await db
     .update(opportunities)
     .set({ vehiclesDeployed: next, updatedAt: new Date() })
     .where(
       and(
         eq(opportunities.id, id),
         eq(opportunities.organizationId, session.organizationId),
+        eq(opportunities.vehiclesDeployed, existing.vehiclesDeployed),
       ),
-    );
+    )
+    .returning();
+  if (!updated.length) {
+    return { ok: false, error: "Someone else just changed this deal. Close and try again." };
+  }
+
+  // The deployment log: the change, the day, and who.
+  await db.insert(deploymentEvents).values({
+    organizationId: session.organizationId,
+    opportunityId: id,
+    kind: "deployed",
+    vehicles: next - existing.vehiclesDeployed,
+    happenedOn: todayInIndia(),
+    note: next < existing.vehiclesDeployed ? "Count corrected downwards." : null,
+    userId: session.userId,
+  });
 
   // The deal's own timeline is where sales looks to answer "is it out yet".
   await db.insert(opportunityEvents).values({
@@ -604,7 +654,118 @@ export async function recordDeployment(
     body:
       next >= existing.fleetSize
         ? `All ${existing.fleetSize} vehicles deployed.`
-        : `${next} of ${existing.fleetSize} vehicles deployed.`,
+        : next + existing.vehiclesDropped >= existing.fleetSize
+          ? `${next} of ${existing.fleetSize} vehicles deployed and ${existing.vehiclesDropped} dropped — nothing left to send.`
+          : `${next} of ${existing.fleetSize} vehicles deployed.`,
+  });
+
+  revalidatePath("/deployments");
+  revalidatePath(`/opportunities/${id}`);
+  return { ok: true };
+}
+
+/**
+ * Some of a won deal's vehicles will never go out (Vivek, 3 Nov).
+ *
+ * The fleet stays what was sold — the win is not restated — and the vehicles
+ * are counted as dropped, with a reason from a fixed list. Once deployed +
+ * dropped covers the fleet the deal leaves the queue. Ops, deal owners and
+ * admins may do it, the same people who record deployments.
+ */
+export async function dropVehicles(
+  id: string,
+  input: { vehicles: number; reason: DropReason | null; note: string | null },
+): Promise<ActionResult> {
+  const session = await requireDeployments();
+  const existing = await loadOwned(session.organizationId, id);
+  if (!existing) return { ok: false, error: "Deal not found" };
+  if (existing.stage !== "closed_won") {
+    return { ok: false, error: "Only a won deal has vehicles to drop" };
+  }
+
+  const note = input.note?.trim() || null;
+  const plan = planDrop(existing, { ...input, note });
+  if (!plan.ok) return plan;
+
+  const updated = await db
+    .update(opportunities)
+    .set({ vehiclesDropped: plan.vehiclesDropped, updatedAt: new Date() })
+    .where(
+      and(
+        eq(opportunities.id, id),
+        eq(opportunities.organizationId, session.organizationId),
+        eq(opportunities.vehiclesDropped, existing.vehiclesDropped),
+        eq(opportunities.vehiclesDeployed, existing.vehiclesDeployed),
+      ),
+    )
+    .returning();
+  if (!updated.length) {
+    return { ok: false, error: "Someone else just changed this deal. Close and try again." };
+  }
+
+  await db.insert(deploymentEvents).values({
+    organizationId: session.organizationId,
+    opportunityId: id,
+    kind: "dropped",
+    vehicles: input.vehicles,
+    happenedOn: todayInIndia(),
+    reason: input.reason,
+    note,
+    userId: session.userId,
+  });
+  await db.insert(opportunityEvents).values({
+    organizationId: session.organizationId,
+    opportunityId: id,
+    userId: session.userId,
+    kind: "note",
+    body: `${input.vehicles} of ${existing.fleetSize} vehicles dropped — ${DROP_REASON_LABEL[input.reason!]}${note ? `: ${note}` : "."}`,
+  });
+
+  revalidatePath("/deployments");
+  revalidatePath(`/opportunities/${id}`);
+  return { ok: true };
+}
+
+/**
+ * Undo a drop: the vehicles are wanted after all, so they go back to "still
+ * to go". The log keeps both rows — the drop and its reversal.
+ */
+export async function restoreDroppedVehicles(id: string): Promise<ActionResult> {
+  const session = await requireDeployments();
+  const existing = await loadOwned(session.organizationId, id);
+  if (!existing) return { ok: false, error: "Deal not found" };
+  if (existing.vehiclesDropped === 0) return { ok: true };
+
+  const updated = await db
+    .update(opportunities)
+    .set({ vehiclesDropped: 0, updatedAt: new Date() })
+    .where(
+      and(
+        eq(opportunities.id, id),
+        eq(opportunities.organizationId, session.organizationId),
+        eq(opportunities.vehiclesDropped, existing.vehiclesDropped),
+      ),
+    )
+    .returning();
+  if (!updated.length) {
+    return { ok: false, error: "Someone else just changed this deal. Close and try again." };
+  }
+
+  await db.insert(deploymentEvents).values({
+    organizationId: session.organizationId,
+    opportunityId: id,
+    kind: "dropped",
+    vehicles: -existing.vehiclesDropped,
+    happenedOn: todayInIndia(),
+    note: "Dropped vehicles restored — still to be deployed.",
+    userId: session.userId,
+  });
+  await db.insert(opportunityEvents).values({
+    organizationId: session.organizationId,
+    opportunityId: id,
+    userId: session.userId,
+    kind: "note",
+    body: `${existing.vehiclesDropped} dropped ${existing.vehiclesDropped === 1 ? "vehicle" : "vehicles"} restored — still to be deployed.`,
   });
 
   revalidatePath("/deployments");

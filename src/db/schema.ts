@@ -82,7 +82,32 @@ export const eventKind = pgEnum("event_kind", [
   "note",
 ]);
 
+/** What happened to some of a won deal's vehicles. */
+export const deploymentEventKind = pgEnum("deployment_event_kind", [
+  // Vehicles put on the road (negative: a count corrected downwards).
+  "deployed",
+  // Vehicles that will never go out — the demand, a truck or a driver went
+  // away. Negative: a drop undone.
+  "dropped",
+]);
+
+/** Why sold vehicles were not deployed. Fixed list (Vivek, 3 Nov). */
+export const dropReason = pgEnum("drop_reason", [
+  "vehicle_unavailable",
+  "driver_unavailable",
+  "charging_constraint",
+  "demand_lost",
+  "other",
+]);
+
 const id = () => uuid("id").primaryKey().defaultRandom();
+/**
+ * A short running number people can read and type — shown as L-0012,
+ * D-0045, DP-0031 (`lib/record-ids.ts`). The uuid stays the real key; this is
+ * for exports and conversation. Numbered by the database, never by the app,
+ * so two saves at once cannot get the same one.
+ */
+const ref = () => integer("ref").notNull().generatedByDefaultAsIdentity();
 const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -263,6 +288,8 @@ export const leads = pgTable(
   "leads",
   {
     id: id(),
+    /** Lead ID — L-0001. */
+    ref: ref(),
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
@@ -342,6 +369,7 @@ export const leads = pgTable(
       .defaultNow(),
   },
   (t) => [
+    uniqueIndex("leads_ref_idx").on(t.ref),
     index("leads_org_status_idx").on(t.organizationId, t.status),
     index("leads_org_created_idx").on(t.organizationId, t.createdAt),
     index("leads_org_date_idx").on(t.organizationId, t.enquiryDate),
@@ -411,6 +439,8 @@ export const opportunities = pgTable(
   "opportunities",
   {
     id: id(),
+    /** Deal ID — D-0001. */
+    ref: ref(),
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
@@ -463,6 +493,14 @@ export const opportunities = pgTable(
      * a fleet going first is normal, and "8 of 12" is the honest state.
      */
     vehiclesDeployed: integer("vehicles_deployed").notNull().default(0),
+    /**
+     * How many of `fleet_size` will never go out — sold, then lost to a
+     * missing truck, driver, charger or the demand itself. `fleet_size` stays
+     * what was sold, so the win is never restated; deployed + dropped =
+     * fleet_size is what closes the deal on the Deployments queue. Each
+     * change is a row in `deployment_events`, with its reason.
+     */
+    vehiclesDropped: integer("vehicles_dropped").notNull().default(0),
 
     /** Deal Owner — the person who owns this deal. */
     ownerUserId: uuid("owner_user_id")
@@ -565,8 +603,9 @@ export const opportunities = pgTable(
     ),
     check(
       "opps_deployed_within_fleet",
-      sql`${t.vehiclesDeployed} >= 0 and ${t.vehiclesDeployed} <= ${t.fleetSize}`,
+      sql`${t.vehiclesDeployed} >= 0 and ${t.vehiclesDropped} >= 0 and ${t.vehiclesDeployed} + ${t.vehiclesDropped} <= ${t.fleetSize}`,
     ),
+    uniqueIndex("opps_ref_idx").on(t.ref),
     index("opps_org_deployment_idx").on(t.organizationId, t.deploymentDate),
   ],
 );
@@ -640,6 +679,56 @@ export const agreements = pgTable(
   ],
 );
 
+/**
+ * The deployment log: every change to how many of a deal's vehicles went out
+ * or were dropped, one row each, with its Deployment ID (DP-0001).
+ *
+ * `opportunities.vehicles_deployed` / `vehicles_dropped` are the running
+ * totals the screens read; this is where WHEN and WHY live. `vehicles` is the
+ * change, so the rows for a deal add up to its totals.
+ */
+export const deploymentEvents = pgTable(
+  "deployment_events",
+  {
+    id: id(),
+    /** Deployment ID — DP-0001. */
+    ref: ref(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    opportunityId: uuid("opportunity_id")
+      .notNull()
+      .references(() => opportunities.id, { onDelete: "cascade" }),
+    kind: deploymentEventKind("kind").notNull(),
+    /** The change: +4 deployed, +3 dropped, −1 a correction. Never 0. */
+    vehicles: integer("vehicles").notNull(),
+    /**
+     * The day it happened, in India. Null only on the rows carried over from
+     * before the log existed, when nobody recorded a day.
+     */
+    happenedOn: date("happened_on"),
+    reason: dropReason("reason"),
+    note: text("note"),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("deployment_events_ref_idx").on(t.ref),
+    index("deployment_events_opp_idx").on(t.opportunityId, t.createdAt),
+    index("deployment_events_org_idx").on(t.organizationId, t.createdAt),
+    check("deployment_events_nonzero", sql`${t.vehicles} <> 0`),
+    // Dropping vehicles has to say why; "Others" has to say what.
+    check(
+      "deployment_events_drop_requires_reason",
+      sql`${t.kind} <> 'dropped' or ${t.vehicles} < 0 or ${t.reason} is not null`,
+    ),
+    check(
+      "deployment_events_other_requires_note",
+      sql`${t.reason} is distinct from 'other' or ${t.note} is not null`,
+    ),
+  ],
+);
+
 export const opportunityEvents = pgTable(
   "opportunity_events",
   {
@@ -664,3 +753,4 @@ export type Opportunity = typeof opportunities.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type SalesStage = (typeof salesStage.enumValues)[number];
 export type AgreementType = (typeof agreementType.enumValues)[number];
+export type DropReason = (typeof dropReason.enumValues)[number];

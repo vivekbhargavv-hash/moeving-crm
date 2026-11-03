@@ -7,10 +7,20 @@ import * as React from "react";
 import { Badge, Button, Segmented, Sheet } from "@/components/ui";
 import { DeploymentGridView } from "@/components/deployments/grid";
 import { groupByCity, groupByDueDate } from "@/lib/deployment-groups";
+import {
+  DROP_REASONS,
+  isClosedOut,
+  stillToGo,
+} from "@/lib/deployment-progress";
 import type { Group } from "@/lib/deployment-groups";
 import { showToast } from "@/lib/toast";
 import { cn, daysUntil, formatDateCompact, num, todayInIndia } from "@/lib/utils";
-import { recordDeployment } from "@/server/actions";
+import type { DropReason } from "@/db/schema";
+import {
+  dropVehicles,
+  recordDeployment,
+  restoreDroppedVehicles,
+} from "@/server/actions";
 import type { Deployment } from "@/server/queries";
 
 /**
@@ -104,8 +114,9 @@ export function DeploymentsBoard({
     );
   }, [deployments, cityIds, vehicleIds]);
 
-  const outstanding = filtered.filter((d) => d.vehiclesDeployed < d.fleetSize);
-  const done = filtered.filter((d) => d.vehiclesDeployed >= d.fleetSize);
+  // A deal is done once every vehicle is out OR dropped (deployment-progress).
+  const outstanding = filtered.filter((d) => !isClosedOut(d));
+  const done = filtered.filter(isClosedOut);
 
   const isOverdue = (d: Deployment) =>
     Boolean(d.deploymentDate && d.deploymentDate < today);
@@ -138,7 +149,9 @@ export function DeploymentsBoard({
   const exportParams = new URLSearchParams();
   if (cityIds.length) exportParams.set("city", cityIds.join(","));
   if (vehicleIds.length) exportParams.set("vehicle", vehicleIds.join(","));
-  const exportHref = `/api/export/deployments${exportParams.size ? `?${exportParams}` : ""}`;
+  const exportQuery = exportParams.size ? `?${exportParams}` : "";
+  const exportHref = `/api/export/deployments${exportQuery}`;
+  const logHref = `/api/export/deployment-log${exportQuery}`;
 
   return (
     <div>
@@ -192,6 +205,14 @@ export function DeploymentsBoard({
           className="hidden h-12 shrink-0 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-sm font-medium text-muted hover:bg-canvas md:flex"
         >
           <Download size={16} /> Export
+        </a>
+        {/* Every Deployment ID: what went out or was dropped, when and why. */}
+        <a
+          href={logHref}
+          aria-label="Export the deployment log to a spreadsheet"
+          className="hidden h-12 shrink-0 items-center gap-2 rounded-xl border border-line bg-white px-3.5 text-sm font-medium text-muted hover:bg-canvas md:flex"
+        >
+          <Download size={16} /> Log
         </a>
       </div>
 
@@ -353,7 +374,8 @@ export function DeploymentsBoard({
   );
 }
 
-const remaining = (d: Deployment) => d.fleetSize - d.vehiclesDeployed;
+/** Still to send: sold, minus out, minus dropped. */
+const remaining = (d: Deployment) => stillToGo(d);
 
 /**
  * "in 3 days" / "6 days late" — the bit a date alone makes you work out.
@@ -383,7 +405,8 @@ function Row({
 }) {
   const left = remaining(d);
   const complete = left <= 0;
-  const started = d.vehiclesDeployed > 0 && !complete;
+  const started =
+    (d.vehiclesDeployed > 0 || d.vehiclesDropped > 0) && !complete;
   const note = dueNote(d.deploymentDate);
 
   const head = (
@@ -452,6 +475,9 @@ function Row({
             </span>
             <span className="tabular shrink-0 text-[11.5px] font-semibold text-amber-800">
               {d.vehiclesDeployed}/{d.fleetSize} out
+              {d.vehiclesDropped ? (
+                <span className="text-rose-700"> · {d.vehiclesDropped} dropped</span>
+              ) : null}
             </span>
           </div>
         ) : null}
@@ -477,9 +503,15 @@ function Row({
           </p>
         ) : null}
         {complete ? (
-          <Badge className="mt-1 bg-emerald-100 text-emerald-800">
-            All out
-          </Badge>
+          d.vehiclesDropped ? (
+            <Badge className="mt-1 bg-slate-100 text-slate-700">
+              {d.vehiclesDeployed} out · {d.vehiclesDropped} dropped
+            </Badge>
+          ) : (
+            <Badge className="mt-1 bg-emerald-100 text-emerald-800">
+              All out
+            </Badge>
+          )
         ) : null}
       </div>
     </div>
@@ -511,7 +543,14 @@ function Row({
   );
 }
 
-/** How many went out. A number, because "done" is often only partly true. */
+/**
+ * How many went out — and, behind a second button, how many never will.
+ *
+ * Dropping is for sold vehicles that fell through (no truck, no driver, no
+ * charger, or the customer no longer wants them). The deal keeps its sold
+ * fleet; the dropped ones stop counting as owed, and the deal leaves the queue
+ * once out + dropped covers it.
+ */
 function RecordSheet({
   target,
   onClose,
@@ -521,28 +560,42 @@ function RecordSheet({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [mode, setMode] = React.useState<"record" | "drop">("record");
   const [count, setCount] = React.useState("");
+  const [dropCount, setDropCount] = React.useState("");
+  const [reason, setReason] = React.useState<DropReason | null>(null);
+  const [note, setNote] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
 
   React.useEffect(() => {
     if (!target) return;
+    setMode("record");
     setCount(String(target.vehiclesDeployed));
+    setDropCount(String(stillToGo(target)));
+    setReason(null);
+    setNote("");
     setError(null);
   }, [target]);
 
   if (!target) return null;
   const n = Number(count || 0);
+  // What can be on the road: the fleet, less anything dropped.
+  const maxOut = target.fleetSize - target.vehiclesDropped;
+  const left = stillToGo(target);
+  const summary = (
+    <p className="-mt-1 mb-4 text-sm text-muted">
+      <strong>{target.accountName}</strong> · {target.city ?? "No city"} ·{" "}
+      {target.fleetSize} × {target.vehicleType ?? "—"}
+    </p>
+  );
 
   // An unwon deal has nothing to record against. `recordDeployment` refuses it
   // at the server too; this is so ops reads a sentence rather than an error.
   if (target.isExpected) {
     return (
       <Sheet open onClose={onClose} title="Not won yet">
-        <p className="-mt-1 mb-4 text-sm text-muted">
-          <strong>{target.accountName}</strong> · {target.city ?? "No city"} ·{" "}
-          {target.fleetSize} × {target.vehicleType ?? "—"}
-        </p>
+        {summary}
         <p className="rounded-xl bg-violet-50 px-4 py-3 text-[13.5px] text-violet-900">
           This deal is at Contracting — verbally agreed, paperwork still in
           flight. It is here so you can plan for{" "}
@@ -569,6 +622,128 @@ function RecordSheet({
     });
   }
 
+  const d = Number(dropCount || 0);
+  function drop() {
+    if (!target) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await dropVehicles(target.id, {
+        vehicles: d,
+        reason,
+        note: note.trim() || null,
+      });
+      if (!result.ok) return setError(result.error);
+      showToast(`${target.accountName}: ${d} ${d === 1 ? "vehicle" : "vehicles"} dropped`);
+      onSaved();
+    });
+  }
+
+  function restore() {
+    if (!target) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await restoreDroppedVehicles(target.id);
+      if (!result.ok) return setError(result.error);
+      showToast(`${target.accountName}: dropped vehicles are back in the queue`);
+      onSaved();
+    });
+  }
+
+  const errorBox = error ? (
+    <p role="alert" className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+      {error}
+    </p>
+  ) : null;
+
+  if (mode === "drop") {
+    return (
+      <Sheet
+        open
+        onClose={onClose}
+        title="Vehicles not being deployed"
+        footer={
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              disabled={pending}
+              onClick={() => {
+                setError(null);
+                setMode("record");
+              }}
+            >
+              Back
+            </Button>
+            <Button
+              type="button"
+              variant="brand"
+              size="lg"
+              className="flex-1"
+              disabled={pending || !reason || d < 1}
+              onClick={drop}
+            >
+              {pending
+                ? "Saving…"
+                : `Drop ${d || ""} ${d === 1 ? "vehicle" : "vehicles"}`}
+            </Button>
+          </div>
+        }
+      >
+        {summary}
+        <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
+          How many will not be deployed?
+        </p>
+        <Stepper
+          value={dropCount}
+          onChange={setDropCount}
+          min={1}
+          max={left}
+          label="Vehicles to drop"
+        />
+        <p className="mt-1.5 text-[12px] text-muted">
+          {left} still to go. The deal stays sold at {target.fleetSize}; these
+          stop counting as owed.
+        </p>
+
+        <p className="mb-2 mt-4 text-[13px] font-medium tracking-tight text-muted">
+          Why?
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {DROP_REASONS.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => setReason(r.value)}
+              aria-pressed={reason === r.value}
+              className={cn(
+                "min-h-10 rounded-full border px-3.5 py-2 text-left text-[13px] font-semibold transition",
+                reason === r.value
+                  ? "border-brand bg-brand-soft text-brand-ink"
+                  : "border-line bg-white text-muted",
+              )}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="mt-4 block">
+          <span className="mb-1.5 block text-[13px] font-medium tracking-tight text-muted">
+            {reason === "other" ? "What happened? (required)" : "Note (optional)"}
+          </span>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            className="w-full rounded-xl border border-line bg-white px-3 py-2 text-[15px] focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/60"
+          />
+        </label>
+        {errorBox}
+      </Sheet>
+    );
+  }
+
   return (
     <Sheet
       open
@@ -587,58 +762,107 @@ function RecordSheet({
         </Button>
       }
     >
-      <p className="-mt-1 mb-4 text-sm text-muted">
-        <strong>{target.accountName}</strong> · {target.city ?? "No city"} ·{" "}
-        {target.fleetSize} × {target.vehicleType ?? "—"}
-      </p>
+      {summary}
 
       <p className="mb-1.5 text-[13px] font-medium tracking-tight text-muted">
         How many vehicles are on the road?
       </p>
-      <div className="flex h-12 items-center rounded-xl border border-line bg-white focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/60">
-        <button
-          type="button"
-          onClick={() => setCount(String(Math.max(0, n - 1)))}
-          className="h-full w-12 rounded-l-xl text-xl text-muted active:bg-canvas"
-          aria-label="One fewer"
-        >
-          −
-        </button>
-        <input
-          inputMode="numeric"
-          aria-label="Vehicles deployed"
-          value={count}
-          onChange={(e) => setCount(e.target.value.replace(/\D/g, ""))}
-          className="tabular w-full border-0 bg-transparent text-center text-lg font-semibold focus:outline-none"
-        />
-        <button
-          type="button"
-          onClick={() => setCount(String(Math.min(target.fleetSize, n + 1)))}
-          className="h-full w-12 rounded-r-xl text-xl text-muted active:bg-canvas"
-          aria-label="One more"
-        >
-          +
-        </button>
-      </div>
+      <Stepper
+        value={count}
+        onChange={setCount}
+        min={0}
+        max={maxOut}
+        label="Vehicles deployed"
+      />
       <p className="mt-1.5 text-[12px] text-muted">
-        of {target.fleetSize} in this deal. Partial deployments are fine — put
-        in what is actually out.
+        of {target.fleetSize} in this deal
+        {target.vehiclesDropped ? ` (${target.vehiclesDropped} dropped)` : ""}.
+        Partial deployments are fine — put in what is actually out.
       </p>
 
       <button
         type="button"
-        onClick={() => setCount(String(target.fleetSize))}
+        onClick={() => setCount(String(maxOut))}
         className="mt-3 h-11 w-full rounded-xl border border-line text-sm font-semibold text-brand-ink active:bg-canvas"
       >
-        All {target.fleetSize} are out
+        All {maxOut} are out
       </button>
 
-      {error ? (
-        <p role="alert" className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          {error}
-        </p>
+      {left > 0 ? (
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setMode("drop");
+          }}
+          className="mt-2 h-11 w-full rounded-xl border border-rose-200 text-sm font-semibold text-rose-700 active:bg-rose-50"
+        >
+          Some vehicles won’t be deployed
+        </button>
       ) : null}
+
+      {target.vehiclesDropped ? (
+        <div className="mt-3 flex items-center gap-3 rounded-xl bg-slate-50 px-3.5 py-2.5 text-[13px]">
+          <span className="flex-1 text-slate-700">
+            {target.vehiclesDropped} dropped — not counted as owed.
+          </span>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={restore}
+            className="h-10 shrink-0 rounded-lg px-2 font-semibold text-brand-ink active:bg-canvas"
+          >
+            Restore
+          </button>
+        </div>
+      ) : null}
+
+      {errorBox}
     </Sheet>
+  );
+}
+
+/** − [ n ] + for a vehicle count, clamped to what the deal allows. */
+function Stepper({
+  value,
+  onChange,
+  min,
+  max,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  min: number;
+  max: number;
+  label: string;
+}) {
+  const n = Number(value || 0);
+  return (
+    <div className="flex h-12 items-center rounded-xl border border-line bg-white focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/60">
+      <button
+        type="button"
+        onClick={() => onChange(String(Math.max(min, n - 1)))}
+        className="h-full w-12 rounded-l-xl text-xl text-muted active:bg-canvas"
+        aria-label="One fewer"
+      >
+        −
+      </button>
+      <input
+        inputMode="numeric"
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
+        className="tabular w-full border-0 bg-transparent text-center text-lg font-semibold focus:outline-none"
+      />
+      <button
+        type="button"
+        onClick={() => onChange(String(Math.min(max, n + 1)))}
+        className="h-full w-12 rounded-r-xl text-xl text-muted active:bg-canvas"
+        aria-label="One more"
+      >
+        +
+      </button>
+    </div>
   );
 }
 

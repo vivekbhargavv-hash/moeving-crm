@@ -185,7 +185,37 @@ const ITEMS: Item[] = [
         12&rdquo;). <b>By month</b> counts only vehicles still to go out; a
         deal with every vehicle on the road moves to <b>Deployed</b> under the
         grid. On a computer, <b>Export</b> downloads the list, with your
-        filters, as a spreadsheet.
+        filters, as a spreadsheet, and <b>Log</b> downloads every deployment
+        and drop with its date and reason.
+      </>
+    ),
+  },
+  {
+    q: "Some sold vehicles will never go out. What do I do?",
+    for: DEPLOY,
+    a: (
+      <>
+        Open the deal on Deployments and press <b>Some vehicles won&rsquo;t be
+        deployed</b>. Say how many and why — vehicle unavailable, driver
+        unavailable, charging constraint, demand does not exist anymore, or
+        others (with a sentence). The deal stays sold at its full fleet, so no
+        reported win changes; the dropped vehicles stop counting as owed, and
+        once everything is either out or dropped the deal moves to
+        <b> Deployed</b>. Pressed it by mistake? Open the deal again and press
+        <b> Restore</b>.
+      </>
+    ),
+  },
+  {
+    q: "What are Lead ID, Deal ID and Deployment ID?",
+    for: SELLERS,
+    a: (
+      <>
+        Every lead, deal and deployment entry has a short ID — L-0012, D-0045,
+        DP-0031 — in the spreadsheet exports. A deal carries the Lead ID it
+        came from and, for a repeat order, its parent Deal ID. A Contracting
+        deal appears in both the Pipeline and Deployments exports with the
+        <b> same Deal ID</b>, so match or de-duplicate on that column.
       </>
     ),
   },

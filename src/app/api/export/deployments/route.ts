@@ -1,4 +1,6 @@
 import { csvResponse, listParam } from "@/lib/csv";
+import { stillToGo } from "@/lib/deployment-progress";
+import { dealId, leadId } from "@/lib/record-ids";
 import { todayInIndia } from "@/lib/utils";
 import { requireSession } from "@/server/auth";
 import { listDeployments } from "@/server/queries";
@@ -30,6 +32,10 @@ export async function GET(request: Request) {
   );
 
   const header = [
+    // The same Deal ID as the Pipeline export — de-duplicate on it.
+    "Deal ID",
+    "Lead ID",
+    "Parent Deal ID",
     "Status",
     "Deployment date",
     "Customer",
@@ -37,22 +43,28 @@ export async function GET(request: Request) {
     "Vehicle type",
     "Vehicles",
     "Deployed",
+    "Dropped",
     "Still to deploy",
     "Repeat order",
     "Deal Owner",
   ];
 
   const rows = deployments.map((d) => {
-    const remaining = Math.max(d.fleetSize - d.vehiclesDeployed, 0);
+    const remaining = stillToGo(d);
     const status =
       remaining === 0
-        ? "Deployed"
+        ? d.vehiclesDropped
+          ? "Closed (some dropped)"
+          : "Deployed"
         : d.isExpected
           ? "Expected (Contracting)"
           : d.deploymentDate && d.deploymentDate < today
             ? "Overdue"
             : "To deploy";
     return [
+      dealId(d.ref),
+      leadId(d.leadRef),
+      dealId(d.parentRef),
       status,
       d.deploymentDate ?? "",
       d.accountName,
@@ -60,6 +72,7 @@ export async function GET(request: Request) {
       d.vehicleType ?? "",
       d.fleetSize,
       d.vehiclesDeployed,
+      d.vehiclesDropped,
       remaining,
       d.isRepeat ? "Yes" : "No",
       d.ownerName,

@@ -15,6 +15,8 @@ export type Groupable = {
   vehicleType: string | null;
   fleetSize: number;
   vehiclesDeployed: number;
+  /** Sold but never going out — see `lib/deployment-progress.ts`. */
+  vehiclesDropped?: number;
 };
 
 export type Group<T> = {

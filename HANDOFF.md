@@ -1,8 +1,9 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 3 November 2026 (Lead / Deal / Deployment IDs in every
-export; a deployment log; dropping sold vehicles that will never go out).
-Before that, 15 October (Forecast and Deployments export on desktop;
+**Last updated:** 22 November 2026 (status refresh only — no code change
+since #35; production numbers in § 0 re-read from the live database).
+Before that, 3 November (Lead / Deal / Deployment IDs in every export; a
+deployment log; dropping sold vehicles that will never go out), 15 October (Forecast and Deployments export on desktop;
 standard cost rates fill blank cost lines automatically), and 8 October (Forecast Overdue column, Deployments by month without
 delivered work, Customers page with signed agreements)
 **Owner:** Vivek (product owner, not a programmer — explain in plain English)
@@ -35,24 +36,27 @@ one `run_sql_transaction`: 37 leads → L-1..37, 132 deals → D-1..132, 2 log
 rows carrying the 10 vehicles already out. The code running before the merge
 is unaffected — its inserts take the identity default.
 
-### Where things stand (end of 8 Oct)
+### Where things stand (22 Nov)
 
-- **PR #29 is merged** (`971bc2d`) and **live in production**: Forecast
-  Overdue column, Deployments By month without delivered work, Customers page,
-  signed agreements with renewal reminders, admin delete for customers with no
-  deals. Production deployment READY with no runtime errors after release.
-- **Agreements on file: none yet.** The test PDF was deleted, so all **6 won
-  deals show "No agreement"** until the real signed agreements are uploaded
-  (Customers → customer → Upload). That is the next thing for the team to do,
-  not code.
-- **Customers: 61**, of which **1** has no deals (Vivek deleted the others on
-  8 Oct with the new admin delete).
-- **Forecast hygiene:** 4 open deals are in the Overdue column and 16 open
-  deals have no expected closing date. Their owners need to move the date or
-  the stage — the app now shows both, it does not fix them.
-- **Not yet exercised:** an agreement file over 8 MB (it uploads in parts).
+- **Production runs `main` at #35** (`e2aa429`), READY, with **no runtime
+  errors in the last 7 days**. #34 (15 Oct: Forecast/Deployments export,
+  automatic cost fill) and #35 (3 Nov: record IDs, deployment log, dropped
+  vehicles, leads export) are both live. No PR is open.
+- **Agreements: 1 on file. 14 of 15 won deals show "No agreement".** Uploading
+  the signed papers (Customers → customer → Upload) is the team's job, not
+  code. An upload over 8 MB (multipart) has still never been tried.
+- **Live data:** 104 customers, 96 open deals, 15 won, 42 leads, 1 active NOC
+  user. Deployment log: 3 rows; no vehicles dropped yet.
+- **Forecast hygiene is good:** 0 open deals without a closing month (was 16),
+  1 in the Overdue column.
+- **Cost defaults are mostly filled in** (26 rates; see item 2 below for the
+  gaps). **18 open deals still have blank cost lines**, and not for lack of
+  rates: 16 have no **operating days** and 5 no **charging scope**, so Driver,
+  Charging or Parking cannot be looked up. They fill by themselves once the
+  owner sets those on the deal (any edit runs the fill).
 
-**Migrations 0000–0013 are all applied to production** (0013, agreements,
+**Migrations 0000–0014 are all applied to production** (0014 on 3 Nov,
+above; 0013, agreements,
 on 8 Oct before its code merged — renewal date NOT NULL; at that moment 6 won
 deals had no agreement and will say so). Migrations 0000–0012 are
 applied (0012, lead assignment, on 23 Sep before its code deployed). Migrations are applied by
@@ -94,7 +98,16 @@ for the Leads badge.
    organization comes from our own tables), so the fix is to turn the
    requirement off: Clerk Dashboard → Organizations → Settings → membership
    **optional** (or disable Organizations entirely). One toggle, no deploy.
-2. **Fill in the blank cost defaults, then press "Fill in the blanks".**
+2. **Cost defaults — two gaps and one figure to check (22 Nov).** Since
+   September Lease, Driver, Parking and most Charging rates have been entered
+   (two new vehicle types too: 1.7T Tata Intra, Ultra E12). Still blank:
+   **Charging for 1.7T Tata Intra when the client pays** (almost certainly 0)
+   and **Charging for Ultra E12 when MoEVing pays**. And **Ultra E12 "client
+   pays" charging is 45,000** where every other vehicle's is 0 — it looks
+   entered in the wrong box (it fits the MoEVing-pays row beside it). Check
+   and correct it in Admin → Cost defaults; Save fills every deal's blanks.
+
+   History (22 Sep):
    Admin → Cost defaults is seeded with what was known on 22 Sep: Maintenance
    2000, Supervisor 2000, Miscellaneous 0, Charging 5000 (1T Tata Ace) and 7000
    (1.7T Eicher) when MoEVing pays, 0 for every vehicle when the client pays.
@@ -107,14 +120,13 @@ for the Leads badge.
    lines, and a deal fills its own blanks whenever it is created or edited.
    Blanks only: a typed figure is never touched, and a won deal cannot have a
    blank. Deals that are blank today fill the next time an admin saves a rate.
-3. **Give the phone desk the NOC role.** Admin → Users → role **NOC**. They see
-   Leads and nothing else. Until somebody has it, leads can only be added by an
-   admin.
+3. ~~Give the phone desk the NOC role.~~ **Done** — one active NOC user as of
+   22 Nov.
 
-8. **A throwaway Neon branch `delete-fix-verify` exists.** It was a copy of
-   production used to prove the delete fix against the real schema without
-   touching live data. It costs storage and nothing reads it — delete it in
-   the Neon console, or ask and it will be removed.
+8. **A throwaway Neon branch `delete-fix-verify` still exists** (archived by
+   Neon on 10 Oct, so it uses no compute). It was a copy of production used to
+   prove the delete fix. Nothing reads it — delete it in the Neon console, or
+   ask and it will be removed.
 
 ### Still open from earlier sessions
 

@@ -40,7 +40,8 @@ is unaffected — its inserts take the identity default.
 
 - **Migration 0015** (`lead_intake_keys` table + `leads.source`) is additive
   and must be applied BEFORE the code deploys: the Leads screen selects
-  `leads.source` on every load. See the PR for whether it has been applied.
+  `leads.source` on every load. **APPLIED to production on 26 Nov** (one
+  `run_sql_transaction`, before the code merged): 43 existing leads → `desk`.
 - **To switch it on:** Admin → Website leads → New key, copy the key (shown
   ONCE), and give it with the address and `docs/website-leads-api.md` to
   whoever runs the website. The chatbot itself is not ours — which platform it

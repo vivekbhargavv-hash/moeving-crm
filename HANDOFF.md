@@ -1,8 +1,8 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 22 November 2026 (status refresh only — no code change
-since #35; production numbers in § 0 re-read from the live database).
-Before that, 3 November (Lead / Deal / Deployment IDs in every export; a
+**Last updated:** 26 November 2026 (website chatbot leads: an API / webhook
+that posts leads into Leads, with keys made in Admin → Website leads). Before
+that, 22 November (status refresh), 3 November (Lead / Deal / Deployment IDs in every export; a
 deployment log; dropping sold vehicles that will never go out), 15 October (Forecast and Deployments export on desktop;
 standard cost rates fill blank cost lines automatically), and 8 October (Forecast Overdue column, Deployments by month without
 delivered work, Customers page with signed agreements)
@@ -35,6 +35,21 @@ equals the number of deals with `vehicles_deployed > 0`. **Done 3 Nov** in
 one `run_sql_transaction`: 37 leads → L-1..37, 132 deals → D-1..132, 2 log
 rows carrying the 10 vehicles already out. The code running before the merge
 is unaffected — its inserts take the identity default.
+
+### Website chatbot leads (26 Nov)
+
+- **Migration 0015** (`lead_intake_keys` table + `leads.source`) is additive
+  and must be applied BEFORE the code deploys: the Leads screen selects
+  `leads.source` on every load. See the PR for whether it has been applied.
+- **To switch it on:** Admin → Website leads → New key, copy the key (shown
+  ONCE), and give it with the address and `docs/website-leads-api.md` to
+  whoever runs the website. The chatbot itself is not ours — which platform it
+  is was unknown on 26 Nov, so the endpoint accepts the common field names
+  rather than one vendor's format.
+- **Not yet proven against the real chatbot.** Verified locally against a
+  fresh database built from 0000–0015: every auth style, JSON, form fields,
+  wrapped payloads, the 30-minute duplicate guard, a revoked key, and the
+  refusals. Push to admins is the same `pushToUser` path as lead assignment.
 
 ### Where things stand (22 Nov)
 
@@ -269,6 +284,8 @@ Change these only deliberately — a lot of code assumes them.
 | **Every lead, deal and deployment-log row has a short running ID** — `ref`, shown as L-0012 / D-0045 / DP-0031 by `lib/record-ids.ts`. A Postgres identity column, so the DATABASE numbers it; global, not per organization. Gaps are normal (a refused insert uses a number). The uuid stays the key; nothing on screen shows the IDs. | Vivek, 3 Nov: trace lead → deal → deployment in exports, and stop double counting a Contracting deal that is in both the Pipeline and Deployments exports. Those are ONE row — a deployment is not its own record, it is the won/Contracting deal — so the Deal ID is the join and de-duplication key. Every export carries it; the Pipeline export adds Lead ID and Parent Deal ID (`sourceLeadRefSql` / `parentDealRefSql` in `queries.ts`). |
 | **Sold vehicles that will never go out are DROPPED, not removed from the fleet** (`opportunities.vehicles_dropped`). `fleet_size` stays what was sold; deployed + dropped <= fleet is the check; a deal leaves the queue once deployed + dropped covers it (`lib/deployment-progress.ts`: `stillToGo`, `isClosedOut`, `planDrop`). Reasons are a fixed enum: vehicle unavailable, driver unavailable, charging constraint, demand does not exist anymore, others (Others needs a note — a check constraint). Ops, deal owners and admins may drop (`requireDeployments()`); **Restore** undoes it. | Vivek, 3 Nov: 7 won, 4 deployed, demand for 3 gone. Cutting the fleet would restate a reported win and erase the fact demand was lost. The Deployments sheet's "Some vehicles won't be deployed" is the only UI change; everything else is exports. |
 | **The deployment log (`deployment_events`)** holds one row per change to deployed or dropped — the CHANGE (+4, +3, −1), the India day, reason, note, who — each a Deployment ID. Rows for a deal sum to its totals. `recordDeployment`, `dropVehicles`, `restoreDroppedVehicles` and a fleet cut in `updateOpportunity` all write it. The counter updates are guarded on the value they read, so two saves at once cannot both log against the same start. Desktop **Log** button → `/api/export/deployment-log`. | This is the `deployed_at` that § 10 said was missing: "what did we deploy in October" is now a filter on Date. Rows carried over by 0014 have no date — nobody recorded one. Not atomic with the counter update (no transactions on neon-http, § 6): if the log insert fails after the update, the totals are right and the log is one row short. |
+| **Website chatbot leads arrive at `POST /api/leads/inbound`** (Vivek, 26 Nov), authenticated by a key from Admin → Website leads (`lead_intake_keys`, SHA-256 only — the key is shown once). The key may come as `Authorization: Bearer`, `X-API-Key` or `?key=` (the last is the "webhook URL" option for tools that only take an address). JSON or form fields, optionally wrapped under `data`/`lead`/…; field names matched by an alias list in `lib/inbound-lead.ts`, which IS the contract in `docs/website-leads-api.md` — change both together. Phone or email required; everything else forgiven (cut to length, "5 trucks" → 5, company falls back to the person's name). The same phone/email within 30 minutes is answered 200 `duplicate` and not added. Lands as `new`, no owner, `source = 'website'`, `created_by_user_id` null; every active admin gets a push (in `after()`). | Vivek: leads from the website chatbot straight into Leads, admins notified to assign. One endpoint serves both "API with a key" and "webhook URL". The key names the organization because nobody is signed in — the ONE tenant door that is not `requireSession()`. A key in a URL ends up in logs, so the docs prefer the header and say never to put the key in browser code. |
+| **`leads.source`** is `desk` or `website`; a website lead shows a blue **Website** badge and its note reads "From the website:" instead of "Desk note:". The leads export has a "Came in through" column. | Text, not an enum, so a third channel is not an `ALTER TYPE` migration. |
 | **Renewal reminders are in-app**: "Renewals due" at the top of Customers lists agreements renewing within 60 days or already past. One stops asking once the same customer has another agreement (same deal, or customer-wide) with a LATER renewal date — so uploading the renewal clears it, as does moving the date forward with Edit. Papers for the same customer and deal renewing on the same day are ONE reminder, named by the MSA. | Vivek asked for expiry reminders, and made the renewal date mandatory so every agreement has one. Without the same-day merge, an MSA and its addendum would nag twice. Push/email reminders are not built — see § 9. |
 
 ---
@@ -288,6 +305,7 @@ src/
     api/export/deployments  the Deployments rows, filtered as on screen
     api/export/deployment-log  every Deployment ID: deployed / dropped, when, why
     api/export/leads  every lead with its Lead ID, Deal ID and deal stage
+    api/leads/inbound the website chatbot posts leads here (key, not session)
     api/warm          wakes Neon while someone is using the app (signed-in only)
     api/agreements/upload  issues a blob upload token for one agreement file
     api/agreements/[id]    streams one agreement from the private store
@@ -341,6 +359,7 @@ src/
     csv.ts            the CSV cell/response helpers every export uses
     record-ids.ts     L-0012 / D-0045 / DP-0031 from a row's ref
     deployment-progress.ts  still to go, closed out, and the drop rules
+    inbound-lead.ts   website lead fields: the alias list and the parsing
 tests/
   stage-change.test.ts          planStageChange, runs anywhere
   cost-defaults.test.ts         the standard-rate matching rules, runs anywhere
@@ -352,6 +371,7 @@ tests/
   forecast.test.ts              the Overdue boundary
   agreements.test.ts            coverage, renewals, files and blob paths
   deployment-progress.test.ts   dropped vehicles, the drop rules, record IDs
+  inbound-lead.test.ts          website lead field matching and key reading
   neon-http-driver.test.ts      no db.transaction() anywhere in src/, ever
   closed-won-constraints.test.ts the Postgres checks; needs TEST_DATABASE_URL
 drizzle/
@@ -370,6 +390,7 @@ drizzle/
   0012_*.sql          leads.assigned_to/by/at + push_subscriptions, see § 0
   0013_*.sql          agreement_type + agreements, see § 0
   0014_*.sql          record IDs, vehicles_dropped, deployment_events, see § 0
+  0015_*.sql          lead_intake_keys + leads.source (website leads), see § 0
   meta/               drizzle's journal. Repaired on 22 Sep — see § 6
   bootstrap.sql       schema + tenant + master data + admin, one paste
   demo-data.sql       36 sample deals; cleanup statements at the bottom
@@ -388,7 +409,7 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. A hundred and sixty-eight: twelve on dropped vehicles and record IDs (still to go, when a deal closes out, what may be dropped, the By month grid with drops, the ID formats); five on `blankFills` (the automatic cost fill: typed figures and a typed 0 survive, a deal fills more as it gains answers); twenty-seven on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
+`node --test` with `tsx` — no test framework, no new dependencies. A hundred and seventy-nine: eleven on website leads (field aliases, wrapped payloads, the phone-or-email rule, counts from words, dates, key headers); twelve on dropped vehicles and record IDs (still to go, when a deal closes out, what may be dropped, the By month grid with drops, the ID formats); five on `blankFills` (the automatic cost fill: typed figures and a typed 0 survive, a deal fills more as it gains answers); twenty-seven on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"

@@ -467,6 +467,9 @@ function LeadCard({
           <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-[15px] font-semibold">{lead.companyName}</p>
             <Badge className={status.chip}>{status.short}</Badge>
+            {lead.source === "website" ? (
+              <Badge className="bg-sky-50 text-sky-700">Website</Badge>
+            ) : null}
           </div>
           {/* The city decides who rings back, so it reads before the rest. */}
           {lead.callingCity ? (
@@ -651,6 +654,13 @@ function LeadOwner({
   return null;
 }
 
+/**
+ * What the note on an unactioned lead is called. A website lead's note is
+ * what the visitor told the chatbot, not anything the desk wrote.
+ */
+const noteLabel = (lead: LeadRow) =>
+  lead.source === "website" ? "From the website:" : "Desk note:";
+
 /** The card's left edge: the outcome, readable from across the list. */
 const OUTCOME_EDGE: Record<LeadStatus, string> = {
   new: "border-l-amber-400",
@@ -681,7 +691,7 @@ function LeadOutcome({ lead }: { lead: LeadRow }) {
       // note, if there is one, needs saying.
       lead.remarks ? (
         <p className="mt-2.5 rounded-xl bg-canvas px-3 py-2 text-[13px]">
-          <span className="font-medium text-muted">Desk note:</span> {lead.remarks}
+          <span className="font-medium text-muted">{noteLabel(lead)}</span> {lead.remarks}
         </p>
       ) : null
     );
@@ -722,7 +732,7 @@ function LeadOutcome({ lead }: { lead: LeadRow }) {
       ) : null}
       {lead.remarks ? (
         <p className="mt-1">
-          <span className="font-medium">{who ? "Remarks:" : "Desk note:"}</span>{" "}
+          <span className="font-medium">{who ? "Remarks:" : noteLabel(lead)}</span>{" "}
           {lead.remarks}
         </p>
       ) : null}
@@ -831,7 +841,7 @@ function ActionSheet({
       <div className="space-y-4">
         {deskNote ? (
           <p className="rounded-xl bg-canvas px-3 py-2 text-[13px]">
-            <span className="font-medium text-muted">Desk note:</span> {deskNote}
+            <span className="font-medium text-muted">{noteLabel(lead)}</span> {deskNote}
           </p>
         ) : null}
         {mode === "not_qualified" ? (

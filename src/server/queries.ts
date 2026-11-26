@@ -1010,6 +1010,8 @@ export type LeadRow = {
   mobile: string | null;
   email: string | null;
   foundOn: string | null;
+  /** "desk" or "website" — how the lead reached the CRM. */
+  source: string;
   status: LeadStatus;
   remarks: string | null;
   notQualifiedReason: string | null;
@@ -1062,6 +1064,7 @@ export async function listLeads(): Promise<LeadRow[]> {
       mobile: leads.mobile,
       email: leads.email,
       foundOn: leads.foundOn,
+      source: leads.source,
       status: leads.status,
       remarks: leads.remarks,
       notQualifiedReason: leads.notQualifiedReason,

@@ -47,6 +47,7 @@ export async function GET() {
     "Mobile",
     "Email",
     "Found us on",
+    "Came in through",
     "Assigned to",
     "Assigned at",
     "Actioned by",
@@ -74,6 +75,7 @@ export async function GET() {
     l.mobile,
     l.email,
     l.foundOn,
+    l.source === "website" ? "Website chatbot" : "Leads desk",
     l.assignedTo,
     when(l.assignedAt),
     l.actionedBy,
@@ -81,7 +83,7 @@ export async function GET() {
     l.notQualifiedReason,
     l.remarks,
     when(l.convertedAt),
-    l.createdBy,
+    l.createdBy ?? (l.source === "website" ? "Website chatbot" : ""),
     when(l.createdAt),
   ]);
 

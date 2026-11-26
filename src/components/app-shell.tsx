@@ -87,6 +87,7 @@ const TITLES: Record<string, string> = {
   "/admin/users": "Users",
   "/admin/master-data": "Master data",
   "/admin/cost-defaults": "Cost defaults",
+  "/admin/website-leads": "Website leads",
   "/settings": "Settings",
   "/deployments": "Deployments",
   "/leads": "Leads",

@@ -312,6 +312,12 @@ export const leads = pgTable(
     email: text("email"),
     /** Google search, referral, LinkedIn — where they found MoEVing. */
     foundOn: text("found_on"),
+    /**
+     * How the lead reached the CRM: "desk" (typed in on Leads) or "website"
+     * (posted by the website chatbot to /api/leads/inbound). Text, not an
+     * enum, so a new channel is not an ALTER TYPE migration.
+     */
+    source: text("source").notNull().default("desk"),
 
     status: leadStatus("status").notNull().default("new"),
     /**
@@ -414,6 +420,42 @@ export const pushSubscriptions = pgTable(
   (t) => [
     uniqueIndex("push_subscriptions_endpoint_idx").on(t.endpoint),
     index("push_subscriptions_user_idx").on(t.userId),
+  ],
+);
+
+/**
+ * Keys a website chatbot (or Zapier, or a web form) uses to post leads into
+ * the CRM — `/api/leads/inbound`.
+ *
+ * Only a SHA-256 of the key is stored: the key itself is shown to the admin
+ * once, when it is made, and cannot be read back. The key alone names the
+ * organization, which is why this is the one door to a tenant that is not
+ * `requireSession()`. Revoked keys are kept, so "which key sent this" still
+ * has an answer.
+ */
+export const leadIntakeKeys = pgTable(
+  "lead_intake_keys",
+  {
+    id: id(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** What the admin called it — "Website chatbot". */
+    label: text("label").notNull(),
+    keyHash: text("key_hash").notNull(),
+    /** The key's first characters, so a person can tell two keys apart. */
+    keyPrefix: text("key_prefix").notNull(),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    leadsReceived: integer("leads_received").notNull().default(0),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("lead_intake_keys_hash_idx").on(t.keyHash),
+    index("lead_intake_keys_org_idx").on(t.organizationId),
   ],
 );
 

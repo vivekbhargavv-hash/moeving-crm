@@ -82,6 +82,20 @@ const ITEMS: Item[] = [
     ),
   },
   {
+    q: "Where do Website leads come from?",
+    for: LEADS,
+    a: (
+      <>
+        From the chatbot on MoEVing&apos;s website. Each one lands here as{" "}
+        <b>New</b> with a blue <b>Website</b> tag and no owner, and every admin
+        is notified to assign it. What the visitor told the chatbot is under{" "}
+        <b>From the website</b>. Treat it like any other lead: call, then
+        Qualified or Not qualified. An admin manages the connection in{" "}
+        <b>Admin → Website leads</b>.
+      </>
+    ),
+  },
+  {
     q: "What do the deal stages mean?",
     for: SELLERS,
     a: (

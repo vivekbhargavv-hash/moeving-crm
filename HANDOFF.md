@@ -1,8 +1,10 @@
 # Good Deal — Session Handoff
 
-**Last updated:** 26 November 2026 (website chatbot leads: an API / webhook
-that posts leads into Leads, with keys made in Admin → Website leads). Before
-that, 22 November (status refresh), 3 November (Lead / Deal / Deployment IDs in every export; a
+**Last updated:** 27 November 2026 (strategic customer meetings: a desktop
+Meetings board, the thread under each key customer, and follow-ups with an
+owner and a date). Before that, 26 November (website chatbot leads: an API /
+webhook that posts leads into Leads, with keys made in Admin → Website leads),
+22 November (status refresh), 3 November (Lead / Deal / Deployment IDs in every export; a
 deployment log; dropping sold vehicles that will never go out), 15 October (Forecast and Deployments export on desktop;
 standard cost rates fill blank cost lines automatically), and 8 October (Forecast Overdue column, Deployments by month without
 delivered work, Customers page with signed agreements)
@@ -17,6 +19,49 @@ Read this, then `README.md` for setup mechanics.
 ---
 
 ## 0. START HERE — the things waiting on a human
+
+### Strategic customer meetings (27 Nov) — MIGRATION 0016 NOT YET APPLIED
+
+A new **Meetings** module: what was discussed with key customers, and who owes
+the next move. Desktop only (Vivek's call) — it is offered in the desktop rail
+and left out of the phone's tab bar and menu; a phone that follows a link
+there is told why.
+
+- **Migration 0016** (`drizzle/0016_meetings.sql`) is additive — five tables
+  (`contacts`, `meetings`, `meeting_attendees`, `meeting_follow_ups`,
+  `meeting_topics`, `meeting_topic_links`), four enums and
+  `accounts.is_strategic` — and **must be applied BEFORE the code deploys**:
+  the Customers page selects `accounts.is_strategic` on every load. Its last
+  statement seeds the nine starting topics for every existing organization.
+  Apply it through the Neon connector (`run_sql_transaction`, the file as is),
+  then check `select count(*) from meeting_topics` is 9 and
+  `select count(*) from meetings` is 0.
+  **Verified on a local Postgres 16** built from 0000–0015: every check
+  constraint refuses what it should, and the topic seed is idempotent.
+- **Nothing to switch on.** The module is empty until somebody logs a meeting.
+  An admin marks the key accounts strategic (the ★ button on a customer's
+  meetings page) — those are the ones the board watches and chases.
+- **How the board works.** Every status on it (On track / Waiting on us / With
+  customer / No next step / Stalled) is *computed* from the open follow-ups
+  and their dates — `src/lib/meetings.ts`, tested in `tests/meetings.test.ts`.
+  Nobody can mark an account green by hand. Stalled is 60 days with no meeting
+  and nothing agreed.
+- **Who sees what.** Deal owners see every meeting except ones an admin marked
+  **Confidential**; admins see those too. A regional owner must be able to read
+  what the CXO promised or they cannot follow it up (Vivek, 27 Nov).
+- **Held or planned is the date's business**, not a field: a meeting dated in
+  the future is planned, today or earlier is held and must carry notes. A
+  planned meeting whose date passes stops counting as the way forward, so the
+  account reads as having no next step until somebody writes it up — the
+  thread says so on the card.
+- **Not yet seen with real data.** The queries were smoke-tested against a
+  local Postgres and the pages build, but nobody has logged a real meeting
+  yet: Clerk sign-in makes a local UI pass impossible in a cloud session.
+- **A customer with logged meetings can no longer be deleted** (ON DELETE
+  RESTRICT, and `deleteCustomer` says so plainly). `drizzle/bootstrap.sql` was
+  already behind — it predates leads, agreements and deployments — and has not
+  been extended, so a fresh install should use `npm run db:push`.
+
 
 ### Migration 0014 — APPLIED to production on 3 Nov (before its code merged)
 
@@ -178,8 +223,9 @@ Next.js 15 (App Router) · TypeScript · Tailwind v4 · Neon Postgres · Drizzle
 Clerk · installable PWA · Vercel.
 
 **Screens:** Dashboard · Leads (the inbound desk) · Pipeline (board + list) ·
-Forecast (forecast + wins) · Deal detail · Quick Add · Deployments (the ops
-queue) · Settings (install) · Admin (users, master data, cost defaults).
+Forecast (forecast + wins) · Deal detail · Quick Add · Customers · Meetings
+(strategic accounts, desktop only) · Deployments (the ops queue) · Settings
+(install) · Admin (users, master data, cost defaults).
 
 ---
 
@@ -298,6 +344,7 @@ src/
   app/
     (app)/            dashboard · leads · pipeline · forecast · opportunities/[id]
                       customers · customers/[id]
+                      meetings · meetings/[accountId]  (desktop only)
                       deployments (ops, sales, admin) · settings (everyone)
                       admin/users · admin/master-data · admin/cost-defaults
                       every route has a loading.tsx beside its page.tsx
@@ -410,7 +457,7 @@ npm test          # logic tests only — no setup, runs anywhere
 TEST_DATABASE_URL="postgresql://postgres@127.0.0.1:5433/crm_test" npm test
 ```
 
-`node --test` with `tsx` — no test framework, no new dependencies. A hundred and seventy-nine: eleven on website leads (field aliases, wrapped payloads, the phone-or-email rule, counts from words, dates, key headers); twelve on dropped vehicles and record IDs (still to go, when a deal closes out, what may be dropped, the By month grid with drops, the ID formats); five on `blankFills` (the automatic cost fill: typed figures and a typed 0 survive, a deal fills more as it gains answers); twenty-seven on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
+`node --test` with `tsx` — no test framework, no new dependencies. Two hundred and one: twenty-two on meetings (which open commitment becomes the way forward, when an account is merely quiet and when it is stalled, that the ball being on the customer's side never reads as us being late, the risk ordering, the follow-up buckets and the thread nesting); eleven on website leads (field aliases, wrapped payloads, the phone-or-email rule, counts from words, dates, key headers); twelve on dropped vehicles and record IDs (still to go, when a deal closes out, what may be dropped, the By month grid with drops, the ID formats); five on `blankFills` (the automatic cost fill: typed figures and a typed 0 survive, a deal fills more as it gains answers); twenty-seven on agreements (which won deals are covered, which renewal reminders a newer contract retires, which files and paths are accepted), nine on the Forecast's Overdue boundary, eight on lead assignment; the older ones:
 tests: ten on `planStageChange` (the noop / "fill the sheet" / here-is-the-patch
 decision) plus seven more on costing a deal before it is won, six on the
 invitation redirect URL, eight on the Deployments groupings (where "this week"

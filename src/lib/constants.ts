@@ -138,6 +138,23 @@ export const SEED_CITIES = [
 
 export const SEED_VEHICLE_TYPES = ["1 Tonne", "1.7 Tonne", "Ultra E7", "Ultra E9"];
 
+/**
+ * What strategic customers keep raising, as the first topic list on a meeting.
+ * Admin-managed afterwards, like the lost reasons below — short enough that
+ * counting them tells you something.
+ */
+export const SEED_MEETING_TOPICS = [
+  "Pricing pressure",
+  "New city",
+  "Fleet expansion",
+  "Service quality",
+  "Charging infrastructure",
+  "Payment terms",
+  "Driver availability",
+  "Contract renewal",
+  "Competition",
+];
+
 export const SEED_LOST_REASONS = [
   "Pricing mismatch",
   "Ops performance concerns",

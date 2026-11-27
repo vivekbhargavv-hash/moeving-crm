@@ -4,9 +4,10 @@ A mobile-first sales CRM for MoEVing's EV logistics team.
 
 > Picking this up in a new session? Start with **[HANDOFF.md](HANDOFF.md)** —
 > current state, the decisions that shape the code, and what is waiting on a
-> human. Five screens, no
-modules, no tabs-inside-tabs: pipeline, closure forecast, dashboard, deal
-detail, and a quick-add that takes under 30 seconds.
+> human. Few screens, no
+tabs-inside-tabs: pipeline, closure forecast, dashboard, deal
+detail, a quick-add that takes under 30 seconds, and — on a desktop — the
+strategic customer meetings board.
 
 Next.js 15 · TypeScript · Tailwind v4 · Neon Postgres · Drizzle · Clerk · PWA
 

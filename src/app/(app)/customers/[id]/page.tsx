@@ -1,4 +1,4 @@
-import { AlertTriangle, Mail, Phone } from "lucide-react";
+import { AlertTriangle, CalendarClock, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -45,7 +45,19 @@ export default async function CustomerPage({
 
       <div className="mb-3 rounded-2xl border border-line bg-white p-4">
         <p className="text-[12px] font-semibold uppercase tracking-wide text-muted">Customer</p>
-        <h1 className="mt-1 text-[22px] font-bold tracking-[-0.02em]">{account.name}</h1>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-[22px] font-bold tracking-[-0.02em]">{account.name}</h1>
+          {/* Meetings is a desktop screen, so the link to it is one too. */}
+          <Link
+            href={`/meetings/${account.id}`}
+            className="hidden h-10 items-center gap-1.5 rounded-xl border border-line px-3 text-[13px] font-semibold text-ink hover:bg-canvas md:inline-flex"
+          >
+            <CalendarClock size={14} className="text-muted" aria-hidden="true" />
+            {account.meetings
+              ? `Meetings · ${num(account.meetings)}`
+              : "Log a meeting"}
+          </Link>
+        </div>
         <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Stat label="On the road" value={wonVehicles ? `${num(onRoad)} / ${num(wonVehicles)}` : "—"} />
           <Stat label="Won / month" value={monthly ? inrCompact(monthly) : "—"} tone={monthly ? "good" : undefined} />
@@ -136,8 +148,12 @@ export default async function CustomerPage({
       ) : null}
 
       {/* Admin only, and only with nothing hanging off it: a deal is history,
-          and the server refuses it anyway (Vivek, 8 Oct). */}
-      {session.role === "admin" && deals.length === 0 && agreements.length === 0 ? (
+          a logged meeting is what somebody said, and the server refuses it
+          anyway (Vivek, 8 Oct). */}
+      {session.role === "admin" &&
+      deals.length === 0 &&
+      agreements.length === 0 &&
+      account.meetings === 0 ? (
         <div className="flex justify-center">
           <DeleteCustomer id={account.id} name={account.name} />
         </div>

@@ -1259,7 +1259,18 @@ export async function listAgreements(accountId?: string): Promise<AgreementRow[]
 export async function getCustomer(id: string) {
   const session = await requireSession();
   const [account] = await db
-    .select({ id: accounts.id, name: accounts.name, createdAt: accounts.createdAt })
+    .select({
+      id: accounts.id,
+      name: accounts.name,
+      createdAt: accounts.createdAt,
+      isStrategic: accounts.isStrategic,
+      /**
+       * How many meetings are logged against this customer — read by the page
+       * to offer the thread, and to withhold the delete button, since a
+       * customer with meetings cannot be deleted (ON DELETE RESTRICT).
+       */
+      meetings: sql<number>`(select count(*)::int from "meetings" where "meetings"."account_id" = "accounts"."id")`,
+    })
     .from(accounts)
     .where(
       and(eq(accounts.id, id), eq(accounts.organizationId, session.organizationId)),

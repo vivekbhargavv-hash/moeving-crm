@@ -7,6 +7,7 @@ import {
   Calculator,
   CalendarRange,
   ExternalLink,
+  Handshake,
   KanbanSquare,
   Menu,
   PhoneCall,
@@ -41,7 +42,13 @@ import { cn } from "@/lib/utils";
  * the page itself by `requireSales()` — this list only decides what is worth
  * offering, it is not the guard.
  */
-const SALES_NAV = [
+const SALES_NAV: {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+  /** Offered in the desktop rail only — see `desktopOnly` below. */
+  desktopOnly?: boolean;
+}[] = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/leads", label: "Leads", icon: PhoneCall },
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
@@ -50,6 +57,16 @@ const SALES_NAV = [
   { href: "/customers", label: "Customers", icon: Building2 },
   { href: "/forecast", label: "Forecast", icon: CalendarRange },
   { href: "/deployments", label: "Deploy", icon: Truck },
+  /*
+   * Meetings is a desktop screen (Vivek, 27 Nov).
+   *
+   * It is read sitting down — a dozen accounts, each with a status, a date and
+   * a sentence about what happens next — and side by side those columns are
+   * the whole point. So it is offered in the rail and left out of the phone's
+   * menu and tab bar; the page itself explains as much to anyone who follows
+   * a link there on a phone, rather than 404-ing or showing half a table.
+   */
+  { href: "/meetings", label: "Meetings", icon: Handshake, desktopOnly: true },
 ];
 
 const PRICING_TOOL_URL = "https://moeving-pricing.vercel.app/";
@@ -91,6 +108,7 @@ const TITLES: Record<string, string> = {
   "/settings": "Settings",
   "/deployments": "Deployments",
   "/leads": "Leads",
+  "/meetings": "Meetings",
 };
 
 export function AppShell({
@@ -208,6 +226,10 @@ export function AppShell({
   // there is nothing to trim for them.
   const phoneTabs =
     isOps || isNoc ? tabs : tabs.filter((t) => PHONE_TABS.includes(t.href));
+
+  // The phone's menu leaves out the screens built for a desktop, so nothing
+  // on a phone offers a page that cannot be read on one.
+  const phoneNav = nav.filter((item) => !("desktopOnly" in item && item.desktopOnly));
 
   const title =
     pathname.startsWith("/forecast") && params.get("tab") === "wins"
@@ -394,7 +416,7 @@ export function AppShell({
       <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Go to">
         <nav className="-my-1">
           <ul className="divide-y divide-line">
-            {nav.map((item) => {
+            {phoneNav.map((item) => {
               const active = pathname.startsWith(item.href);
               return (
                 <li key={item.href}>

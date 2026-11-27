@@ -7,6 +7,7 @@ import {
   accounts,
   cities,
   lostReasons,
+  meetingTopics,
   opportunities,
   organizations,
   stageProbabilities,
@@ -17,6 +18,7 @@ import {
   DEFAULT_STAGE_PROBABILITY,
   SEED_CITIES,
   SEED_LOST_REASONS,
+  SEED_MEETING_TOPICS,
   SEED_VEHICLE_TYPES,
 } from "../lib/constants";
 import type { SalesStage } from "./schema";
@@ -62,6 +64,12 @@ async function main() {
     .insert(lostReasons)
     .values(
       SEED_LOST_REASONS.map((label, i) => ({ organizationId, label, sortOrder: i })),
+    )
+    .onConflictDoNothing();
+  await db
+    .insert(meetingTopics)
+    .values(
+      SEED_MEETING_TOPICS.map((label, i) => ({ organizationId, label, sortOrder: i })),
     )
     .onConflictDoNothing();
   await db

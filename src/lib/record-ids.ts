@@ -1,6 +1,6 @@
 /**
  * The IDs people read: L-0012 for a lead, D-0045 for a deal, DP-0031 for one
- * entry in the deployment log.
+ * entry in the deployment log, M-0007 for a meeting with a customer.
  *
  * The database stores a plain running number (`ref`) on each row; the prefix
  * and padding are added here, in one place, so every export spells them the
@@ -24,3 +24,5 @@ const format =
 export const leadId = format("L");
 export const dealId = format("D");
 export const deploymentId = format("DP");
+/** M-0007 — one meeting with a customer. A follow-up carries its parent's. */
+export const meetingId = format("M");

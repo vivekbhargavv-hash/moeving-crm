@@ -469,6 +469,14 @@ export const accounts = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    /**
+     * A key account leadership watches.
+     *
+     * Any customer can have meetings logged against it; this flag only decides
+     * who appears on the Meetings board and who gets chased for going quiet.
+     * An admin sets it.
+     */
+    isStrategic: boolean("is_strategic").notNull().default(false),
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -771,6 +779,285 @@ export const deploymentEvents = pgTable(
   ],
 );
 
+/* ---------------------------------------------------------- meetings */
+
+/**
+ * Who was in the room, which is the whole reason this module exists.
+ *
+ * `leadership` is a CXO conversation — the one leadership has and then hands
+ * down. `regional` is the deal owner's follow-up in a city. `operational` is
+ * the monthly review with the people who run the fleet. The level is what
+ * lets the board say "this account has only been touched regionally since
+ * March".
+ */
+export const meetingLevel = pgEnum("meeting_level", [
+  "leadership",
+  "regional",
+  "operational",
+]);
+
+export const meetingKind = pgEnum("meeting_kind", ["in_person", "call", "video"]);
+
+/**
+ * A meeting in the future is `planned`, one in the past is `held`. One table
+ * for both, so the thread reads straight through and there is no calendar to
+ * keep in step with it.
+ */
+export const meetingStatus = pgEnum("meeting_status", [
+  "planned",
+  "held",
+  "cancelled",
+]);
+
+export const followUpStatus = pgEnum("follow_up_status", ["open", "done", "dropped"]);
+
+/**
+ * A person at the customer's end.
+ *
+ * Until now a person was free text on a lead (`caller_name`, `designation`)
+ * and nothing was reusable, so "which CXOs have we actually sat in front of
+ * this year" had no answer. These rows are that answer.
+ */
+export const contacts = pgTable(
+  "contacts",
+  {
+    id: id(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** "Chief Supply Chain Officer". What makes a name worth recording. */
+    designation: text("designation"),
+    email: text("email"),
+    mobile: text("mobile"),
+    /** Someone who can say yes. Drives the CXO coverage count. */
+    isDecisionMaker: boolean("is_decision_maker").notNull().default(false),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("contacts_account_name_idx").on(t.accountId, t.name),
+    index("contacts_org_account_idx").on(t.organizationId, t.accountId),
+  ],
+);
+
+/**
+ * One meeting with a customer: who was there, what was said, and what it is
+ * a follow-up to.
+ *
+ * It hangs off the CUSTOMER, not a deal. A CXO conversation touches three
+ * deals or none, and the relationship outlives every one of them; the deal is
+ * an optional pointer for the times a meeting really was about one.
+ *
+ * `parent_meeting_id` is the same device as `opportunities.parent_opportunity_id`:
+ * a regional follow-up points back at the leadership meeting it came out of,
+ * so the chain from "the CSCO asked for Pune" to what happened on the ground
+ * reads top to bottom with nothing restated.
+ */
+export const meetings = pgTable(
+  "meetings",
+  {
+    id: id(),
+    /** Meeting ID — M-0001. */
+    ref: ref(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // RESTRICT, like agreements: deleting a customer must not be how a
+    // record of what their CEO promised quietly disappears.
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "restrict" }),
+    /** The deal it concerned, when it concerned one. */
+    opportunityId: uuid("opportunity_id").references(() => opportunities.id, {
+      onDelete: "set null",
+    }),
+    cityId: uuid("city_id").references(() => cities.id, { onDelete: "set null" }),
+    /** The meeting this one came out of. Null for a new conversation. */
+    parentMeetingId: uuid("parent_meeting_id").references(
+      (): AnyPgColumn => meetings.id,
+      { onDelete: "set null" },
+    ),
+
+    level: meetingLevel("level").notNull(),
+    kind: meetingKind("kind").notNull().default("in_person"),
+    status: meetingStatus("status").notNull().default("held"),
+    /** The day it happened, or is due to happen, in India. */
+    metOn: date("met_on").notNull(),
+    /** One line a person can scan in a thread — "Annual review, Pune ask". */
+    title: text("title").notNull(),
+    /** What it is for. The only thing a planned meeting can carry. */
+    agenda: text("agenda"),
+    /** What was actually discussed. Required once it is held. */
+    notes: text("notes"),
+    /**
+     * Admins only. Off by default — a regional owner cannot follow up on a
+     * promise they are not allowed to read (Vivek, 27 Nov).
+     */
+    confidential: boolean("confidential").notNull().default(false),
+
+    /**
+     * Whose meeting it is — normally whoever led it.
+     *
+     * Separate from `created_by_user_id` on purpose: a CXO meeting is written
+     * up by the account owner or an assistant, and the log should say who was
+     * in the room rather than who did the typing.
+     */
+    ownerUserId: uuid("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("meetings_ref_idx").on(t.ref),
+    index("meetings_org_account_idx").on(t.organizationId, t.accountId, t.metOn),
+    index("meetings_org_date_idx").on(t.organizationId, t.metOn),
+    index("meetings_org_status_idx").on(t.organizationId, t.status, t.metOn),
+    index("meetings_parent_idx").on(t.parentMeetingId),
+    // A meeting that happened has to say what was said, or the next person
+    // learns nothing from it — the same rule as a lead's remarks.
+    check(
+      "meetings_held_requires_notes",
+      sql`${t.status} <> 'held' or ${t.notes} is not null`,
+    ),
+  ],
+);
+
+/**
+ * One row per person in the room — `user_id` for our side, `contact_id` for
+ * theirs, never both.
+ */
+export const meetingAttendees = pgTable(
+  "meeting_attendees",
+  {
+    id: id(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id").references(() => contacts.id, {
+      onDelete: "cascade",
+    }),
+  },
+  (t) => [
+    // NULLS DISTINCT (the default) is what makes these work: a meeting has
+    // many rows with a null user_id, one per customer attendee.
+    uniqueIndex("meeting_attendees_user_idx").on(t.meetingId, t.userId),
+    uniqueIndex("meeting_attendees_contact_idx").on(t.meetingId, t.contactId),
+    check(
+      "meeting_attendees_one_side",
+      sql`(${t.userId} is not null) <> (${t.contactId} is not null)`,
+    ),
+  ],
+);
+
+/**
+ * What we committed to, or what they did. The point of the module.
+ *
+ * Notes alone make a diary nobody reads; a row here has an owner and a date,
+ * which is what the board reads to say whether an account is on track and who
+ * is late. Exactly one of `owner_user_id` / `owner_contact_id` is set, so
+ * "the ball is with the customer" is a fact in the data rather than a
+ * sentence buried in the notes.
+ */
+export const meetingFollowUps = pgTable(
+  "meeting_follow_ups",
+  {
+    id: id(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    description: text("description").notNull(),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, {
+      onDelete: "restrict",
+    }),
+    ownerContactId: uuid("owner_contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    /** Required: a follow-up with no date is one nobody is ever chased for. */
+    dueOn: date("due_on").notNull(),
+    status: followUpStatus("status").notNull().default("open"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedByUserId: uuid("closed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** Required to drop one, so a dropped follow-up is never a shrug. */
+    closedNote: text("closed_note"),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("follow_ups_meeting_idx").on(t.meetingId),
+    // "What is due on me" is the first thing a deal owner opens.
+    index("follow_ups_org_owner_idx").on(t.organizationId, t.ownerUserId, t.status),
+    index("follow_ups_org_due_idx").on(t.organizationId, t.status, t.dueOn),
+    check(
+      "follow_ups_one_owner",
+      sql`(${t.ownerUserId} is not null) <> (${t.ownerContactId} is not null)`,
+    ),
+    check(
+      "follow_ups_closed_has_moment",
+      sql`${t.status} = 'open' or ${t.closedAt} is not null`,
+    ),
+    check(
+      "follow_ups_dropped_requires_note",
+      sql`${t.status} <> 'dropped' or ${t.closedNote} is not null`,
+    ),
+  ],
+);
+
+/**
+ * What strategic customers keep raising — pricing pressure, charging infra, a
+ * new city. Admin-managed, like `lost_reasons`, so the list stays short
+ * enough to be worth counting.
+ */
+export const meetingTopics = pgTable(
+  "meeting_topics",
+  {
+    id: id(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+  },
+  (t) => [uniqueIndex("meeting_topics_org_label_idx").on(t.organizationId, t.label)],
+);
+
+export const meetingTopicLinks = pgTable(
+  "meeting_topic_links",
+  {
+    id: id(),
+    meetingId: uuid("meeting_id")
+      .notNull()
+      .references(() => meetings.id, { onDelete: "cascade" }),
+    topicId: uuid("topic_id")
+      .notNull()
+      .references(() => meetingTopics.id, { onDelete: "cascade" }),
+  },
+  (t) => [uniqueIndex("meeting_topic_links_idx").on(t.meetingId, t.topicId)],
+);
+
 export const opportunityEvents = pgTable(
   "opportunity_events",
   {
@@ -796,3 +1083,9 @@ export type User = typeof users.$inferSelect;
 export type SalesStage = (typeof salesStage.enumValues)[number];
 export type AgreementType = (typeof agreementType.enumValues)[number];
 export type DropReason = (typeof dropReason.enumValues)[number];
+export type MeetingLevel = (typeof meetingLevel.enumValues)[number];
+export type MeetingKind = (typeof meetingKind.enumValues)[number];
+export type MeetingStatus = (typeof meetingStatus.enumValues)[number];
+export type FollowUpStatus = (typeof followUpStatus.enumValues)[number];
+export type Contact = typeof contacts.$inferSelect;
+export type Meeting = typeof meetings.$inferSelect;

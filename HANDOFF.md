@@ -20,48 +20,63 @@ Read this, then `README.md` for setup mechanics.
 
 ## 0. START HERE — the things waiting on a human
 
-### Strategic customer meetings (27 Nov) — MIGRATION 0016 NOT YET APPLIED
+### Strategic customer meetings (27 Nov) — LIVE
 
-A new **Meetings** module: what was discussed with key customers, and who owes
-the next move. Desktop only (Vivek's call) — it is offered in the desktop rail
-and left out of the phone's tab bar and menu; a phone that follows a link
-there is told why.
+A **Meetings** module: what was discussed with key customers, and who owes the
+next move. Desktop only (Vivek's call) — it is offered in the desktop rail and
+left out of the phone's tab bar and menu; a phone that follows a link there is
+told why.
 
-- **Migration 0016** (`drizzle/0016_meetings.sql`) is additive — five tables
-  (`contacts`, `meetings`, `meeting_attendees`, `meeting_follow_ups`,
-  `meeting_topics`, `meeting_topic_links`), four enums and
-  `accounts.is_strategic` — and **must be applied BEFORE the code deploys**:
-  the Customers page selects `accounts.is_strategic` on every load. Its last
-  statement seeds the nine starting topics for every existing organization.
-  Apply it through the Neon connector (`run_sql_transaction`, the file as is),
-  then check `select count(*) from meeting_topics` is 9 and
-  `select count(*) from meetings` is 0.
-  **Verified on a local Postgres 16** built from 0000–0015: every check
-  constraint refuses what it should, and the topic seed is idempotent.
-- **Nothing to switch on.** The module is empty until somebody logs a meeting.
-  An admin marks the key accounts strategic (the ★ button on a customer's
-  meetings page) — those are the ones the board watches and chases.
-- **How the board works.** Every status on it (On track / Waiting on us / With
-  customer / No next step / Stalled) is *computed* from the open follow-ups
-  and their dates — `src/lib/meetings.ts`, tested in `tests/meetings.test.ts`.
-  Nobody can mark an account green by hand. Stalled is 60 days with no meeting
-  and nothing agreed.
-- **Who sees what.** Deal owners see every meeting except ones an admin marked
+- **Migration 0016 APPLIED to production on 27 Nov**, before its code merged,
+  in one `run_sql_transaction` (49 statements): six tables (`contacts`,
+  `meetings`, `meeting_attendees`, `meeting_follow_ups`, `meeting_topics`,
+  `meeting_topic_links`), four enums, `accounts.is_strategic`, fourteen indexes
+  and five check constraints. Verified after: 9 topics seeded, 5 checks and 20
+  indexes present, 109 customers untouched and all non-strategic, every
+  meetings table empty. Nothing existing was modified.
+- **#37 merged and deployed the same day.** Production runs `main` at
+  `35a6130`, READY, no runtime errors. `/meetings` answers and is behind the
+  sign-in, as it should be.
+- **Two things are waiting on the team, not on code:**
+  1. **Nobody is on the watchlist yet** — all 109 customers are
+     `is_strategic = false`, so the board is empty by design. An admin marks
+     the key accounts with the ★ button on a customer's meetings page
+     (Customers → customer → Meetings, or /meetings/<customer>).
+  2. **No meeting has been logged through the UI yet.** Clerk sign-in makes a
+     local UI pass impossible from a cloud session, so the screens have been
+     built, typechecked and smoke-tested against a real Postgres but never
+     driven by a person. The first real meeting is also what proves the push
+     notification on a follow-up.
+
+**How the board works**, because it is the part worth understanding before
+changing anything:
+
+- Every status — On track / Waiting on us / With customer / No next step /
+  Stalled — is **computed** from the open follow-ups and their dates
+  (`src/lib/meetings.ts`, tested in `tests/meetings.test.ts`). Nobody can mark
+  an account green by hand. Stalled is `STALE_DAYS` (60) with no meeting and
+  nothing agreed.
+- The **way forward** is the earliest dated open thing: a commitment, else a
+  meeting already in the diary. The status is derived from that same item, so
+  the pill and the sentence beside it can never disagree.
+- A follow-up carries **exactly one owner — ours or theirs**
+  (`owner_user_id` xor `owner_contact_id`, a check constraint). That is what
+  makes "With customer" a fact in the data, and why what a customer owes us
+  never reads as us being late.
+- **Held or planned is the date's business**, not a field: a future date saves
+  as planned, today or earlier as held and must carry notes. A planned meeting
+  whose date passes stops counting as the way forward, so the account reads as
+  having no next step until somebody writes it up — the thread card says so.
+- **Who sees what:** deal owners see every meeting except ones an admin marked
   **Confidential**; admins see those too. A regional owner must be able to read
-  what the CXO promised or they cannot follow it up (Vivek, 27 Nov).
-- **Held or planned is the date's business**, not a field: a meeting dated in
-  the future is planned, today or earlier is held and must carry notes. A
-  planned meeting whose date passes stops counting as the way forward, so the
-  account reads as having no next step until somebody writes it up — the
-  thread says so on the card.
-- **Not yet seen with real data.** The queries were smoke-tested against a
-  local Postgres and the pages build, but nobody has logged a real meeting
-  yet: Clerk sign-in makes a local UI pass impossible in a cloud session.
-- **A customer with logged meetings can no longer be deleted** (ON DELETE
-  RESTRICT, and `deleteCustomer` says so plainly). `drizzle/bootstrap.sql` was
-  already behind — it predates leads, agreements and deployments — and has not
-  been extended, so a fresh install should use `npm run db:push`.
-
+  what the CXO promised or they cannot follow it up (Vivek, 27 Nov). Ops and
+  NOC never reach the module at all (`requireSales`).
+- A **customer with logged meetings can no longer be deleted** (ON DELETE
+  RESTRICT, and `deleteCustomer` now says so plainly rather than failing with a
+  puzzling message).
+- `drizzle/bootstrap.sql` was already behind — it predates leads, agreements
+  and deployments — and has NOT been extended, so a fresh install should use
+  `npm run db:push` from `src/db/schema.ts`.
 
 ### Migration 0014 — APPLIED to production on 3 Nov (before its code merged)
 
@@ -92,22 +107,27 @@ is unaffected — its inserts take the identity default.
   whoever runs the website. The chatbot itself is not ours — which platform it
   is was unknown on 26 Nov, so the endpoint accepts the common field names
   rather than one vendor's format.
-- **Not yet proven against the real chatbot.** Verified locally against a
+- **Live since #36 (26 Nov), and 4 website leads have arrived since** — so the
+  endpoint works against whatever the website is actually running. One intake
+  key is live.
+- **Not yet proven for every field shape.** Verified locally against a
   fresh database built from 0000–0015: every auth style, JSON, form fields,
   wrapped payloads, the 30-minute duplicate guard, a revoked key, and the
   refusals. Push to admins is the same `pushToUser` path as lead assignment.
 
-### Where things stand (22 Nov)
+### Where things stand (27 Nov)
 
-- **Production runs `main` at #35** (`e2aa429`), READY, with **no runtime
-  errors in the last 7 days**. #34 (15 Oct: Forecast/Deployments export,
-  automatic cost fill) and #35 (3 Nov: record IDs, deployment log, dropped
-  vehicles, leads export) are both live. No PR is open.
+- **Production runs `main` at #37** (`35a6130`), READY, with **no runtime
+  errors**. #35 (3 Nov: record IDs, deployment log, dropped vehicles, leads
+  export), #36 (26 Nov: website chatbot leads) and #37 (27 Nov: strategic
+  customer meetings) are all live. No PR is open.
 - **Agreements: 1 on file. 14 of 15 won deals show "No agreement".** Uploading
   the signed papers (Customers → customer → Upload) is the team's job, not
   code. An upload over 8 MB (multipart) has still never been tried.
-- **Live data:** 104 customers, 96 open deals, 15 won, 42 leads, 1 active NOC
-  user. Deployment log: 3 rows; no vehicles dropped yet.
+- **Live data (27 Nov):** 109 customers, 100 open deals, 15 won, 19 lost, 18
+  dormant, 47 leads (2 still unrung, 4 of them from the website), 9 users.
+  Deployment log: 3 rows; no vehicles dropped yet. Meetings: 0 logged, 0
+  accounts marked strategic, 9 topics seeded.
 - **Forecast hygiene is good:** 0 open deals without a closing month (was 16),
   1 in the Overdue column.
 - **Cost defaults are mostly filled in** (26 rates; see item 2 below for the
@@ -116,8 +136,8 @@ is unaffected — its inserts take the identity default.
   Charging or Parking cannot be looked up. They fill by themselves once the
   owner sets those on the deal (any edit runs the fill).
 
-**Migrations 0000–0014 are all applied to production** (0014 on 3 Nov,
-above; 0013, agreements,
+**Migrations 0000–0016 are all applied to production** (0016 on 27 Nov and
+0015 on 26 Nov, both above; 0014 on 3 Nov, 0013, agreements,
 on 8 Oct before its code merged — renewal date NOT NULL; at that moment 6 won
 deals had no agreement and will say so). Migrations 0000–0012 are
 applied (0012, lead assignment, on 23 Sep before its code deployed). Migrations are applied by
